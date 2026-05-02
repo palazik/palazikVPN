@@ -127,13 +127,27 @@ class MainViewModel @Inject constructor(
 
     fun importProfileFromLink(raw: String) {
         val profile = ProfileCodec.decode(raw)
-        if (profile != null) { repo.addProfile(profile); snack("Profile \"${profile.name}\" imported") }
-        else snack("Could not parse link")
+        if (profile != null) {
+            repo.addProfile(profile)
+            snack("Profile \"${profile.name}\" imported")
+        } else {
+            snack("Could not parse link")
+        }
     }
 
-    fun addManualProfile(profile: VpnProfile) { repo.addProfile(profile); snack("Profile \"${profile.name}\" added") }
-    fun removeProfile(id: String)             = repo.removeProfile(id)
-    fun selectProfile(id: String)             = repo.setActiveProfile(id)
+    fun addManualProfile(profile: VpnProfile) {
+        repo.addProfile(profile)
+        snack("Profile \"${profile.name}\" added")
+    }
+
+    /** Update an existing profile (used by the edit dialog). */
+    fun updateProfile(profile: VpnProfile) {
+        repo.updateProfile(profile)
+        snack("Profile \"${profile.name}\" updated")
+    }
+
+    fun removeProfile(id: String) = repo.removeProfile(id)
+    fun selectProfile(id: String) = repo.setActiveProfile(id)
 
     fun generateShareLink() {
         val profile = _ui.value.activeProfile ?: run { snack("No active profile"); return }
