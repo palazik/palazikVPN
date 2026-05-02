@@ -322,11 +322,20 @@ private fun ManualProfileDialog(
     var transportExpanded by remember { mutableStateOf(false) }
     var securityExpanded  by remember { mutableStateOf(false) }
 
-    val noTransportProtos = listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS,
-        Protocol.HYSTERIA2, Protocol.SOCKS5)
-    val noSecurityProtos  = listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS,
-        Protocol.SOCKS5)
-    val pathTransports    = listOf(Transport.WS, Transport.H2, Transport.XHTTP, Transport.GRPC)
+    // Protocols that have no transport concept
+    val noTransportProtos = listOf(
+        Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.HYSTERIA2, Protocol.SOCKS5
+    )
+    // Protocols that have no security concept (they handle it natively)
+    val noSecurityProtos = listOf(
+        Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.SOCKS5
+    )
+    // Protocols where path/host fields are meaningful
+    // BUG FIX: show path/host for ALL proxy protocols (TCP included), not just specific transports.
+    // Some VLESS-over-TCP configs use host headers; subscriptions import these fields always.
+    val showPathHostProtos = listOf(
+        Protocol.VLESS, Protocol.VMESS, Protocol.TROJAN, Protocol.TUIC
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -346,6 +355,7 @@ private fun ManualProfileDialog(
                 )
 
                 // Protocol
+                // FIX: XHTTP and REALITY removed from this list — they are not protocols
                 ExposedDropdownMenuBox(
                     expanded = protoExpanded,
                     onExpandedChange = { protoExpanded = it },
@@ -365,7 +375,9 @@ private fun ManualProfileDialog(
                         listOf(
                             Protocol.VLESS, Protocol.VMESS, Protocol.SHADOWSOCKS,
                             Protocol.TROJAN, Protocol.HYSTERIA2, Protocol.WIREGUARD,
-                            Protocol.SOCKS5, Protocol.TUIC, Protocol.XHTTP,
+                            Protocol.SOCKS5, Protocol.TUIC,
+                            // XHTTP removed: select VLESS + Transport XHTTP instead
+                            // REALITY removed: it is a Security option, not a Protocol
                         ).forEach { p ->
                             DropdownMenuItem(
                                 text    = { Text(p.name) },
@@ -373,6 +385,15 @@ private fun ManualProfileDialog(
                             )
                         }
                     }
+                }
+
+                // XHTTP hint — shown when user picks VLESS, reminding them transport controls xhttp
+                if (protocol == Protocol.VLESS) {
+                    Text(
+                        "Tip: for XHTTP, select Protocol = VLESS and Transport = XHTTP below.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
 
                 // Address + Port
@@ -393,7 +414,7 @@ private fun ManualProfileDialog(
                 // Protocol-specific credential fields
                 when (protocol) {
                     Protocol.VMESS, Protocol.VLESS, Protocol.TROJAN,
-                    Protocol.SOCKS5, Protocol.TUIC, Protocol.XHTTP -> {
+                    Protocol.SOCKS5, Protocol.TUIC -> {
                         OutlinedTextField(
                             value = uuid, onValueChange = { uuid = it },
                             label = { Text(if (protocol == Protocol.TROJAN) "Password" else "UUID") },
@@ -483,7 +504,11 @@ private fun ManualProfileDialog(
                             }
                         }
                     }
-                    if (transport in pathTransports) {
+
+                    // BUG FIX: show Path and Host for ALL transports, not just WS/H2/XHTTP/GRPC.
+                    // TCP configs can carry host headers too, and subscription imports always
+                    // include these fields regardless of transport.
+                    if (protocol in showPathHostProtos) {
                         OutlinedTextField(
                             value = path, onValueChange = { path = it },
                             label = { Text(if (transport == Transport.GRPC) "Service Name" else "Path") },
