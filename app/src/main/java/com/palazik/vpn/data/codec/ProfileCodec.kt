@@ -14,6 +14,9 @@ import java.util.UUID
  *   tuic://   xhttp://  palazikVPN://  (palazikVPN proprietary share)
  *
  * Export always produces a palazikVPN:// URI plus the native URI.
+ *
+ * NOTE: xhttp:// is treated as VLESS + Transport.XHTTP on import.
+ *       XHTTP is a transport layer, not a standalone protocol.
  */
 object ProfileCodec {
 
@@ -33,6 +36,7 @@ object ProfileCodec {
             trimmed.startsWith("wireguard://")  -> decodeWireguard(trimmed)
             trimmed.startsWith("socks5://")     -> decodeSocks5(trimmed)
             trimmed.startsWith("tuic://")       -> decodeTuic(trimmed)
+            // xhttp:// share links are VLESS profiles with Transport.XHTTP
             trimmed.startsWith("xhttp://")      -> decodeXhttp(trimmed)
             else -> null
         }
@@ -54,15 +58,14 @@ object ProfileCodec {
 
     fun encodeNative(p: VpnProfile): String = when (p.protocol) {
         Protocol.VMESS       -> encodeVmess(p)
-        Protocol.VLESS       -> encodeVless(p)
+        Protocol.VLESS       -> encodeVless(p)      // covers XHTTP transport too
         Protocol.SHADOWSOCKS -> encodeShadowsocks(p)
         Protocol.TROJAN      -> encodeTrojan(p)
         Protocol.HYSTERIA2   -> encodeHysteria2(p)
         Protocol.WIREGUARD   -> encodeWireguard(p)
         Protocol.SOCKS5      -> encodeSocks5(p)
         Protocol.TUIC        -> encodeTuic(p)
-        Protocol.XHTTP       -> encodeXhttp(p)
-        else -> encodeVless(p)
+        else                 -> encodeVless(p)
     }
 
     /** Returns palazikVPN://<base64(json)>#name */
@@ -101,12 +104,17 @@ object ProfileCodec {
     private fun decodePalazik(raw: String): VpnProfile {
         val b64 = raw.removePrefix("palazikVPN://").substringBefore("#")
         val json = JSONObject(String(Base64.decode(b64, Base64.URL_SAFE)))
+        // Guard: old profiles saved with "XHTTP" or "REALITY" as protocol — migrate them
+        val protoStr = json.optString("proto", "VLESS")
+        val protocol = runCatching { Protocol.valueOf(protoStr) }.getOrDefault(Protocol.VLESS)
+        val transportStr = json.optString("transport", "TCP")
+        val transport = runCatching { Transport.valueOf(transportStr) }.getOrDefault(Transport.TCP)
         return VpnProfile(
-            protocol    = Protocol.valueOf(json.optString("proto", "VLESS")),
+            protocol    = protocol,
             address     = json.optString("addr"),
             port        = json.optInt("port", 443),
             uuid        = json.optString("uuid"),
-            transport   = Transport.valueOf(json.optString("transport", "TCP")),
+            transport   = transport,
             path        = json.optString("path", "/"),
             host        = json.optString("host"),
             security    = Security.valueOf(json.optString("security", "TLS")),
@@ -133,6 +141,7 @@ object ProfileCodec {
             "grpc" -> Transport.GRPC
             "h2"   -> Transport.H2
             "quic" -> Transport.QUIC
+            "xhttp"-> Transport.XHTTP
             else   -> Transport.TCP
         }
         val security = when (json.optString("tls")) {
@@ -148,6 +157,7 @@ object ProfileCodec {
             port      = json.optString("port").toIntOrNull() ?: 443,
             uuid      = json.optString("id"),
             transport = transport,
+            // BUG FIX: always read path and host regardless of transport type
             path      = json.optString("path", "/"),
             host      = json.optString("host"),
             security  = security,
@@ -174,6 +184,7 @@ object ProfileCodec {
             port        = uri.port.takeIf { it > 0 } ?: 443,
             uuid        = uri.userInfo ?: "",
             transport   = transport,
+            // BUG FIX: always read path and host regardless of transport type
             path        = params["path"] ?: "/",
             host        = params["host"] ?: "",
             security    = security,
@@ -185,7 +196,6 @@ object ProfileCodec {
     }
 
     private fun decodeShadowsocks(raw: String): VpnProfile {
-        // ss://base64(method:password)@host:port#name  OR  ss://base64(method:password@host:port)#name
         val fragment = raw.substringAfter("#", "Shadowsocks")
         val body     = raw.removePrefix("ss://").substringBefore("#")
         return try {
@@ -285,16 +295,22 @@ object ProfileCodec {
         )
     }
 
+    /**
+     * xhttp:// share links are VLESS profiles using Transport.XHTTP.
+     * XHTTP is NOT a protocol — it is a transport layer.
+     * BUG FIX: was Protocol.XHTTP, now correctly Protocol.VLESS + Transport.XHTTP.
+     */
     private fun decodeXhttp(raw: String): VpnProfile {
         val uri    = Uri.parse(raw)
         val params = uri.queryParameterNames.associateWith { uri.getQueryParameter(it) ?: "" }
         return VpnProfile(
             name      = Uri.decode(uri.fragment ?: "XHTTP"),
-            protocol  = Protocol.XHTTP,
+            protocol  = Protocol.VLESS,          // FIX: was Protocol.XHTTP
             address   = uri.host ?: "",
             port      = uri.port.takeIf { it > 0 } ?: 443,
             uuid      = uri.userInfo ?: "",
             transport = Transport.XHTTP,
+            // BUG FIX: always read path and host
             path      = params["path"] ?: "/",
             host      = params["host"] ?: "",
             security  = if (params["tls"] == "tls") Security.TLS else Security.NONE,
@@ -309,13 +325,18 @@ object ProfileCodec {
 
     private fun encodeVmess(p: VpnProfile): String {
         val net = when (p.transport) {
-            Transport.WS   -> "ws"; Transport.GRPC -> "grpc"
-            Transport.H2   -> "h2"; Transport.QUIC -> "quic"
-            else           -> "tcp"
+            Transport.WS    -> "ws"
+            Transport.GRPC  -> "grpc"
+            Transport.H2    -> "h2"
+            Transport.QUIC  -> "quic"
+            Transport.XHTTP -> "xhttp"
+            else            -> "tcp"
         }
         val tls = when (p.security) {
-            Security.TLS    -> "tls"; Security.XTLS    -> "xtls"
-            Security.REALITY-> "reality"; else          -> ""
+            Security.TLS    -> "tls"
+            Security.XTLS   -> "xtls"
+            Security.REALITY-> "reality"
+            else            -> ""
         }
         val json = JSONObject().apply {
             put("v","2"); put("ps",p.name); put("add",p.address)
@@ -331,6 +352,7 @@ object ProfileCodec {
             .encodedAuthority("${p.uuid}@${p.address}:${p.port}")
             .appendQueryParameter("type", p.transport.name.lowercase())
             .appendQueryParameter("security", p.security.name.lowercase())
+            // FIX: always encode path and host, not just for certain transports
             .appendQueryParameter("path", p.path)
             .appendQueryParameter("host", p.host)
             .appendQueryParameter("sni", p.sni)
@@ -382,15 +404,5 @@ object ProfileCodec {
         Uri.Builder().scheme("tuic")
             .encodedAuthority("${p.uuid}:${p.ssPassword}@${p.address}:${p.port}")
             .appendQueryParameter("sni", p.sni)
-            .fragment(p.name).build().toString()
-
-    private fun encodeXhttp(p: VpnProfile) =
-        Uri.Builder().scheme("xhttp")
-            .encodedAuthority("${p.uuid}@${p.address}:${p.port}")
-            .appendQueryParameter("path", p.path)
-            .appendQueryParameter("host", p.host)
-            .appendQueryParameter("tls", if (p.security == Security.TLS) "tls" else "none")
-            .appendQueryParameter("sni", p.sni)
-            .appendQueryParameter("fp", p.fingerprint)
             .fragment(p.name).build().toString()
 }
