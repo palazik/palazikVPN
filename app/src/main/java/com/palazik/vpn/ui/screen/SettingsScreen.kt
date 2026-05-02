@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.palazik.vpn.data.model.PingMode
 import com.palazik.vpn.ui.theme.AppTheme
 import com.palazik.vpn.ui.theme.DarkModePreference
 import com.palazik.vpn.ui.viewmodel.MainViewModel
@@ -30,10 +31,13 @@ fun SettingsScreen(vm: MainViewModel) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
 
-        // ── Dark mode ─────────────────────────────────────────────────────────
+        // ── Appearance ────────────────────────────────────────────────────────
         SettingsSection(title = "Appearance") {
-            Text("Dark Mode", style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(bottom = 8.dp))
+            Text(
+                "Dark Mode",
+                style    = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 DarkModePreference.values().forEachIndexed { idx, pref ->
                     SegmentedButton(
@@ -47,12 +51,13 @@ fun SettingsScreen(vm: MainViewModel) {
 
             Spacer(Modifier.height(16.dp))
 
-            // ── Theme palette ─────────────────────────────────────────────────
-            Text("Color Theme", style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(bottom = 8.dp))
-            val themes = AppTheme.values()
+            Text(
+                "Color Theme",
+                style    = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                themes.forEach { theme ->
+                AppTheme.values().forEach { theme ->
                     ThemeRow(theme, isSelected = ui.appTheme == theme) {
                         vm.setAppTheme(theme)
                     }
@@ -62,12 +67,46 @@ fun SettingsScreen(vm: MainViewModel) {
 
         Spacer(Modifier.height(8.dp))
 
+        // ── Connection ────────────────────────────────────────────────────────
+        SettingsSection(title = "Connection") {
+            Text(
+                "Ping Test Mode",
+                style    = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(bottom = 4.dp),
+            )
+            Text(
+                "TCP — raw socket connect (fastest, most accurate, default).\n" +
+                "GET / HEAD — HTTP request through the proxy (measures full proxy round-trip).",
+                style    = MaterialTheme.typography.bodySmall,
+                color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                PingMode.values().forEachIndexed { idx, mode ->
+                    SegmentedButton(
+                        shape    = SegmentedButtonDefaults.itemShape(idx, PingMode.values().size),
+                        selected = ui.pingMode == mode,
+                        onClick  = { vm.setPingMode(mode) },
+                        label    = {
+                            Text(when (mode) {
+                                PingMode.TCP        -> "TCP"
+                                PingMode.PROXY_GET  -> "GET"
+                                PingMode.PROXY_HEAD -> "HEAD"
+                            })
+                        },
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
         // ── About ─────────────────────────────────────────────────────────────
         SettingsSection(title = "About") {
             ListItem(
-                headlineContent = { Text("palazikVPN") },
+                headlineContent   = { Text("palazikVPN") },
                 supportingContent = { Text("Built by palazik • kernel dev edition") },
-                leadingContent = { Icon(Icons.Rounded.Info, null) },
+                leadingContent    = { Icon(Icons.Rounded.Info, null) },
             )
         }
     }
@@ -77,9 +116,10 @@ fun SettingsScreen(vm: MainViewModel) {
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
-            Text(title,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
+            Text(
+                title,
+                style    = MaterialTheme.typography.labelLarge,
+                color    = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(bottom = 12.dp),
             )
             content()
@@ -89,7 +129,7 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
 
 @Composable
 private fun ThemeRow(theme: AppTheme, isSelected: Boolean, onClick: () -> Unit) {
-    val themeLabel = when (theme) {
+    val label = when (theme) {
         AppTheme.CYBER   -> "⚡ Cyber (Dark-first)"
         AppTheme.OCEAN   -> "🌊 Ocean"
         AppTheme.FOREST  -> "🌿 Forest"
@@ -98,10 +138,10 @@ private fun ThemeRow(theme: AppTheme, isSelected: Boolean, onClick: () -> Unit) 
     }
     Row(
         Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(themeLabel, style = MaterialTheme.typography.bodyMedium)
+        Text(label, style = MaterialTheme.typography.bodyMedium)
         RadioButton(selected = isSelected, onClick = onClick)
     }
 }
