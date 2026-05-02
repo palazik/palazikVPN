@@ -27,6 +27,7 @@ import java.util.UUID
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfilesScreen(vm: MainViewModel) {
     val ui        by vm.ui.collectAsState()
@@ -55,13 +56,11 @@ fun ProfilesScreen(vm: MainViewModel) {
                 IconButton(onClick = { vm.generateShareLink(); showShareLink = true }) {
                     Icon(Icons.Rounded.Share, "Share active")
                 }
-                // Import via link
                 OutlinedButton(onClick = { showImport = true }) {
                     Icon(Icons.Rounded.Link, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Link")
                 }
-                // Add manually
                 FilledTonalButton(onClick = { showManual = true }) {
                     Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
@@ -87,28 +86,26 @@ fun ProfilesScreen(vm: MainViewModel) {
                 }
             }
         } else {
-            // ── Profile list ─────────────────────────────────────────────────
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(ui.profiles, key = { it.id }) { profile ->
-                    // Resolve subscription name for this profile
                     val subName = profile.subscriptionId?.let { sid ->
                         ui.subscriptions.firstOrNull { it.id == sid }?.name
                     }
                     ProfileCard(
-                        profile   = profile,
-                        subName   = subName,
-                        isActive  = profile.isActive,
-                        onSelect  = { vm.selectProfile(profile.id) },
-                        onDelete  = { vm.removeProfile(profile.id) },
-                        onPing    = { vm.pingProfile(profile) },
-                        onEdit    = { editProfile = profile },
+                        profile  = profile,
+                        subName  = subName,
+                        isActive = profile.isActive,
+                        onSelect = { vm.selectProfile(profile.id) },
+                        onDelete = { vm.removeProfile(profile.id) },
+                        onPing   = { vm.pingProfile(profile) },
+                        onEdit   = { editProfile = profile },
                     )
                 }
             }
         }
     }
 
-    // ── Import via link dialog ────────────────────────────────────────────────
+    // ── Import via link ───────────────────────────────────────────────────────
     if (showImport) {
         AlertDialog(
             onDismissRequest = { showImport = false; importText = "" },
@@ -136,16 +133,16 @@ fun ProfilesScreen(vm: MainViewModel) {
         )
     }
 
-    // ── Manual add dialog ─────────────────────────────────────────────────────
+    // ── Manual add ───────────────────────────────────────────────────────────
     if (showManual) {
         ManualProfileDialog(
-            initial  = null,
-            onSave   = { profile -> vm.addManualProfile(profile); showManual = false },
+            initial   = null,
+            onSave    = { profile -> vm.addManualProfile(profile); showManual = false },
             onDismiss = { showManual = false },
         )
     }
 
-    // ── Edit dialog ───────────────────────────────────────────────────────────
+    // ── Edit ─────────────────────────────────────────────────────────────────
     editProfile?.let { toEdit ->
         ManualProfileDialog(
             initial   = toEdit,
@@ -154,7 +151,7 @@ fun ProfilesScreen(vm: MainViewModel) {
         )
     }
 
-    // ── Share link dialog ─────────────────────────────────────────────────────
+    // ── Share link ────────────────────────────────────────────────────────────
     if (showShareLink && ui.shareLink != null) {
         AlertDialog(
             onDismissRequest = { showShareLink = false; vm.clearShareLink() },
@@ -168,11 +165,8 @@ fun ProfilesScreen(vm: MainViewModel) {
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = MaterialTheme.shapes.small,
                     ) {
-                        Text(
-                            ui.shareLink!!,
-                            modifier = Modifier.padding(8.dp),
-                            style    = MaterialTheme.typography.bodySmall,
-                        )
+                        Text(ui.shareLink!!, modifier = Modifier.padding(8.dp),
+                            style = MaterialTheme.typography.bodySmall)
                     }
                 }
             },
@@ -213,13 +207,12 @@ private fun ProfileCard(
         MaterialTheme.colorScheme.surfaceVariant
 
     ElevatedCard(
-        onClick = onSelect,
-        colors  = CardDefaults.elevatedCardColors(containerColor = containerColor),
+        onClick  = onSelect,
+        colors   = CardDefaults.elevatedCardColors(containerColor = containerColor),
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // Protocol chip
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                     shape = MaterialTheme.shapes.small,
@@ -231,7 +224,6 @@ private fun ProfileCard(
                         color    = MaterialTheme.colorScheme.primary,
                     )
                 }
-                // Transport chip (if not TCP)
                 if (profile.transport != Transport.TCP) {
                     Spacer(Modifier.width(4.dp))
                     Surface(
@@ -247,7 +239,6 @@ private fun ProfileCard(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                // Latency
                 if (profile.latencyMs >= 0) {
                     Text(
                         "${profile.latencyMs}ms",
@@ -260,38 +251,32 @@ private fun ProfileCard(
                     )
                     Spacer(Modifier.width(4.dp))
                 }
-                IconButton(onClick = onPing,  Modifier.size(32.dp)) { Icon(Icons.Rounded.Speed,  "Ping",   Modifier.size(18.dp)) }
-                IconButton(onClick = onEdit,  Modifier.size(32.dp)) { Icon(Icons.Rounded.Edit,   "Edit",   Modifier.size(18.dp)) }
-                IconButton(onClick = onDelete,Modifier.size(32.dp)) {
+                IconButton(onClick = onPing,   Modifier.size(32.dp)) {
+                    Icon(Icons.Rounded.Speed, "Ping", Modifier.size(18.dp))
+                }
+                IconButton(onClick = onEdit,   Modifier.size(32.dp)) {
+                    Icon(Icons.Rounded.Edit, "Edit", Modifier.size(18.dp))
+                }
+                IconButton(onClick = onDelete, Modifier.size(32.dp)) {
                     Icon(Icons.Rounded.Delete, "Delete", Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.error)
                 }
             }
-
             Spacer(Modifier.height(4.dp))
-
             Text(profile.name, style = MaterialTheme.typography.titleSmall)
             Text(
                 "${profile.address}:${profile.port}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
             )
-
-            // Subscription source badge
             if (subName != null) {
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        Icons.Rounded.Subscriptions, null,
-                        Modifier.size(12.dp),
-                        tint = MaterialTheme.colorScheme.tertiary,
-                    )
+                    Icon(Icons.Rounded.Subscriptions, null, Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.tertiary)
                     Spacer(Modifier.width(4.dp))
-                    Text(
-                        subName,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary,
-                    )
+                    Text(subName, style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary)
                 }
             }
         }
@@ -302,6 +287,7 @@ private fun ProfileCard(
 // Manual add / edit dialog
 // ─────────────────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ManualProfileDialog(
     initial: VpnProfile?,
@@ -310,33 +296,37 @@ private fun ManualProfileDialog(
 ) {
     val isEdit = initial != null
 
-    // ── Form state ────────────────────────────────────────────────────────────
-    var name        by remember { mutableStateOf(initial?.name       ?: "") }
-    var protocol    by remember { mutableStateOf(initial?.protocol   ?: Protocol.VLESS) }
-    var address     by remember { mutableStateOf(initial?.address    ?: "") }
+    var name        by remember { mutableStateOf(initial?.name        ?: "") }
+    var protocol    by remember { mutableStateOf(initial?.protocol    ?: Protocol.VLESS) }
+    var address     by remember { mutableStateOf(initial?.address     ?: "") }
     var port        by remember { mutableStateOf(initial?.port?.toString() ?: "443") }
-    var uuid        by remember { mutableStateOf(initial?.uuid       ?: "") }
-    var transport   by remember { mutableStateOf(initial?.transport  ?: Transport.TCP) }
-    var path        by remember { mutableStateOf(initial?.path       ?: "/") }
-    var host        by remember { mutableStateOf(initial?.host       ?: "") }
-    var security    by remember { mutableStateOf(initial?.security   ?: Security.TLS) }
-    var sni         by remember { mutableStateOf(initial?.sni        ?: "") }
-    var fingerprint by remember { mutableStateOf(initial?.fingerprint?: "chrome") }
-    var publicKey   by remember { mutableStateOf(initial?.publicKey  ?: "") }
-    var shortId     by remember { mutableStateOf(initial?.shortId    ?: "") }
-    var ssMethod    by remember { mutableStateOf(initial?.ssMethod   ?: "chacha20-ietf-poly1305") }
-    var ssPassword  by remember { mutableStateOf(initial?.ssPassword ?: "") }
+    var uuid        by remember { mutableStateOf(initial?.uuid        ?: "") }
+    var transport   by remember { mutableStateOf(initial?.transport   ?: Transport.TCP) }
+    var path        by remember { mutableStateOf(initial?.path        ?: "/") }
+    var host        by remember { mutableStateOf(initial?.host        ?: "") }
+    var security    by remember { mutableStateOf(initial?.security    ?: Security.TLS) }
+    var sni         by remember { mutableStateOf(initial?.sni         ?: "") }
+    var fingerprint by remember { mutableStateOf(initial?.fingerprint ?: "chrome") }
+    var publicKey   by remember { mutableStateOf(initial?.publicKey   ?: "") }
+    var shortId     by remember { mutableStateOf(initial?.shortId     ?: "") }
+    var ssMethod    by remember { mutableStateOf(initial?.ssMethod    ?: "chacha20-ietf-poly1305") }
+    var ssPassword  by remember { mutableStateOf(initial?.ssPassword  ?: "") }
     var hystPwd     by remember { mutableStateOf(initial?.hystPassword ?: "") }
-    var wgPrivKey   by remember { mutableStateOf(initial?.wgPrivateKey  ?: "") }
-    var wgPubKey    by remember { mutableStateOf(initial?.wgPeerPublicKey ?: "") }
-    var wgPsk       by remember { mutableStateOf(initial?.wgPreSharedKey ?: "") }
-    var wgDns       by remember { mutableStateOf(initial?.wgDns      ?: "1.1.1.1") }
+    var wgPrivKey   by remember { mutableStateOf(initial?.wgPrivateKey    ?: "") }
+    var wgPubKey    by remember { mutableStateOf(initial?.wgPeerPublicKey  ?: "") }
+    var wgPsk       by remember { mutableStateOf(initial?.wgPreSharedKey  ?: "") }
+    var wgDns       by remember { mutableStateOf(initial?.wgDns       ?: "1.1.1.1") }
     var wgMtu       by remember { mutableStateOf(initial?.wgMtu?.toString() ?: "1280") }
 
-    // Dropdown states
     var protoExpanded     by remember { mutableStateOf(false) }
     var transportExpanded by remember { mutableStateOf(false) }
     var securityExpanded  by remember { mutableStateOf(false) }
+
+    val noTransportProtos = listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS,
+        Protocol.HYSTERIA2, Protocol.SOCKS5)
+    val noSecurityProtos  = listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS,
+        Protocol.SOCKS5)
+    val pathTransports    = listOf(Transport.WS, Transport.H2, Transport.XHTTP, Transport.GRPC)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -348,26 +338,25 @@ private fun ManualProfileDialog(
                     .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-
-                // ── Name ─────────────────────────────────────────────────────
+                // Name
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Profile Name") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true,
                 )
 
-                // ── Protocol ─────────────────────────────────────────────────
+                // Protocol
                 ExposedDropdownMenuBox(
                     expanded = protoExpanded,
                     onExpandedChange = { protoExpanded = it },
                 ) {
                     OutlinedTextField(
-                        value = protocol.name,
+                        value         = protocol.name,
                         onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Protocol") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(protoExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        readOnly      = true,
+                        label         = { Text("Protocol") },
+                        trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(protoExpanded) },
+                        modifier      = Modifier.fillMaxWidth().menuAnchor(),
                     )
                     ExposedDropdownMenu(
                         expanded = protoExpanded,
@@ -379,14 +368,14 @@ private fun ManualProfileDialog(
                             Protocol.SOCKS5, Protocol.TUIC, Protocol.XHTTP,
                         ).forEach { p ->
                             DropdownMenuItem(
-                                text = { Text(p.name) },
+                                text    = { Text(p.name) },
                                 onClick = { protocol = p; protoExpanded = false },
                             )
                         }
                     }
                 }
 
-                // ── Address / Port ────────────────────────────────────────────
+                // Address + Port
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = address, onValueChange = { address = it },
@@ -401,7 +390,7 @@ private fun ManualProfileDialog(
                     )
                 }
 
-                // ── Protocol-specific fields ──────────────────────────────────
+                // Protocol-specific credential fields
                 when (protocol) {
                     Protocol.VMESS, Protocol.VLESS, Protocol.TROJAN,
                     Protocol.SOCKS5, Protocol.TUIC, Protocol.XHTTP -> {
@@ -411,16 +400,15 @@ private fun ManualProfileDialog(
                             modifier = Modifier.fillMaxWidth(), singleLine = true,
                             trailingIcon = {
                                 IconButton(onClick = { uuid = UUID.randomUUID().toString() }) {
-                                    Icon(Icons.Rounded.Refresh, "Generate UUID",
-                                        Modifier.size(18.dp))
+                                    Icon(Icons.Rounded.Refresh, "Generate", Modifier.size(18.dp))
                                 }
-                            }
+                            },
                         )
                     }
                     Protocol.SHADOWSOCKS -> {
                         OutlinedTextField(
                             value = ssMethod, onValueChange = { ssMethod = it },
-                            label = { Text("Cipher Method") },
+                            label = { Text("Cipher") },
                             modifier = Modifier.fillMaxWidth(), singleLine = true,
                         )
                         OutlinedTextField(
@@ -469,20 +457,19 @@ private fun ManualProfileDialog(
                     else -> {}
                 }
 
-                // ── Transport (not for WireGuard / Shadowsocks / Hysteria2) ──
-                if (protocol !in listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS,
-                        Protocol.HYSTERIA2, Protocol.SOCKS5)) {
+                // Transport
+                if (protocol !in noTransportProtos) {
                     ExposedDropdownMenuBox(
                         expanded = transportExpanded,
                         onExpandedChange = { transportExpanded = it },
                     ) {
                         OutlinedTextField(
-                            value = transport.name,
+                            value         = transport.name,
                             onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Transport") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(transportExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            readOnly      = true,
+                            label         = { Text("Transport") },
+                            trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(transportExpanded) },
+                            modifier      = Modifier.fillMaxWidth().menuAnchor(),
                         )
                         ExposedDropdownMenu(
                             expanded = transportExpanded,
@@ -490,16 +477,13 @@ private fun ManualProfileDialog(
                         ) {
                             Transport.values().forEach { t ->
                                 DropdownMenuItem(
-                                    text = { Text(t.name) },
+                                    text    = { Text(t.name) },
                                     onClick = { transport = t; transportExpanded = false },
                                 )
                             }
                         }
                     }
-
-                    // Path + Host (WS / H2 / XHTTP / GRPC)
-                    if (transport in listOf(Transport.WS, Transport.H2,
-                            Transport.XHTTP, Transport.GRPC)) {
+                    if (transport in pathTransports) {
                         OutlinedTextField(
                             value = path, onValueChange = { path = it },
                             label = { Text(if (transport == Transport.GRPC) "Service Name" else "Path") },
@@ -513,20 +497,19 @@ private fun ManualProfileDialog(
                     }
                 }
 
-                // ── Security ─────────────────────────────────────────────────
-                if (protocol !in listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS,
-                        Protocol.SOCKS5)) {
+                // Security
+                if (protocol !in noSecurityProtos) {
                     ExposedDropdownMenuBox(
                         expanded = securityExpanded,
                         onExpandedChange = { securityExpanded = it },
                     ) {
                         OutlinedTextField(
-                            value = security.name,
+                            value         = security.name,
                             onValueChange = {},
-                            readOnly = true,
-                            label = { Text("Security") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(securityExpanded) },
-                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                            readOnly      = true,
+                            label         = { Text("Security") },
+                            trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(securityExpanded) },
+                            modifier      = Modifier.fillMaxWidth().menuAnchor(),
                         )
                         ExposedDropdownMenu(
                             expanded = securityExpanded,
@@ -534,14 +517,12 @@ private fun ManualProfileDialog(
                         ) {
                             Security.values().forEach { s ->
                                 DropdownMenuItem(
-                                    text = { Text(s.name) },
+                                    text    = { Text(s.name) },
                                     onClick = { security = s; securityExpanded = false },
                                 )
                             }
                         }
                     }
-
-                    // TLS / REALITY common fields
                     if (security != Security.NONE) {
                         OutlinedTextField(
                             value = sni, onValueChange = { sni = it },
@@ -554,8 +535,6 @@ private fun ManualProfileDialog(
                             modifier = Modifier.fillMaxWidth(), singleLine = true,
                         )
                     }
-
-                    // REALITY-only fields
                     if (security == Security.REALITY) {
                         OutlinedTextField(
                             value = publicKey, onValueChange = { publicKey = it },
@@ -574,27 +553,27 @@ private fun ManualProfileDialog(
         confirmButton = {
             Button(onClick = {
                 val profile = (initial ?: VpnProfile()).copy(
-                    name         = name.ifBlank { "Unnamed" },
-                    protocol     = protocol,
-                    address      = address.trim(),
-                    port         = port.toIntOrNull() ?: 443,
-                    uuid         = uuid.trim(),
-                    transport    = transport,
-                    path         = path.ifBlank { "/" },
-                    host         = host.trim(),
-                    security     = security,
-                    sni          = sni.trim(),
-                    fingerprint  = fingerprint.trim(),
-                    publicKey    = publicKey.trim(),
-                    shortId      = shortId.trim(),
-                    ssMethod     = ssMethod.trim(),
-                    ssPassword   = ssPassword.trim(),
-                    hystPassword = hystPwd.trim(),
+                    name            = name.ifBlank { "Unnamed" },
+                    protocol        = protocol,
+                    address         = address.trim(),
+                    port            = port.toIntOrNull() ?: 443,
+                    uuid            = uuid.trim(),
+                    transport       = transport,
+                    path            = path.ifBlank { "/" },
+                    host            = host.trim(),
+                    security        = security,
+                    sni             = sni.trim(),
+                    fingerprint     = fingerprint.trim(),
+                    publicKey       = publicKey.trim(),
+                    shortId         = shortId.trim(),
+                    ssMethod        = ssMethod.trim(),
+                    ssPassword      = ssPassword.trim(),
+                    hystPassword    = hystPwd.trim(),
                     wgPrivateKey    = wgPrivKey.trim(),
                     wgPeerPublicKey = wgPubKey.trim(),
                     wgPreSharedKey  = wgPsk.trim(),
-                    wgDns        = wgDns.trim(),
-                    wgMtu        = wgMtu.toIntOrNull() ?: 1280,
+                    wgDns           = wgDns.trim(),
+                    wgMtu           = wgMtu.toIntOrNull() ?: 1280,
                 )
                 onSave(profile)
             }) { Text(if (isEdit) "Save" else "Add") }
