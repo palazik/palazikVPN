@@ -19,17 +19,22 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class UiState(
-    val vpnState: VpnState                   = VpnState.DISCONNECTED,
-    val activeProfile: VpnProfile?           = null,
-    val profiles: List<VpnProfile>           = emptyList(),
-    val subscriptions: List<Subscription>    = emptyList(),
-    val appTheme: AppTheme                   = AppTheme.CYBER,
-    val darkMode: DarkModePreference         = DarkModePreference.SYSTEM,
-    val bytesIn: Long                        = 0L,
-    val bytesOut: Long                       = 0L,
-    val snackMessage: String?                = null,
-    val shareLink: String?                   = null,
+    val vpnState: VpnState                = VpnState.DISCONNECTED,
+    val activeProfile: VpnProfile?        = null,
+    val profiles: List<VpnProfile>        = emptyList(),
+    val subscriptions: List<Subscription> = emptyList(),
+    val appTheme: AppTheme                = AppTheme.CYBER,
+    val darkMode: DarkModePreference      = DarkModePreference.SYSTEM,
+    val pingMode: PingMode                = PingMode.TCP,
+    val bytesIn: Long                     = 0L,
+    val bytesOut: Long                    = 0L,
+    val snackMessage: String?             = null,
+    val shareLink: String?                = null,
 )
+
+private const val THEME_PREFS  = "palazik_theme"
+private const val KEY_THEME    = "app_theme"
+private const val KEY_DARKMODE = "dark_mode"
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
@@ -37,14 +42,27 @@ class MainViewModel @Inject constructor(
     private val repo: ProfileRepository,
 ) : ViewModel() {
 
+    private val themePrefs = context.getSharedPreferences(THEME_PREFS, Context.MODE_PRIVATE)
+
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
 
     init {
-        // Mirror repo state into UI state
+        // Restore persisted theme on startup
+        val savedTheme = themePrefs.getString(KEY_THEME,    AppTheme.CYBER.name)
+        val savedDark  = themePrefs.getString(KEY_DARKMODE, DarkModePreference.SYSTEM.name)
+        _ui.update { it.copy(
+            appTheme = runCatching { AppTheme.valueOf(savedTheme ?: "") }.getOrDefault(AppTheme.CYBER),
+            darkMode = runCatching { DarkModePreference.valueOf(savedDark ?: "") }.getOrDefault(DarkModePreference.SYSTEM),
+        ) }
+
+        // Mirror repo flows into UI
         viewModelScope.launch {
             repo.profiles.collect { profiles ->
-                _ui.update { it.copy(profiles = profiles, activeProfile = profiles.firstOrNull { p -> p.isActive }) }
+                _ui.update { it.copy(
+                    profiles      = profiles,
+                    activeProfile = profiles.firstOrNull { p -> p.isActive },
+                ) }
             }
         }
         viewModelScope.launch {
@@ -52,40 +70,39 @@ class MainViewModel @Inject constructor(
                 _ui.update { it.copy(subscriptions = subs) }
             }
         }
-        // Mirror service state
         viewModelScope.launch {
-            palazikVpnService.connectionState.collect { svcState ->
-                val vpnState = when (svcState) {
-                    palazikVpnService.ServiceState.RUNNING   -> VpnState.CONNECTED
-                    palazikVpnService.ServiceState.STARTING  -> VpnState.CONNECTING
-                    palazikVpnService.ServiceState.STOPPING  -> VpnState.DISCONNECTING
-                    palazikVpnService.ServiceState.STOPPED   -> VpnState.DISCONNECTED
-                }
-                _ui.update { it.copy(vpnState = vpnState) }
+            repo.pingMode.collect { mode ->
+                _ui.update { it.copy(pingMode = mode) }
             }
         }
+
+        // Mirror VPN service state
         viewModelScope.launch {
-            palazikVpnService.bytesIn.collect  { b -> _ui.update { it.copy(bytesIn = b)  } }
+            palazikVpnService.connectionState.collect { svcState ->
+                _ui.update { it.copy(vpnState = when (svcState) {
+                    palazikVpnService.ServiceState.RUNNING  -> VpnState.CONNECTED
+                    palazikVpnService.ServiceState.STARTING -> VpnState.CONNECTING
+                    palazikVpnService.ServiceState.STOPPING -> VpnState.DISCONNECTING
+                    palazikVpnService.ServiceState.STOPPED  -> VpnState.DISCONNECTED
+                }) }
+            }
         }
-        viewModelScope.launch {
-            palazikVpnService.bytesOut.collect { b -> _ui.update { it.copy(bytesOut = b) } }
-        }
+        viewModelScope.launch { palazikVpnService.bytesIn.collect  { b -> _ui.update { it.copy(bytesIn  = b) } } }
+        viewModelScope.launch { palazikVpnService.bytesOut.collect { b -> _ui.update { it.copy(bytesOut = b) } } }
     }
 
     // ── VPN toggle ────────────────────────────────────────────────────────────
 
-    /** Returns a VPN permission intent if needed, null if already granted. */
     fun prepareVpn(): Intent? = VpnService.prepare(context)
 
     fun connect() {
-        val profile = _ui.value.activeProfile ?: run {
-            snack("Select a profile first"); return
-        }
-        val intent = Intent(context, palazikVpnService::class.java).apply {
-            action = palazikVpnService.ACTION_START
-            putExtra(palazikVpnService.EXTRA_PROFILE, profile.id)
-        }
-        context.startForegroundService(intent)
+        val profile = _ui.value.activeProfile ?: run { snack("Select a profile first"); return }
+        context.startForegroundService(
+            Intent(context, palazikVpnService::class.java).apply {
+                action = palazikVpnService.ACTION_START
+                putExtra(palazikVpnService.EXTRA_PROFILE, profile.id)
+            }
+        )
     }
 
     fun disconnect() {
@@ -101,8 +118,7 @@ class MainViewModel @Inject constructor(
             VpnState.CONNECTED, VpnState.CONNECTING -> disconnect()
             else -> {
                 val prepare = prepareVpn()
-                if (prepare != null) permLauncher.launch(prepare)
-                else connect()
+                if (prepare != null) permLauncher.launch(prepare) else connect()
             }
         }
     }
@@ -111,24 +127,14 @@ class MainViewModel @Inject constructor(
 
     fun importProfileFromLink(raw: String) {
         val profile = ProfileCodec.decode(raw)
-        if (profile != null) {
-            repo.addProfile(profile)
-            snack("Profile \"${profile.name}\" imported")
-        } else {
-            snack("Could not parse link")
-        }
+        if (profile != null) { repo.addProfile(profile); snack("Profile \"${profile.name}\" imported") }
+        else snack("Could not parse link")
     }
 
-    fun addManualProfile(profile: VpnProfile) {
-        repo.addProfile(profile)
-        snack("Profile \"${profile.name}\" added")
-    }
+    fun addManualProfile(profile: VpnProfile) { repo.addProfile(profile); snack("Profile \"${profile.name}\" added") }
+    fun removeProfile(id: String)             = repo.removeProfile(id)
+    fun selectProfile(id: String)             = repo.setActiveProfile(id)
 
-    fun removeProfile(id: String) = repo.removeProfile(id)
-
-    fun selectProfile(id: String) = repo.setActiveProfile(id)
-
-    /** Generates the palazikVPN:// share link for the active profile */
     fun generateShareLink() {
         val profile = _ui.value.activeProfile ?: run { snack("No active profile"); return }
         _ui.update { it.copy(shareLink = ProfileCodec.encodePalazik(profile)) }
@@ -142,14 +148,12 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             snack("Pinging ${profile.name}…")
             val ms = repo.pingProfile(profile)
-            snack("${profile.name}: ${ms}ms")
+            snack(if (ms >= 0) "${profile.name}: ${ms}ms" else "${profile.name}: timeout")
         }
     }
 
     fun pingAll() {
-        viewModelScope.launch {
-            _ui.value.profiles.forEach { repo.pingProfile(it) }
-        }
+        viewModelScope.launch { _ui.value.profiles.forEach { repo.pingProfile(it) } }
     }
 
     // ── Subscriptions ─────────────────────────────────────────────────────────
@@ -158,8 +162,7 @@ class MainViewModel @Inject constructor(
         val sub = Subscription(name = name, url = url)
         repo.addSubscription(sub)
         viewModelScope.launch {
-            val result = repo.updateSubscription(sub)
-            result.fold(
+            repo.updateSubscription(sub).fold(
                 onSuccess = { count -> snack("Loaded $count profiles from \"$name\"") },
                 onFailure = { snack("Failed to fetch subscription") },
             )
@@ -188,8 +191,19 @@ class MainViewModel @Inject constructor(
 
     // ── Theme ─────────────────────────────────────────────────────────────────
 
-    fun setAppTheme(theme: AppTheme)          = _ui.update { it.copy(appTheme = theme) }
-    fun setDarkMode(pref: DarkModePreference) = _ui.update { it.copy(darkMode = pref) }
+    fun setAppTheme(theme: AppTheme) {
+        _ui.update { it.copy(appTheme = theme) }
+        themePrefs.edit().putString(KEY_THEME, theme.name).apply()
+    }
+
+    fun setDarkMode(pref: DarkModePreference) {
+        _ui.update { it.copy(darkMode = pref) }
+        themePrefs.edit().putString(KEY_DARKMODE, pref.name).apply()
+    }
+
+    // ── Ping mode ─────────────────────────────────────────────────────────────
+
+    fun setPingMode(mode: PingMode) = repo.setPingMode(mode)
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
