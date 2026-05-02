@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">palazikVPN</string>
+    <string name="connect">Connect</string>
+    <string name="disconnect">Disconnect</string>
+    <string name="connecting">Connecting…</string>
+    <string name="channel_vpn_name">palazikVPN Service</string>
+    <string name="notification_title">palazikVPN Active</string>
+    <string name="notification_text">Tap to manage your connection</string>
+</resources>
