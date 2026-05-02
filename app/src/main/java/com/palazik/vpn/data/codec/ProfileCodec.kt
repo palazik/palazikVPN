@@ -270,16 +270,19 @@ object ProfileCodec {
     private fun decodeTuic(raw: String): VpnProfile {
         val uri    = Uri.parse(raw)
         val params = uri.queryParameterNames.associateWith { uri.getQueryParameter(it) ?: "" }
+        val userInfo = uri.userInfo ?: ""
+        val uuid     = userInfo.substringBefore(":")
+        val password = userInfo.substringAfter(":", "")
         return VpnProfile(
-            name     = Uri.decode(uri.fragment ?: "TUIC"),
-            protocol = Protocol.TUIC,
-            address  = uri.host ?: "",
-            port     = uri.port.takeIf { it > 0 } ?: 443,
-            uuid     = uri.userInfo?.substringBefore(":") ?: "",
-            uuid.let { params["password"] ?: "" }.let { _ -> "" },   // placeholder — assign below
-            security = Security.TLS,
-            sni      = params["sni"] ?: "",
-        ).copy(ssPassword = params["password"] ?: "")
+            name       = Uri.decode(uri.fragment ?: "TUIC"),
+            protocol   = Protocol.TUIC,
+            address    = uri.host ?: "",
+            port       = uri.port.takeIf { it > 0 } ?: 443,
+            uuid       = uuid,
+            ssPassword = password.ifEmpty { params["password"] ?: "" },
+            security   = Security.TLS,
+            sni        = params["sni"] ?: "",
+        )
     }
 
     private fun decodeXhttp(raw: String): VpnProfile {
