@@ -5,7 +5,9 @@ import java.util.UUID
 enum class Protocol {
     VMESS, VLESS, SHADOWSOCKS, TROJAN,
     HYSTERIA2, WIREGUARD, SOCKS5, HTTP,
-    TUIC, REALITY, XHTTP
+    TUIC
+    // XHTTP removed — it is a Transport, not a Protocol (use VLESS + Transport.XHTTP)
+    // REALITY removed — it is a Security layer, not a Protocol (use Security.REALITY)
 }
 
 enum class Transport { TCP, WS, GRPC, XHTTP, H2, QUIC }
