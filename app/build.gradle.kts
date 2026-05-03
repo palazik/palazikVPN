@@ -17,6 +17,10 @@ android {
         versionCode   = 1
         versionName   = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -48,7 +52,36 @@ android {
     }
 }
 
+// ── Download libv2ray.aar if missing ──────────────────────────────────────────
+// libv2ray.aar = AndroidLibXrayLite — xray-core compiled as a Go mobile AAR.
+// It provides Libv2ray.newV2RayPoint() which accepts a TUN fd and runs the full
+// xray-core Go runtime (VLESS, VMess, XHTTP, REALITY, TLS, tun2socks — everything).
+//
+// Source: https://github.com/2dust/AndroidLibXrayLite
+// The task below downloads it automatically on first build.
+// For manual download: grab libv2ray.aar from the releases page and put it in app/libs/
+
+val libxrayVersion = "26.2.6"
+
+tasks.register("downloadLibxray") {
+    description = "Download libv2ray.aar from AndroidLibXrayLite releases if not present"
+    val destFile = file("libs/libv2ray.aar")
+    onlyIf { !destFile.exists() }
+    doLast {
+        destFile.parentFile.mkdirs()
+        val url = "https://github.com/2dust/AndroidLibXrayLite/releases/download/$libxrayVersion/libv2ray.aar"
+        println("Downloading libv2ray.aar $libxrayVersion...")
+        ant.invokeMethod("get", mapOf("src" to url, "dest" to destFile, "verbose" to "true"))
+        println("Done: ${destFile.length()} bytes")
+    }
+}
+
+tasks.named("preBuild") { dependsOn("downloadLibxray") }
+
 dependencies {
+    // libv2ray.aar — xray-core for Android (downloaded by downloadLibxray task above)
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
+
     // ── Core ──────────────────────────────────────────────────────────────────
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -74,7 +107,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
 
-    // ── Networking (subscription fetch + ping) ────────────────────────────────
+    // ── Networking ────────────────────────────────────────────────────────────
     implementation(libs.okhttp)
 
     // ── Test ──────────────────────────────────────────────────────────────────
