@@ -6,6 +6,68 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// ── Download libv2ray.aar at CONFIGURATION time ───────────────────────────────
+// This MUST be top-level code, not inside a task. Gradle resolves fileTree()
+// dependencies during configuration — before any task runs — so the AAR must
+// already exist on disk by the time the dependencies block is evaluated.
+val libxrayVersion = "26.5.3"
+val libxrayFile    = file("libs/libv2ray.aar")
+
+if (!libxrayFile.exists()) {
+    libxrayFile.parentFile.mkdirs()
+    val url = "https://github.com/2dust/AndroidLibXrayLite/releases/download/v$libxrayVersion/libv2ray.aar"
+    println(">>> Downloading libv2ray.aar v$libxrayVersion …")
+    val proc = ProcessBuilder("wget", "-q", "--show-progress", "-O",
+            libxrayFile.absolutePath, url)
+        .redirectErrorStream(true)
+        .start()
+    proc.waitFor()
+    // fallback to curl if wget failed or produced an empty/tiny file
+    if (!libxrayFile.exists() || libxrayFile.length() < 1_000) {
+        libxrayFile.delete()
+        val proc2 = ProcessBuilder("curl", "-sL", "-o", libxrayFile.absolutePath, url)
+            .redirectErrorStream(true)
+            .start()
+        proc2.waitFor()
+    }
+    println(">>> libv2ray.aar: ${libxrayFile.length()} bytes")
+}
+
+// ── Download geo data files at CONFIGURATION time ─────────────────────────────
+val assetsDir   = file("src/main/assets")
+val geoipFile   = file("$assetsDir/geoip.dat")
+val geositeFile = file("$assetsDir/geosite.dat")
+
+fun downloadIfMissing(url: String, dest: java.io.File) {
+    if (dest.exists() && dest.length() > 1_000) return
+    dest.parentFile.mkdirs()
+    println(">>> Downloading ${dest.name} …")
+    val proc = ProcessBuilder("wget", "-q", "--show-progress", "-O",
+            dest.absolutePath, url)
+        .redirectErrorStream(true)
+        .start()
+    proc.waitFor()
+    if (!dest.exists() || dest.length() < 1_000) {
+        dest.delete()
+        val proc2 = ProcessBuilder("curl", "-sL", "-o", dest.absolutePath, url)
+            .redirectErrorStream(true)
+            .start()
+        proc2.waitFor()
+    }
+    println(">>> ${dest.name}: ${dest.length()} bytes")
+}
+
+downloadIfMissing(
+    "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat",
+    geoipFile,
+)
+downloadIfMissing(
+    "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat",
+    geositeFile,
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 android {
     namespace         = "com.palazik.vpn"
     compileSdk        = 35
@@ -24,7 +86,10 @@ android {
         release {
             isMinifyEnabled   = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -42,77 +107,8 @@ android {
     lint {
         disable += setOf("BlockedPrivateApi")
         checkReleaseBuilds = false
-        abortOnError = false
+        abortOnError       = false
     }
-}
-
-// ── Download libv2ray.aar ─────────────────────────────────────────────────────
-// libv2ray.aar comes from AndroidLibXrayLite, NOT from v2rayNG releases.
-// v2rayNG releases only contain the APK — the AAR is a separate artifact.
-val libxrayVersion = "26.5.3"   // AndroidLibXrayLite release tag
-val libxrayFile    = file("libs/libv2ray.aar")
-
-tasks.register("downloadLibxray") {
-    description = "Download libv2ray.aar from AndroidLibXrayLite releases"
-    onlyIf { !libxrayFile.exists() }
-    doLast {
-        libxrayFile.parentFile.mkdirs()
-        val url = "https://github.com/2dust/AndroidLibXrayLite/releases/download/v$libxrayVersion/libv2ray.aar"
-        println("Downloading libv2ray.aar v$libxrayVersion from AndroidLibXrayLite...")
-        val result = exec {
-            commandLine("wget", "-q", "--show-progress", "-O", libxrayFile.absolutePath, url)
-            isIgnoreExitValue = true
-        }
-        if (result.exitValue != 0 || !libxrayFile.exists() || libxrayFile.length() < 1000) {
-            exec { commandLine("curl", "-L", "-o", libxrayFile.absolutePath, url) }
-        }
-        require(libxrayFile.exists() && libxrayFile.length() > 1000) {
-            "Failed to download libv2ray.aar from AndroidLibXrayLite v$libxrayVersion"
-        }
-        println("libv2ray.aar downloaded: ${libxrayFile.length()} bytes")
-    }
-}
-
-// ── Download geo data files ───────────────────────────────────────────────────
-val geoipFile   = file("src/main/assets/geoip.dat")
-val geositeFile = file("src/main/assets/geosite.dat")
-
-tasks.register("downloadGeoFiles") {
-    description = "Download geoip.dat and geosite.dat from v2fly releases if not present"
-    onlyIf { !geoipFile.exists() || !geositeFile.exists() }
-    doLast {
-        geoipFile.parentFile.mkdirs()
-
-        fun download(url: String, dest: java.io.File) {
-            if (dest.exists()) return
-            println("Downloading ${dest.name}...")
-            val result = exec {
-                commandLine("wget", "-q", "--show-progress", "-O", dest.absolutePath, url)
-                isIgnoreExitValue = true
-            }
-            if (result.exitValue != 0 || !dest.exists() || dest.length() < 1000) {
-                exec { commandLine("curl", "-L", "-o", dest.absolutePath, url) }
-            }
-            require(dest.exists() && dest.length() > 1000) {
-                "Failed to download ${dest.name} from $url"
-            }
-            println("${dest.name} downloaded: ${dest.length()} bytes")
-        }
-
-        download(
-            "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat",
-            geoipFile,
-        )
-        download(
-            "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat",
-            geositeFile,
-        )
-    }
-}
-
-tasks.named("preBuild") {
-    dependsOn("downloadLibxray")
-    dependsOn("downloadGeoFiles")
 }
 
 dependencies {
