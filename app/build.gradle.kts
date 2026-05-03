@@ -47,16 +47,16 @@ android {
 }
 
 // ── Download libv2ray.aar ─────────────────────────────────────────────────────
-val libxrayVersion = "25.12.2"
+val libxrayVersion = "1.10.4"   // v2rayNG release that bundles tun2socks
 val libxrayFile    = file("libs/libv2ray.aar")
 
 tasks.register("downloadLibxray") {
-    description = "Download libv2ray.aar from AndroidLibXrayLite if not present"
+    description = "Download libv2ray.aar from v2rayNG releases"
     onlyIf { !libxrayFile.exists() }
     doLast {
         libxrayFile.parentFile.mkdirs()
-        val url = "https://github.com/2dust/AndroidLibXrayLite/releases/download/v$libxrayVersion/libv2ray.aar"
-        println("Downloading libv2ray.aar v$libxrayVersion...")
+        val url = "https://github.com/2dust/v2rayNG/releases/download/$libxrayVersion/libv2ray.aar"
+        println("Downloading libv2ray.aar v$libxrayVersion from v2rayNG...")
         val result = exec {
             commandLine("wget", "-q", "--show-progress", "-O", libxrayFile.absolutePath, url)
             isIgnoreExitValue = true
@@ -65,7 +65,7 @@ tasks.register("downloadLibxray") {
             exec { commandLine("curl", "-L", "-o", libxrayFile.absolutePath, url) }
         }
         require(libxrayFile.exists() && libxrayFile.length() > 1000) {
-            "Failed to download libv2ray.aar. Download manually from:\n$url\nPlace in app/libs/"
+            "Failed to download libv2ray.aar from v2rayNG $libxrayVersion"
         }
         println("libv2ray.aar downloaded: ${libxrayFile.length()} bytes")
     }
