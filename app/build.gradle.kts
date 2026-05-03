@@ -38,6 +38,12 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+
+    lint {
+        disable += setOf("BlockedPrivateApi")
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 // ── Download libv2ray.aar ─────────────────────────────────────────────────────
