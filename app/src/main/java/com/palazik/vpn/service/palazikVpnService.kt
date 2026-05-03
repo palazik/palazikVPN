@@ -73,21 +73,17 @@ class palazikVpnService : VpnService() {
                 copyAssetIfNeeded("geoip.dat")
                 copyAssetIfNeeded("geosite.dat")
 
-                // Set asset path so xray finds geo files
                 Libv2ray.initCoreEnv(filesDir.absolutePath, "")
 
-                // Establish TUN before starting core
+                // Establish TUN before building config so we have the fd
                 val iface = buildVpnInterface()
                 vpnInterface = iface
+                val tunFd = iface.fd
 
-                // Embed tunFd into the xray config so the core can open it directly.
-                // startLoop() takes only config string — tunFd is passed via env var
-                // that initCoreEnv already handles through xray's internal mechanism.
-                // We set it as an OS env var via the standard Java API before startLoop.
-                setenv("xray.tun.fd", iface.fd.toString())
-
-                val config = XrayConfigBuilder.build(profile)
-                Log.d(TAG, "Starting xray for ${profile.name} tunFd=${iface.fd}")
+                // Build config with tunFd embedded as /proc/self/fd/<n>
+                // xray's tun inbound reads the fd via this path on Android
+                val config = XrayConfigBuilder.build(profile, tunFd)
+                Log.d(TAG, "Starting xray for ${profile.name} tunFd=$tunFd")
 
                 val controller = Libv2ray.newCoreController(object : CoreCallbackHandler {
                     override fun startup(): Long {
@@ -110,53 +106,11 @@ class palazikVpnService : VpnService() {
                 })
 
                 coreController = controller
-
-                // startLoop blocks until stopped
                 controller.startLoop(config)
 
             } catch (e: Exception) {
                 Log.e(TAG, "VPN start failed: ${e.message}", e)
                 withContext(Dispatchers.Main) { stopVpn() }
-            }
-        }
-    }
-
-    /**
-     * Set an OS-level environment variable so the Go runtime (xray core) can read it
-     * via os.Getenv(). Java System.setProperty() is JVM-only and invisible to native code.
-     * We use Android's libc setenv via a small reflection trick on ProcessEnvironment.
-     */
-    @Suppress("DiscouragedPrivateApi")
-    private fun setenv(key: String, value: String) {
-        try {
-            val processEnvironment = Class.forName("java.lang.ProcessEnvironment")
-            val theUnmodifiableEnvironment = processEnvironment
-                .getDeclaredField("theUnmodifiableEnvironment")
-                .apply { isAccessible = true }
-                .get(null)
-            // The backing map of theUnmodifiableEnvironment
-            val m = theUnmodifiableEnvironment.javaClass
-                .getDeclaredField("m")
-                .apply { isAccessible = true }
-                .get(theUnmodifiableEnvironment) as MutableMap<Any, Any>
-            // ProcessEnvironment uses special String subclasses for keys/values
-            val theEnvironment = processEnvironment
-                .getDeclaredField("theEnvironment")
-                .apply { isAccessible = true }
-                .get(null) as MutableMap<Any, Any>
-            val strClass = Class.forName("java.lang.ProcessEnvironment\$Variable")
-            val valueOf = strClass.getDeclaredMethod("valueOf", String::class.java)
-                .apply { isAccessible = true }
-            val k = valueOf.invoke(null, key)
-            val v = valueOf.invoke(null, value)
-            theEnvironment[k!!] = v!!
-            m[k] = v
-            Log.d(TAG, "setenv $key=$value")
-        } catch (e: Exception) {
-            // Fallback: try native setenv via Runtime — unreliable but worth trying
-            Log.w(TAG, "setenv reflection failed, trying native: ${e.message}")
-            runCatching {
-                Runtime.getRuntime().exec(arrayOf("sh", "-c", "export $key=$value"))
             }
         }
     }
