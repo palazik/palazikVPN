@@ -41,11 +41,7 @@ android {
 }
 
 // ── Download libv2ray.aar ─────────────────────────────────────────────────────
-// libv2ray.aar = AndroidLibXrayLite — xray-core as Go mobile AAR.
-// Uses wget/curl with --location to follow GitHub release redirects.
-// ant.get does NOT follow redirects and always fails on GitHub URLs.
-
-val libxrayVersion = "25.12.2"  // tag from AndroidLibXrayLite releases (without 'v' prefix in URL)
+val libxrayVersion = "25.12.2"
 val libxrayFile    = file("libs/libv2ray.aar")
 
 tasks.register("downloadLibxray") {
@@ -55,16 +51,12 @@ tasks.register("downloadLibxray") {
         libxrayFile.parentFile.mkdirs()
         val url = "https://github.com/2dust/AndroidLibXrayLite/releases/download/v$libxrayVersion/libv2ray.aar"
         println("Downloading libv2ray.aar v$libxrayVersion...")
-        // wget follows redirects by default; curl needs --location
         val result = exec {
             commandLine("wget", "-q", "--show-progress", "-O", libxrayFile.absolutePath, url)
             isIgnoreExitValue = true
         }
         if (result.exitValue != 0 || !libxrayFile.exists() || libxrayFile.length() < 1000) {
-            // fallback to curl
-            exec {
-                commandLine("curl", "-L", "-o", libxrayFile.absolutePath, url)
-            }
+            exec { commandLine("curl", "-L", "-o", libxrayFile.absolutePath, url) }
         }
         require(libxrayFile.exists() && libxrayFile.length() > 1000) {
             "Failed to download libv2ray.aar. Download manually from:\n$url\nPlace in app/libs/"
@@ -73,10 +65,49 @@ tasks.register("downloadLibxray") {
     }
 }
 
-tasks.named("preBuild") { dependsOn("downloadLibxray") }
+// ── Download geo data files ───────────────────────────────────────────────────
+val geoipFile   = file("src/main/assets/geoip.dat")
+val geositeFile = file("src/main/assets/geosite.dat")
+
+tasks.register("downloadGeoFiles") {
+    description = "Download geoip.dat and geosite.dat from v2fly releases if not present"
+    onlyIf { !geoipFile.exists() || !geositeFile.exists() }
+    doLast {
+        geoipFile.parentFile.mkdirs()
+
+        fun download(url: String, dest: java.io.File) {
+            if (dest.exists()) return
+            println("Downloading ${dest.name}...")
+            val result = exec {
+                commandLine("wget", "-q", "--show-progress", "-O", dest.absolutePath, url)
+                isIgnoreExitValue = true
+            }
+            if (result.exitValue != 0 || !dest.exists() || dest.length() < 1000) {
+                exec { commandLine("curl", "-L", "-o", dest.absolutePath, url) }
+            }
+            require(dest.exists() && dest.length() > 1000) {
+                "Failed to download ${dest.name} from $url"
+            }
+            println("${dest.name} downloaded: ${dest.length()} bytes")
+        }
+
+        download(
+            "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat",
+            geoipFile,
+        )
+        download(
+            "https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat",
+            geositeFile,
+        )
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("downloadLibxray")
+    dependsOn("downloadGeoFiles")
+}
 
 dependencies {
-    // xray-core AAR — downloaded by downloadLibxray task above
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
 
     implementation(libs.androidx.core.ktx)
