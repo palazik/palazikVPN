@@ -14,8 +14,9 @@ import com.palazik.vpn.ui.MainActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import libv2ray.V2RayPoint
-import libv2ray.V2RayVPNServiceSupportsSet
+import libv2ray.CoreCallbackHandler
+import libv2ray.CoreController
+import libv2ray.Libv2ray
 
 class palazikVpnService : VpnService() {
 
@@ -40,7 +41,7 @@ class palazikVpnService : VpnService() {
     enum class ServiceState { STOPPED, STARTING, RUNNING, STOPPING }
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private var v2rayPoint: V2RayPoint? = null
+    private var coreController: CoreController? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var statsJob: Job? = null
 
@@ -70,84 +71,63 @@ class palazikVpnService : VpnService() {
 
         scope.launch {
             try {
+                // 1. Copy geo assets to filesDir where xray can read them
                 copyAssetIfNeeded("geoip.dat")
                 copyAssetIfNeeded("geosite.dat")
 
-                val config = XrayConfigBuilder.build(profile)
-                Log.d(TAG, "Config built for ${profile.name}")
+                // 2. Init xray env — sets asset path so geo files are found
+                Libv2ray.initCoreEnv(filesDir.absolutePath, "")
 
-                // Build TUN interface BEFORE initialising xray so the fd is ready
+                // 3. Build xray JSON config
+                val config = XrayConfigBuilder.build(profile)
+                Log.d(TAG, "Config built for ${profile.name} (${profile.protocol}+${profile.transport})")
+
+                // 4. Establish TUN interface — must happen before StartLoop
                 val iface = buildVpnInterface()
                 vpnInterface = iface
                 val tunFd = iface.fd
 
-                // Initialise the V2RayPoint with our service callbacks
-                val point = V2RayPoint(
-                    object : V2RayVPNServiceSupportsSet {
-                        override fun shutdown(): Long {
-                            Log.d(TAG, "V2RayVPNServiceSupportsSet.shutdown()")
-                            this@palazikVpnService.stopVpn()
-                            return 0
-                        }
-
-                        override fun prepare(): Long {
-                            // Called by the core when it needs a fresh TUN fd
-                            // Re-establish if needed; return 0 on success
-                            return 0
-                        }
-
-                        override fun protect(socket: Long): Boolean {
-                            // Protect native sockets so they bypass the VPN TUN
-                            return this@palazikVpnService.protect(socket.toInt())
-                        }
-
-                        override fun onEmitStatus(level: Long, msg: String): Long {
-                            Log.d(TAG, "core: $msg")
-                            return 0
-                        }
-
-                        override fun setup(fd: String): Long {
-                            // Called by core to set the TUN fd.
-                            // We already established the interface — just return 0.
-                            Log.d(TAG, "setup() called with fd=$fd")
-                            return 0
-                        }
-                    },
-                    // isRunning callback
-                    false,
-                )
-
-                point.configureFileContent = config
-                point.domainName           = profile.address
-                // Pass TUN fd — the AAR reads this via the env path set during configureFileContent
-                point.enableLocalDns = true
-                point.blockedApps    = ""
-                point.vpnFd          = tunFd
-
-                point.runLoop()
-                v2rayPoint = point
-
-                withContext(Dispatchers.Main) {
-                    _connectionState.value = ServiceState.RUNNING
-                    updateNotification("Connected — ${profile.name}")
-                }
-
-                _bytesIn.value  = 0L
-                _bytesOut.value = 0L
-
-                statsJob = scope.launch {
-                    while (isActive) {
-                        delay(1000)
-                        runCatching {
-                            _bytesIn.value  += point.queryStats("proxy", "downlink")
-                            _bytesOut.value += point.queryStats("proxy", "uplink")
-                        }
+                // 5. Create controller with callbacks
+                val controller = Libv2ray.newCoreController(object : CoreCallbackHandler {
+                    override fun startup(): Int {
+                        Log.d(TAG, "xray core started")
+                        _connectionState.value = ServiceState.RUNNING
+                        updateNotification("Connected — ${profile.name}")
+                        startStatsLoop(this@apply as CoreController)
+                        return 0
                     }
-                }
+
+                    override fun shutdown(): Int {
+                        Log.d(TAG, "xray core stopped")
+                        return 0
+                    }
+
+                    override fun onEmitStatus(level: Int, msg: String): Int {
+                        Log.d(TAG, "xray[$level]: $msg")
+                        return 0
+                    }
+                })
+
+                coreController = controller
+
+                // 6. StartLoop — blocks until stopped; tunFd routes traffic into xray
+                controller.startLoop(config, tunFd.toLong().toInt())
 
             } catch (e: Exception) {
                 Log.e(TAG, "VPN start failed: ${e.message}", e)
                 withContext(Dispatchers.Main) { stopVpn() }
+            }
+        }
+    }
+
+    private fun startStatsLoop(controller: CoreController) {
+        statsJob = scope.launch {
+            while (isActive) {
+                delay(1000)
+                runCatching {
+                    _bytesIn.value  += controller.queryStats("proxy", "downlink")
+                    _bytesOut.value += controller.queryStats("proxy", "uplink")
+                }
             }
         }
     }
@@ -157,8 +137,8 @@ class palazikVpnService : VpnService() {
     private fun stopVpn() {
         _connectionState.value = ServiceState.STOPPING
         statsJob?.cancel(); statsJob = null
-        runCatching { v2rayPoint?.stopLoop() }
-        v2rayPoint = null
+        runCatching { coreController?.stopLoop() }
+        coreController = null
         runCatching { vpnInterface?.close() }
         vpnInterface = null
         _connectionState.value = ServiceState.STOPPED
@@ -168,7 +148,7 @@ class palazikVpnService : VpnService() {
         stopSelf()
     }
 
-    // ── TUN interface ─────────────────────────────────────────────────────────
+    // ── TUN ───────────────────────────────────────────────────────────────────
 
     private fun buildVpnInterface(): ParcelFileDescriptor =
         Builder()
@@ -180,8 +160,7 @@ class palazikVpnService : VpnService() {
             .setMtu(1500)
             .addDisallowedApplication(packageName)
             .establish()
-            ?: throw IllegalStateException("VpnService.Builder.establish() returned null — " +
-                "VPN permission not granted?")
+            ?: throw IllegalStateException("establish() returned null — VPN permission not granted?")
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -192,7 +171,7 @@ class palazikVpnService : VpnService() {
             assets.open(filename).use { it.copyTo(dest.outputStream()) }
             Log.d(TAG, "Copied $filename to filesDir")
         }.onFailure {
-            Log.w(TAG, "$filename missing from assets — xray geo-routing will be limited")
+            Log.w(TAG, "$filename missing from assets: ${it.message}")
         }
     }
 
