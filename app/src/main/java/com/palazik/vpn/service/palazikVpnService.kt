@@ -14,24 +14,27 @@ import com.palazik.vpn.ui.MainActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import libv2ray.CoreCallbackHandler
+import libv2ray.CoreController
 import libv2ray.Libv2ray
-import libv2ray.V2RayPoint
-import libv2ray.V2RayVPNServiceSupportsSet
 
 /**
  * palazikVpnService
  *
- * Architecture (same as v2rayNG):
+ * Uses AndroidLibXrayLite (libv2ray.aar) — xray-core compiled as Go mobile AAR.
  *
- *   1. VpnService.Builder creates TUN interface
- *   2. TUN fd → libxray (AndroidLibXrayLite .aar, full xray-core Go runtime)
- *   3. libxray handles everything: TCP stack, VLESS, VMess, XHTTP, REALITY, TLS, etc.
- *   4. This class only manages: TUN setup, lifecycle, notification, traffic stats
+ * Real API (from libv2ray_main.go source):
+ *   - Libv2ray.initCoreEnv(assetPath, xudpKey)  — sets up asset/cert paths
+ *   - CoreController                              — manages xray instance lifecycle
+ *   - CoreCallbackHandler                        — interface: Startup/Shutdown/OnEmitStatus
+ *   - TUN fd passed via env var "xray.tun.fd"    — set before StartCore()
+ *   - CoreController.StartCore(config)           — starts xray with JSON config string
+ *   - CoreController.StopCore()                  — stops xray
+ *   - CoreController.IsRunning                   — current state
  *
  * libv2ray.aar setup:
- *   Download from https://github.com/2dust/AndroidLibXrayLite/releases/latest
- *   Place in app/libs/libv2ray.aar
- *   build.gradle.kts already has the downloadLibxray task that does this automatically.
+ *   Run: ./gradlew downloadLibxray   (or let preBuild do it automatically)
+ *   This downloads libv2ray.aar into app/libs/ from AndroidLibXrayLite releases.
  */
 class palazikVpnService : VpnService() {
 
@@ -50,14 +53,14 @@ class palazikVpnService : VpnService() {
         val bytesIn:  StateFlow<Long> = _bytesIn
         val bytesOut: StateFlow<Long> = _bytesOut
 
-        // Set by MainViewModel before calling ACTION_START
+        // Set by MainViewModel before sending ACTION_START
         @Volatile var activeProfile: VpnProfile? = null
     }
 
     enum class ServiceState { STOPPED, STARTING, RUNNING, STOPPING }
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private var v2rayPoint: V2RayPoint? = null
+    private var coreController: CoreController? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var statsJob: Job? = null
 
@@ -78,7 +81,7 @@ class palazikVpnService : VpnService() {
 
     private fun startVpn() {
         val profile = activeProfile ?: run {
-            Log.e(TAG, "No active profile set")
+            Log.e(TAG, "activeProfile not set — cannot start")
             return
         }
 
@@ -87,57 +90,54 @@ class palazikVpnService : VpnService() {
 
         scope.launch {
             try {
-                // 1. Build xray JSON config from the VpnProfile
+                // 1. Init libxray env — pass assets dir for geoip.dat / geosite.dat
+                val assetPath = applicationContext.filesDir.absolutePath
+                Libv2ray.initCoreEnv(assetPath, "")
+
+                // 2. Build xray JSON config from profile
                 val config = XrayConfigBuilder.build(profile)
-                Log.d(TAG, "Starting xray with config for: ${profile.name} " +
-                    "(${profile.protocol} + ${profile.transport})")
+                Log.d(TAG, "xray config built for ${profile.name} (${profile.protocol}+${profile.transport})")
 
-                // 2. Create V2RayPoint — this is the libxray entry point
-                val point = Libv2ray.newV2RayPoint(
-                    object : V2RayVPNServiceSupportsSet {
-                        // Called by libxray when it opens a raw socket that needs to
-                        // bypass the VPN to prevent routing loops
-                        override fun setup(fd: Long): Long {
-                            protect(fd.toInt())
-                            return 0
-                        }
-                        override fun prepare(): Long  = 0
-                        override fun shutdown(): Long = 0
-                        override fun onEmitStatus(status: String): Long {
-                            Log.d(TAG, "xray status: $status")
-                            return 0
-                        }
-                        override fun getVpnServiceStatus(): Long =
-                            if (v2rayPoint?.isRunning == true) 1L else 0L
-                    },
-                    false
-                )
-
-                // 3. Feed the xray config
-                point.configureFileContent = config
-                point.domainName = profile.sni.ifEmpty { profile.address }
-
-                // 4. Create TUN — must happen AFTER point is configured
+                // 3. Create TUN interface
                 val iface = buildVpnInterface()
                 vpnInterface = iface
 
-                // 5. Give TUN fd to libxray and start the Go runtime
-                point.vpnFd = iface.fd.toLong()
-                point.runLoop()
-                v2rayPoint = point
+                // 4. Pass TUN fd to xray via env var — libxray reads "xray.tun.fd" on StartCore()
+                System.setProperty("xray.tun.fd", iface.fd.toString())
 
-                _connectionState.value = ServiceState.RUNNING
+                // 5. Create controller with callback handler
+                val controller = CoreController()
+                controller.CallbackHandler = object : CoreCallbackHandler {
+                    override fun Startup(): Int {
+                        Log.d(TAG, "xray core started")
+                        _connectionState.value = ServiceState.RUNNING
+                        updateNotification("Connected — ${profile.name}")
+                        return 0
+                    }
+                    override fun Shutdown(): Int {
+                        Log.d(TAG, "xray core stopped")
+                        return 0
+                    }
+                    override fun OnEmitStatus(level: Int, msg: String): Int {
+                        Log.d(TAG, "xray[$level]: $msg")
+                        return 0
+                    }
+                }
+
+                // 6. Start xray core with config
+                controller.StartCore(config)
+                coreController = controller
+
                 _bytesIn.value  = 0L
                 _bytesOut.value = 0L
-                updateNotification("Connected — ${profile.name}")
 
-                // 6. Poll traffic stats every second
+                // 7. Poll traffic stats
                 statsJob = scope.launch {
                     while (isActive) {
                         delay(1000)
                         runCatching {
-                            _bytesIn.value  = point.queryStats("inbound>>>socks>>>traffic>>>downlink")
-                            _bytesOut.value = point.queryStats("inbound>>>socks>>>traffic>>>uplink")
+                            _bytesIn.value  = controller.QueryStats("inbound>>>socks>>>traffic>>>downlink")
+                            _bytesOut.value = controller.QueryStats("inbound>>>socks>>>traffic>>>uplink")
                         }
                     }
                 }
@@ -152,27 +152,26 @@ class palazikVpnService : VpnService() {
     private fun buildVpnInterface(): ParcelFileDescriptor =
         Builder()
             .setSession("palazikVPN")
-            // xray-core default TUN range — matches XrayConfigBuilder fakeip pool
-            .addAddress("26.26.26.1", 24)
+            .addAddress("26.26.26.1", 24)     // xray-core default TUN client addr
+            .addRoute("0.0.0.0", 0)           // route all IPv4
+            .addRoute("::", 0)                // route all IPv6
             .addDnsServer("1.1.1.1")
             .addDnsServer("8.8.8.8")
-            .addRoute("0.0.0.0", 0)
-            .addRoute("::", 0)
             .setMtu(1500)
-            // Exclude our own app to prevent routing loops
-            .addDisallowedApplication(packageName)
+            .addDisallowedApplication(packageName) // don't route our own traffic into VPN
             .establish()
-            ?: throw IllegalStateException("VPN establish() returned null — permission not granted?")
+            ?: throw IllegalStateException("VPN establish() returned null — permission missing?")
 
     // ── Stop ──────────────────────────────────────────────────────────────────
 
     private fun stopVpn() {
         _connectionState.value = ServiceState.STOPPING
         statsJob?.cancel(); statsJob = null
-        runCatching { v2rayPoint?.stopLoop() }
-        v2rayPoint = null
+        runCatching { coreController?.StopCore() }
+        coreController = null
         runCatching { vpnInterface?.close() }
         vpnInterface = null
+        System.clearProperty("xray.tun.fd")
         _connectionState.value = ServiceState.STOPPED
         _bytesIn.value  = 0L
         _bytesOut.value = 0L
