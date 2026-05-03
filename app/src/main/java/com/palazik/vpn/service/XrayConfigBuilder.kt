@@ -17,9 +17,13 @@ object XrayConfigBuilder {
             put("policy",    buildPolicy())
         }.toString(2)
 
+    // ── Log ───────────────────────────────────────────────────────────────────
+
     private fun buildLog() = JSONObject().apply {
         put("loglevel", "warning")
     }
+
+    // ── Inbounds ──────────────────────────────────────────────────────────────
 
     private fun buildInbounds() = JSONArray().apply {
         put(JSONObject().apply {
@@ -47,6 +51,8 @@ object XrayConfigBuilder {
         })
     }
 
+    // ── Outbounds ─────────────────────────────────────────────────────────────
+
     private fun buildOutbounds(profile: VpnProfile) = JSONArray().apply {
         put(buildProxyOutbound(profile))
         put(JSONObject().apply {
@@ -63,23 +69,42 @@ object XrayConfigBuilder {
 
     private fun buildProxyOutbound(profile: VpnProfile) = JSONObject().apply {
         put("tag", "proxy")
+
         when (profile.protocol) {
             Protocol.VLESS       -> buildVless(this, profile)
             Protocol.VMESS       -> buildVmess(this, profile)
             Protocol.SHADOWSOCKS -> buildShadowsocks(this, profile)
             Protocol.TROJAN      -> buildTrojan(this, profile)
             Protocol.HYSTERIA2   -> buildHysteria2(this, profile)
+            Protocol.WIREGUARD   -> buildWireguard(this, profile)
             Protocol.SOCKS5      -> buildSocksOut(this, profile)
+            Protocol.TUIC        -> buildTuic(this, profile)
             else                 -> buildVless(this, profile)
         }
-        put("streamSettings", buildStreamSettings(profile))
-        val useMux = profile.transport !in listOf(Transport.XHTTP, Transport.QUIC) &&
-                profile.protocol !in listOf(Protocol.HYSTERIA2, Protocol.WIREGUARD)
+
+        // streamSettings only applies to TCP-based proxy protocols.
+        // Hysteria2 and WireGuard handle their own transport — adding streamSettings
+        // to them will cause Xray to fail to parse the config.
+        val needsStream = profile.protocol !in listOf(
+            Protocol.HYSTERIA2, Protocol.WIREGUARD
+        )
+        if (needsStream) {
+            put("streamSettings", buildStreamSettings(profile))
+        }
+
+        // Mux: disable for transports/protocols that don't support it or break with it.
+        // XHTTP, QUIC, Hysteria2, WireGuard, TUIC all must have mux disabled.
+        val useMux = profile.protocol !in listOf(
+            Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.TUIC, Protocol.SOCKS5
+        ) && profile.transport !in listOf(Transport.XHTTP, Transport.QUIC)
+
         put("mux", JSONObject().apply {
             put("enabled", useMux)
             if (useMux) put("concurrency", 8)
         })
     }
+
+    // ── Protocol builders ─────────────────────────────────────────────────────
 
     private fun buildVless(obj: JSONObject, p: VpnProfile) {
         obj.put("protocol", "vless")
@@ -92,6 +117,7 @@ object XrayConfigBuilder {
                         put(JSONObject().apply {
                             put("id", p.uuid)
                             put("encryption", "none")
+                            // flow is required for XTLS-Vision (Reality/XTLS security)
                             val flow = when (p.security) {
                                 Security.REALITY, Security.XTLS -> "xtls-rprx-vision"
                                 else -> ""
@@ -169,6 +195,32 @@ object XrayConfigBuilder {
         })
     }
 
+    private fun buildWireguard(obj: JSONObject, p: VpnProfile) {
+        // BUG FIX: WireGuard was missing — fell through to buildVless which
+        // produced a completely wrong config for WireGuard profiles.
+        obj.put("protocol", "wireguard")
+        obj.put("settings", JSONObject().apply {
+            put("secretKey", p.wgPrivateKey)
+            put("address", JSONArray().apply {
+                put(p.address.ifEmpty { "10.0.0.2/32" })
+            })
+            put("peers", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("publicKey",    p.wgPeerPublicKey)
+                    put("allowedIPs",   JSONArray().apply { put("0.0.0.0/0"); put("::/0") })
+                    // endpoint: use wgEndpoint if set, otherwise address:port
+                    val endpoint = p.wgEndpoint.ifEmpty { "${p.address}:${p.port}" }
+                    put("endpoint", endpoint)
+                    if (p.wgPreSharedKey.isNotEmpty()) put("preSharedKey", p.wgPreSharedKey)
+                })
+            })
+            put("mtu", p.wgMtu)
+            if (p.wgDns.isNotEmpty()) {
+                put("domainStrategy", "UseIPv4")
+            }
+        })
+    }
+
     private fun buildSocksOut(obj: JSONObject, p: VpnProfile) {
         obj.put("protocol", "socks")
         obj.put("settings", JSONObject().apply {
@@ -176,20 +228,48 @@ object XrayConfigBuilder {
                 put(JSONObject().apply {
                     put("address", p.address)
                     put("port",    p.port)
+                    // include auth if uuid is set (uuid field stores socks5 username:password)
+                    if (p.uuid.isNotEmpty() && p.uuid.contains(":")) {
+                        put("users", JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("user", p.uuid.substringBefore(":"))
+                                put("pass", p.uuid.substringAfter(":"))
+                            })
+                        })
+                    }
                 })
             })
         })
     }
 
+    private fun buildTuic(obj: JSONObject, p: VpnProfile) {
+        // BUG FIX: TUIC was missing — fell through to buildVless.
+        // Note: Xray-core supports TUIC v5. ssPassword field holds the TUIC password.
+        obj.put("protocol", "tuic")
+        obj.put("settings", JSONObject().apply {
+            put("server",   p.address)
+            put("port",     p.port)
+            put("uuid",     p.uuid)
+            put("password", p.ssPassword)
+            put("congestionControl", "bbr")
+            put("udpRelayMode",      "native")
+            put("zeroRttHandshake",  false)
+        })
+    }
+
+    // ── Stream settings ───────────────────────────────────────────────────────
+
     private fun buildStreamSettings(p: VpnProfile) = JSONObject().apply {
-        put("network", when (p.transport) {
+        val network = when (p.transport) {
             Transport.TCP   -> "tcp"
             Transport.WS    -> "ws"
             Transport.GRPC  -> "grpc"
             Transport.XHTTP -> "xhttp"
             Transport.H2    -> "http"
             Transport.QUIC  -> "quic"
-        })
+        }
+        put("network", network)
+
         when (p.transport) {
             Transport.XHTTP -> put("xhttpSettings", JSONObject().apply {
                 put("path", p.path.ifEmpty { "/" })
@@ -198,7 +278,9 @@ object XrayConfigBuilder {
             })
             Transport.WS -> put("wsSettings", JSONObject().apply {
                 put("path", p.path.ifEmpty { "/" })
-                if (p.host.isNotEmpty()) put("headers", JSONObject().apply { put("Host", p.host) })
+                if (p.host.isNotEmpty()) {
+                    put("headers", JSONObject().apply { put("Host", p.host) })
+                }
             })
             Transport.GRPC -> put("grpcSettings", JSONObject().apply {
                 put("serviceName", p.path.ifEmpty { "" })
@@ -206,10 +288,35 @@ object XrayConfigBuilder {
             })
             Transport.H2 -> put("httpSettings", JSONObject().apply {
                 put("path", p.path.ifEmpty { "/" })
-                if (p.host.isNotEmpty()) put("host", JSONArray().apply { put(p.host) })
+                if (p.host.isNotEmpty()) {
+                    put("host", JSONArray().apply { put(p.host) })
+                }
             })
+            Transport.TCP -> {
+                // BUG FIX: for TCP with a host header (CDN configs), emit tcpSettings.
+                // Previously TCP had no settings block at all, silently dropping host.
+                if (p.host.isNotEmpty()) {
+                    put("tcpSettings", JSONObject().apply {
+                        put("header", JSONObject().apply {
+                            put("type", "http")
+                            put("request", JSONObject().apply {
+                                put("version", "1.1")
+                                put("method", "GET")
+                                put("path", JSONArray().apply { put(p.path.ifEmpty { "/" }) })
+                                put("headers", JSONObject().apply {
+                                    put("Host", JSONArray().apply { put(p.host) })
+                                    put("User-Agent", JSONArray().apply {
+                                        put("Mozilla/5.0")
+                                    })
+                                })
+                            })
+                        })
+                    })
+                }
+            }
             else -> {}
         }
+
         when (p.security) {
             Security.TLS -> {
                 put("security", "tls")
@@ -234,6 +341,8 @@ object XrayConfigBuilder {
                 })
             }
             Security.XTLS -> {
+                // XTLS is negotiated via flow="xtls-rprx-vision" in the user object.
+                // The security layer itself is still "tls" in streamSettings.
                 put("security", "tls")
                 put("tlsSettings", JSONObject().apply {
                     put("serverName",    p.sni.ifEmpty { p.address })
@@ -245,6 +354,8 @@ object XrayConfigBuilder {
         }
     }
 
+    // ── DNS ───────────────────────────────────────────────────────────────────
+
     private fun buildDns() = JSONObject().apply {
         put("servers", JSONArray().apply {
             put(JSONObject().apply {
@@ -255,6 +366,8 @@ object XrayConfigBuilder {
             put("localhost")
         })
     }
+
+    // ── Policy ────────────────────────────────────────────────────────────────
 
     private fun buildPolicy() = JSONObject().apply {
         put("levels", JSONObject().apply {
@@ -269,6 +382,8 @@ object XrayConfigBuilder {
         })
     }
 
+    // ── Routing ───────────────────────────────────────────────────────────────
+
     private fun buildRouting() = JSONObject().apply {
         put("domainStrategy", "IPIfNonMatch")
         put("domainMatcher",  "hybrid")
@@ -280,8 +395,11 @@ object XrayConfigBuilder {
             put(JSONObject().apply {
                 put("type", "field"); put("outboundTag", "direct")
                 put("ip", JSONArray().apply {
-                    put("geoip:private"); put("127.0.0.0/8")
-                    put("10.0.0.0/8"); put("172.16.0.0/12"); put("192.168.0.0/16")
+                    put("geoip:private")
+                    put("127.0.0.0/8")
+                    put("10.0.0.0/8")
+                    put("172.16.0.0/12")
+                    put("192.168.0.0/16")
                 })
             })
             put(JSONObject().apply {
