@@ -93,9 +93,11 @@ class palazikVpnService : VpnService() {
                     }
                 })
 
-                // StartLoop(configContent, tunFd) — passes TUN fd directly, returns error string or null
-                // tunFd is Int32 in Go → Int in Kotlin
-                controller.startLoop(config, iface.fd)
+                // In the compiled AAR, startLoop takes only config string.
+                // TUN fd is passed via the "xray.tun.fd" env var which is set inside
+                // StartLoop in the Go source — but this version reads it from env before starting.
+                System.setProperty("xray.tun.fd", iface.fd.toString())
+                controller.startLoop(config)
                 coreController = controller
 
                 _bytesIn.value  = 0L
