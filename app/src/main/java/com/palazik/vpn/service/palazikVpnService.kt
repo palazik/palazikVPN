@@ -14,8 +14,8 @@ import com.palazik.vpn.ui.MainActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import libv2ray.CoreCallbackHandler
-import libv2ray.Libv2ray
+import libv2ray.V2RayPoint
+import libv2ray.V2RayVPNServiceSupportsSet
 
 class palazikVpnService : VpnService() {
 
@@ -34,16 +34,17 @@ class palazikVpnService : VpnService() {
         val bytesIn:  StateFlow<Long> = _bytesIn
         val bytesOut: StateFlow<Long> = _bytesOut
 
-        // Set by MainViewModel.connect() before sending ACTION_START
         @Volatile var activeProfile: VpnProfile? = null
     }
 
     enum class ServiceState { STOPPED, STARTING, RUNNING, STOPPING }
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private var coreController: libv2ray.CoreController? = null
+    private var v2rayPoint: V2RayPoint? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var statsJob: Job? = null
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -56,11 +57,12 @@ class palazikVpnService : VpnService() {
     override fun onRevoke() { stopVpn() }
     override fun onDestroy() { scope.cancel(); super.onDestroy() }
 
+    // ── Start ─────────────────────────────────────────────────────────────────
+
     private fun startVpn() {
         val profile = activeProfile ?: run {
-            Log.e(TAG, "activeProfile is null — did MainViewModel set it before startForegroundService?")
-            stopSelf()
-            return
+            Log.e(TAG, "activeProfile is null")
+            stopSelf(); return
         }
 
         _connectionState.value = ServiceState.STARTING
@@ -68,104 +70,67 @@ class palazikVpnService : VpnService() {
 
         scope.launch {
             try {
-                // 1. Copy geoip.dat + geosite.dat from assets to filesDir so xray can find them
                 copyAssetIfNeeded("geoip.dat")
                 copyAssetIfNeeded("geosite.dat")
 
-                val assetPath = applicationContext.filesDir.absolutePath
-
-                // 2. Init xray env — sets OS env vars for asset/cert paths via Go os.Setenv
-                Libv2ray.initCoreEnv(assetPath, "")
-
-                // 3. Build xray JSON config
                 val config = XrayConfigBuilder.build(profile)
-                Log.d(TAG, "xray config built for ${profile.name} (${profile.protocol}+${profile.transport})")
+                Log.d(TAG, "Config built for ${profile.name}")
 
-                // 4. Create TUN interface
+                // Build TUN interface BEFORE initialising xray so the fd is ready
                 val iface = buildVpnInterface()
                 vpnInterface = iface
+                val tunFd = iface.fd
 
-                // 5. Set TUN fd via Libv2ray.initCoreEnv already sets asset paths.
-                //    TUN fd is an OS-level env var — set it via the Go bridge function.
-                //    Libv2ray.initCoreEnv calls os.Setenv internally for asset/cert.
-                //    For xray.tun.fd we call it directly through the same mechanism.
-                //    NOTE: System.setProperty() is JVM-only — Go os.Getenv() can't read it.
-                //    We pass the fd through a second initCoreEnv-style call or via config.
-                //    The cleanest way: use Libv2ray.setEnv if exported, else use a workaround.
-                //    Looking at Go source: StartLoop calls setEnvVariable(tunFdKey, strconv.Itoa(int(tunFd)))
-                //    But AAR's startLoop(String) has no tunFd param — so the AAR version reads
-                //    xray.tun.fd from env that was set by a PREVIOUS call.
-                //    Solution: call initCoreEnv again with tunFd embedded, OR use reflection.
-                //    Simplest working solution: write a tiny JNI shim.
-                //    ACTUAL solution used by v2rayNG: they call protect() via callback, 
-                //    and xray opens sockets itself — TUN fd is set via the Go env before startLoop.
-                //    We use Runtime.exec to set the env var at OS level — NOT possible in Android.
-                //    
-                //    REAL FIX: The AAR's startLoop(config) internally calls setEnvVariable for tunFd
-                //    if we set it via Libv2ray before calling startLoop. Check if there's a setter.
-                //    From source: only InitCoreEnv and StartLoop set env vars.
-                //    CONCLUSION: this version of AAR does NOT support TUN fd — it uses SOCKS5 inbound.
-                //    xray listens on 10808 SOCKS5, Android routes traffic there via VpnService.
-                //    TUN fd approach requires a newer API or different build.
-                //    
-                //    The correct flow for this AAR version:
-                //    - Start xray with SOCKS5 inbound (no TUN fd needed)  
-                //    - VpnService TUN sends all traffic to 127.0.0.1:10808 via routing
-                //    - xray handles the rest
-                //
-                //    But wait — without tun2socks, how does TUN traffic reach SOCKS5?
-                //    Answer: it doesn't automatically. We need tun2socks.
-                //    v2rayNG bundles its own tun2socks in the AAR via libgojni.so.
-                //    Libv2ray.startLoop DOES start tun2socks internally when given a valid TUN fd.
-                //    The startLoop(String) in AAR likely reads xray.tun.fd from env — we just need
-                //    to set it at the OS level before calling startLoop.
-                //    
-                //    Android allows setting env vars via Libv2ray's own setEnvVariable wrapper.
-                //    Since we can't call it directly, we call initCoreEnv which is exported,
-                //    and patch tunFdKey via a second call — but initCoreEnv only sets asset/cert/xudp.
-                //    
-                //    FINAL ANSWER: add a Gradle download of geofiles + call startLoop after
-                //    setting xray.tun.fd using the Android-compatible method: NDK setenv via JNI.
-                //    Since we don't have JNI, use the fact that initCoreEnv calls os.Setenv —
-                //    we can't piggyback. But Libv2ray exports checkVersionX() which is safe to call.
-                //    
-                //    The ONLY clean solution without JNI: use Libv2ray.initTunFd if it exists,
-                //    or accept that this AAR version uses SOCKS5 only (no TUN fd).
-                //    For SOCKS5-only: add tun2socks separately or use Android's VpnService
-                //    to route traffic to 127.0.0.1:10808 directly.
+                // Initialise the V2RayPoint with our service callbacks
+                val point = V2RayPoint(
+                    object : V2RayVPNServiceSupportsSet {
+                        override fun shutdown(): Long {
+                            Log.d(TAG, "V2RayVPNServiceSupportsSet.shutdown()")
+                            this@palazikVpnService.stopVpn()
+                            return 0
+                        }
 
-                // For now: set via the env before startLoop (works on some Android versions
-                // because the JVM process shares env with native code loaded in same process)
-                val setEnvMethod = Class.forName("libv2ray.Libv2ray")
-                    .getMethod("initCoreEnv", String::class.java, String::class.java)
-                // We can't call setEnvVariable directly, but we can abuse initCoreEnv
-                // to set xray.tun.fd indirectly: no clean way without JNI.
-                // 
-                // SIMPLEST APPROACH THAT ACTUALLY WORKS:
-                // Don't use TUN fd at all for this AAR version.
-                // Start xray in SOCKS5-only mode, route VPN traffic to 127.0.0.1:10808.
-                // This is exactly what older v2rayNG versions did before TUN support.
+                        override fun prepare(): Long {
+                            // Called by the core when it needs a fresh TUN fd
+                            // Re-establish if needed; return 0 on success
+                            return 0
+                        }
 
-                Log.d(TAG, "Starting xray core (SOCKS5 mode, port 10808)")
-                val controller = Libv2ray.newCoreController(object : CoreCallbackHandler {
-                    override fun startup(): Long {
-                        Log.d(TAG, "xray core started successfully")
-                        _connectionState.value = ServiceState.RUNNING
-                        updateNotification("Connected — ${profile.name}")
-                        return 0L
-                    }
-                    override fun shutdown(): Long {
-                        Log.d(TAG, "xray core stopped")
-                        return 0L
-                    }
-                    override fun onEmitStatus(level: Long, msg: String): Long {
-                        Log.d(TAG, "xray: $msg")
-                        return 0L
-                    }
-                })
+                        override fun protect(socket: Long): Boolean {
+                            // Protect native sockets so they bypass the VPN TUN
+                            return this@palazikVpnService.protect(socket.toInt())
+                        }
 
-                controller.startLoop(config)
-                coreController = controller
+                        override fun onEmitStatus(level: Long, msg: String): Long {
+                            Log.d(TAG, "core: $msg")
+                            return 0
+                        }
+
+                        override fun setup(fd: String): Long {
+                            // Called by core to set the TUN fd.
+                            // We already established the interface — just return 0.
+                            Log.d(TAG, "setup() called with fd=$fd")
+                            return 0
+                        }
+                    },
+                    // isRunning callback
+                    false,
+                )
+
+                point.configureFileContent = config
+                point.domainName           = profile.address
+                // Pass TUN fd — the AAR reads this via the env path set during configureFileContent
+                point.enableLocalDns = true
+                point.blockedApps    = ""
+                point.vpnFd          = tunFd
+
+                point.runLoop()
+                v2rayPoint = point
+
+                withContext(Dispatchers.Main) {
+                    _connectionState.value = ServiceState.RUNNING
+                    updateNotification("Connected — ${profile.name}")
+                }
 
                 _bytesIn.value  = 0L
                 _bytesOut.value = 0L
@@ -174,51 +139,26 @@ class palazikVpnService : VpnService() {
                     while (isActive) {
                         delay(1000)
                         runCatching {
-                            _bytesIn.value  += controller.queryStats("proxy", "downlink")
-                            _bytesOut.value += controller.queryStats("proxy", "uplink")
+                            _bytesIn.value  += point.queryStats("proxy", "downlink")
+                            _bytesOut.value += point.queryStats("proxy", "uplink")
                         }
                     }
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "VPN start error: ${e.message}", e)
-                stopVpn()
+                Log.e(TAG, "VPN start failed: ${e.message}", e)
+                withContext(Dispatchers.Main) { stopVpn() }
             }
         }
     }
 
-    private fun buildVpnInterface(): ParcelFileDescriptor =
-        Builder()
-            .setSession("palazikVPN")
-            .addAddress("26.26.26.1", 24)
-            .addRoute("0.0.0.0", 0)
-            .addRoute("::", 0)
-            // Route DNS through VPN
-            .addDnsServer("26.26.26.2")
-            .setMtu(1500)
-            // Exclude our own app to avoid routing loop
-            .addDisallowedApplication(packageName)
-            .establish()
-            ?: throw IllegalStateException("VpnService.Builder.establish() returned null")
-
-    private fun copyAssetIfNeeded(filename: String) {
-        val dest = java.io.File(applicationContext.filesDir, filename)
-        if (dest.exists()) return
-        try {
-            applicationContext.assets.open(filename).use { input ->
-                dest.outputStream().use { output -> input.copyTo(output) }
-            }
-            Log.d(TAG, "Copied $filename to filesDir")
-        } catch (e: Exception) {
-            Log.w(TAG, "$filename not found in assets — xray may fail without geo data: ${e.message}")
-        }
-    }
+    // ── Stop ─────────────────────────────────────────────────────────────────
 
     private fun stopVpn() {
         _connectionState.value = ServiceState.STOPPING
         statsJob?.cancel(); statsJob = null
-        runCatching { coreController?.stopLoop() }
-        coreController = null
+        runCatching { v2rayPoint?.stopLoop() }
+        v2rayPoint = null
         runCatching { vpnInterface?.close() }
         vpnInterface = null
         _connectionState.value = ServiceState.STOPPED
@@ -228,9 +168,40 @@ class palazikVpnService : VpnService() {
         stopSelf()
     }
 
+    // ── TUN interface ─────────────────────────────────────────────────────────
+
+    private fun buildVpnInterface(): ParcelFileDescriptor =
+        Builder()
+            .setSession("palazikVPN")
+            .addAddress("26.26.26.1", 24)
+            .addRoute("0.0.0.0", 0)
+            .addRoute("::", 0)
+            .addDnsServer("26.26.26.2")
+            .setMtu(1500)
+            .addDisallowedApplication(packageName)
+            .establish()
+            ?: throw IllegalStateException("VpnService.Builder.establish() returned null — " +
+                "VPN permission not granted?")
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private fun copyAssetIfNeeded(filename: String) {
+        val dest = java.io.File(filesDir, filename)
+        if (dest.exists()) return
+        runCatching {
+            assets.open(filename).use { it.copyTo(dest.outputStream()) }
+            Log.d(TAG, "Copied $filename to filesDir")
+        }.onFailure {
+            Log.w(TAG, "$filename missing from assets — xray geo-routing will be limited")
+        }
+    }
+
     private fun buildNotification(status: String): Notification {
         val pi = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
         return NotificationCompat.Builder(this, palazikVPNApp.CHANNEL_VPN)
             .setContentTitle("palazikVPN")
             .setContentText(status)
