@@ -6,21 +6,24 @@ import org.json.JSONObject
 
 object XrayConfigBuilder {
 
-    fun build(profile: VpnProfile): String =
+    // tunFd = -1 means no TUN inbound (SOCKS-only mode, e.g. for ping/test)
+    fun build(profile: VpnProfile, tunFd: Int = -1): String =
         JSONObject().apply {
             put("log",       buildLog())
             put("dns",       buildDns())
-            put("inbounds",  buildInbounds())
+            put("inbounds",  buildInbounds(tunFd))
             put("outbounds", buildOutbounds(profile))
             put("routing",   buildRouting())
+            put("stats",     JSONObject())   // needed for queryStats to work
+            put("policy",    buildPolicy())
         }.toString(2)
 
     private fun buildLog() = JSONObject().apply {
         put("loglevel", "warning")
-        put("access", "none")
     }
 
-    private fun buildInbounds() = JSONArray().apply {
+    private fun buildInbounds(tunFd: Int) = JSONArray().apply {
+        // SOCKS5 inbound — always present for local proxy access
         put(JSONObject().apply {
             put("tag", "socks")
             put("port", 10808)
@@ -32,9 +35,12 @@ object XrayConfigBuilder {
             })
             put("sniffing", JSONObject().apply {
                 put("enabled", true)
-                put("destOverride", JSONArray().apply { put("http"); put("tls"); put("quic") })
+                put("destOverride", JSONArray().apply {
+                    put("http"); put("tls"); put("quic")
+                })
             })
         })
+        // HTTP inbound
         put(JSONObject().apply {
             put("tag", "http")
             put("port", 10809)
@@ -42,6 +48,24 @@ object XrayConfigBuilder {
             put("protocol", "http")
             put("settings", JSONObject())
         })
+        // TUN inbound — only added when we have a valid fd
+        // xray reads the fd via /proc/self/fd/<n> on Android
+        if (tunFd >= 0) {
+            put(JSONObject().apply {
+                put("tag", "tun")
+                put("protocol", "tun")
+                put("settings", JSONObject().apply {
+                    put("fd",  tunFd)
+                    put("mtu", 1500)
+                })
+                put("sniffing", JSONObject().apply {
+                    put("enabled", true)
+                    put("destOverride", JSONArray().apply {
+                        put("http"); put("tls"); put("quic")
+                    })
+                })
+            })
+        }
     }
 
     private fun buildOutbounds(profile: VpnProfile) = JSONArray().apply {
@@ -71,7 +95,7 @@ object XrayConfigBuilder {
         }
         put("streamSettings", buildStreamSettings(profile))
         val useMux = profile.transport !in listOf(Transport.XHTTP, Transport.QUIC) &&
-                     profile.protocol !in listOf(Protocol.HYSTERIA2, Protocol.WIREGUARD)
+                profile.protocol !in listOf(Protocol.HYSTERIA2, Protocol.WIREGUARD)
         put("mux", JSONObject().apply {
             put("enabled", useMux)
             if (useMux) put("concurrency", 8)
@@ -187,7 +211,6 @@ object XrayConfigBuilder {
             Transport.H2    -> "http"
             Transport.QUIC  -> "quic"
         })
-
         when (p.transport) {
             Transport.XHTTP -> put("xhttpSettings", JSONObject().apply {
                 put("path", p.path.ifEmpty { "/" })
@@ -208,7 +231,6 @@ object XrayConfigBuilder {
             })
             else -> {}
         }
-
         when (p.security) {
             Security.TLS -> {
                 put("security", "tls")
@@ -252,6 +274,19 @@ object XrayConfigBuilder {
             })
             put("223.5.5.5")
             put("localhost")
+        })
+    }
+
+    private fun buildPolicy() = JSONObject().apply {
+        put("levels", JSONObject().apply {
+            put("0", JSONObject().apply {
+                put("statsUserUplink",   true)
+                put("statsUserDownlink", true)
+            })
+        })
+        put("system", JSONObject().apply {
+            put("statsOutboundUplink",   true)
+            put("statsOutboundDownlink", true)
         })
     }
 
