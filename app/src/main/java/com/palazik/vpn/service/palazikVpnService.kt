@@ -18,24 +18,6 @@ import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
 
-/**
- * palazikVpnService
- *
- * Uses AndroidLibXrayLite (libv2ray.aar) — xray-core compiled as Go mobile AAR.
- *
- * Real API (from libv2ray_main.go source):
- *   - Libv2ray.initCoreEnv(assetPath, xudpKey)  — sets up asset/cert paths
- *   - CoreController                              — manages xray instance lifecycle
- *   - CoreCallbackHandler                        — interface: Startup/Shutdown/OnEmitStatus
- *   - TUN fd passed via env var "xray.tun.fd"    — set before StartCore()
- *   - CoreController.StartCore(config)           — starts xray with JSON config string
- *   - CoreController.StopCore()                  — stops xray
- *   - CoreController.IsRunning                   — current state
- *
- * libv2ray.aar setup:
- *   Run: ./gradlew downloadLibxray   (or let preBuild do it automatically)
- *   This downloads libv2ray.aar into app/libs/ from AndroidLibXrayLite releases.
- */
 class palazikVpnService : VpnService() {
 
     companion object {
@@ -53,7 +35,6 @@ class palazikVpnService : VpnService() {
         val bytesIn:  StateFlow<Long> = _bytesIn
         val bytesOut: StateFlow<Long> = _bytesOut
 
-        // Set by MainViewModel before sending ACTION_START
         @Volatile var activeProfile: VpnProfile? = null
     }
 
@@ -63,8 +44,6 @@ class palazikVpnService : VpnService() {
     private var coreController: CoreController? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var statsJob: Job? = null
-
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -77,73 +56,65 @@ class palazikVpnService : VpnService() {
     override fun onRevoke() { stopVpn() }
     override fun onDestroy() { scope.cancel(); super.onDestroy() }
 
-    // ── Start ─────────────────────────────────────────────────────────────────
-
     private fun startVpn() {
-        val profile = activeProfile ?: run {
-            Log.e(TAG, "activeProfile not set — cannot start")
-            return
-        }
+        val profile = activeProfile ?: run { Log.e(TAG, "activeProfile not set"); return }
 
         _connectionState.value = ServiceState.STARTING
         startForeground(NOTIFICATION_ID, buildNotification("Connecting…"))
 
         scope.launch {
             try {
-                // 1. Init libxray env — pass assets dir for geoip.dat / geosite.dat
+                // Init xray assets (geoip.dat, geosite.dat)
                 val assetPath = applicationContext.filesDir.absolutePath
                 Libv2ray.initCoreEnv(assetPath, "")
 
-                // 2. Build xray JSON config from profile
                 val config = XrayConfigBuilder.build(profile)
-                Log.d(TAG, "xray config built for ${profile.name} (${profile.protocol}+${profile.transport})")
+                Log.d(TAG, "config built for ${profile.name}")
 
-                // 3. Create TUN interface
                 val iface = buildVpnInterface()
                 vpnInterface = iface
 
-                // 4. Pass TUN fd to xray via env var — libxray reads "xray.tun.fd" on StartCore()
+                // Pass TUN fd to xray via environment variable
                 System.setProperty("xray.tun.fd", iface.fd.toString())
 
-                // 5. Create controller with callback handler
-                val controller = CoreController()
-                controller.CallbackHandler = object : CoreCallbackHandler {
-                    override fun Startup(): Int {
-                        Log.d(TAG, "xray core started")
+                // Go mobile lowercases method names: OnEmitStatus → onEmitStatus
+                // CoreController constructor takes the handler directly
+                val controller = CoreController(object : CoreCallbackHandler {
+                    override fun startup(): Int {
+                        Log.d(TAG, "xray started")
                         _connectionState.value = ServiceState.RUNNING
                         updateNotification("Connected — ${profile.name}")
                         return 0
                     }
-                    override fun Shutdown(): Int {
-                        Log.d(TAG, "xray core stopped")
+                    override fun shutdown(): Int {
+                        Log.d(TAG, "xray stopped")
                         return 0
                     }
-                    override fun OnEmitStatus(level: Int, msg: String): Int {
+                    override fun onEmitStatus(level: Int, msg: String): Int {
                         Log.d(TAG, "xray[$level]: $msg")
                         return 0
                     }
-                }
+                })
 
-                // 6. Start xray core with config
-                controller.StartCore(config)
+                // Go mobile lowercases method names: StartCore → startCore
+                controller.startCore(config)
                 coreController = controller
 
                 _bytesIn.value  = 0L
                 _bytesOut.value = 0L
 
-                // 7. Poll traffic stats
                 statsJob = scope.launch {
                     while (isActive) {
                         delay(1000)
                         runCatching {
-                            _bytesIn.value  = controller.QueryStats("inbound>>>socks>>>traffic>>>downlink")
-                            _bytesOut.value = controller.QueryStats("inbound>>>socks>>>traffic>>>uplink")
+                            _bytesIn.value  = controller.queryStats("inbound>>>socks>>>traffic>>>downlink")
+                            _bytesOut.value = controller.queryStats("inbound>>>socks>>>traffic>>>uplink")
                         }
                     }
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "VPN start error: ${e.message}", e)
+                Log.e(TAG, "start error: ${e.message}", e)
                 stopVpn()
             }
         }
@@ -152,22 +123,20 @@ class palazikVpnService : VpnService() {
     private fun buildVpnInterface(): ParcelFileDescriptor =
         Builder()
             .setSession("palazikVPN")
-            .addAddress("26.26.26.1", 24)     // xray-core default TUN client addr
-            .addRoute("0.0.0.0", 0)           // route all IPv4
-            .addRoute("::", 0)                // route all IPv6
+            .addAddress("26.26.26.1", 24)
+            .addRoute("0.0.0.0", 0)
+            .addRoute("::", 0)
             .addDnsServer("1.1.1.1")
             .addDnsServer("8.8.8.8")
             .setMtu(1500)
-            .addDisallowedApplication(packageName) // don't route our own traffic into VPN
+            .addDisallowedApplication(packageName)
             .establish()
-            ?: throw IllegalStateException("VPN establish() returned null — permission missing?")
-
-    // ── Stop ──────────────────────────────────────────────────────────────────
+            ?: throw IllegalStateException("establish() returned null")
 
     private fun stopVpn() {
         _connectionState.value = ServiceState.STOPPING
         statsJob?.cancel(); statsJob = null
-        runCatching { coreController?.StopCore() }
+        runCatching { coreController?.stopCore() }
         coreController = null
         runCatching { vpnInterface?.close() }
         vpnInterface = null
@@ -179,14 +148,9 @@ class palazikVpnService : VpnService() {
         stopSelf()
     }
 
-    // ── Notification ──────────────────────────────────────────────────────────
-
     private fun buildNotification(status: String): Notification {
         val pi = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
+            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, palazikVPNApp.CHANNEL_VPN)
             .setContentTitle("palazikVPN")
             .setContentText(status)
