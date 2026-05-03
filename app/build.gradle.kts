@@ -17,15 +17,18 @@ if (!libxrayFile.exists()) {
     libxrayFile.parentFile.mkdirs()
     val url = "https://github.com/2dust/AndroidLibXrayLite/releases/download/v$libxrayVersion/libv2ray.aar"
     println(">>> Downloading libv2ray.aar v$libxrayVersion …")
-    val proc = ProcessBuilder("wget", "-q", "--show-progress", "-O",
-            libxrayFile.absolutePath, url)
+    // Use curl with a hard timeout — wget --show-progress hangs in Gradle daemon (no TTY)
+    val proc = ProcessBuilder(
+            "curl", "-fL", "--max-time", "120", "--retry", "3",
+            "-o", libxrayFile.absolutePath, url)
         .redirectErrorStream(true)
         .start()
     proc.waitFor()
-    // fallback to curl if wget failed or produced an empty/tiny file
     if (!libxrayFile.exists() || libxrayFile.length() < 1_000) {
         libxrayFile.delete()
-        val proc2 = ProcessBuilder("curl", "-sL", "-o", libxrayFile.absolutePath, url)
+        // fallback: wget without progress bar
+        val proc2 = ProcessBuilder(
+                "wget", "-q", "--timeout=120", "-O", libxrayFile.absolutePath, url)
             .redirectErrorStream(true)
             .start()
         proc2.waitFor()
@@ -42,14 +45,16 @@ fun downloadIfMissing(url: String, dest: java.io.File) {
     if (dest.exists() && dest.length() > 1_000) return
     dest.parentFile.mkdirs()
     println(">>> Downloading ${dest.name} …")
-    val proc = ProcessBuilder("wget", "-q", "--show-progress", "-O",
-            dest.absolutePath, url)
+    val proc = ProcessBuilder(
+            "curl", "-fL", "--max-time", "120", "--retry", "3",
+            "-o", dest.absolutePath, url)
         .redirectErrorStream(true)
         .start()
     proc.waitFor()
     if (!dest.exists() || dest.length() < 1_000) {
         dest.delete()
-        val proc2 = ProcessBuilder("curl", "-sL", "-o", dest.absolutePath, url)
+        val proc2 = ProcessBuilder(
+                "wget", "-q", "--timeout=120", "-O", dest.absolutePath, url)
             .redirectErrorStream(true)
             .start()
         proc2.waitFor()
