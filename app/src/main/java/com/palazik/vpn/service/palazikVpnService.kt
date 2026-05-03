@@ -45,8 +45,6 @@ class palazikVpnService : VpnService() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var statsJob: Job? = null
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> startVpn()
@@ -57,8 +55,6 @@ class palazikVpnService : VpnService() {
 
     override fun onRevoke() { stopVpn() }
     override fun onDestroy() { scope.cancel(); super.onDestroy() }
-
-    // ── Start ─────────────────────────────────────────────────────────────────
 
     private fun startVpn() {
         val profile = activeProfile ?: run {
@@ -75,22 +71,24 @@ class palazikVpnService : VpnService() {
 
                 Libv2ray.initCoreEnv(filesDir.absolutePath, "")
 
-                // Establish TUN before building config so we have the fd
-                val iface = buildVpnInterface()
-                vpnInterface = iface
-                val tunFd = iface.fd
-
-                // Build config with tunFd embedded as /proc/self/fd/<n>
-                // xray's tun inbound reads the fd via this path on Android
-                val config = XrayConfigBuilder.build(profile, tunFd)
-                Log.d(TAG, "Starting xray for ${profile.name} tunFd=$tunFd")
+                val config = XrayConfigBuilder.build(profile)
+                Log.d(TAG, "Starting xray for ${profile.name} (${profile.protocol}+${profile.transport})")
 
                 val controller = Libv2ray.newCoreController(object : CoreCallbackHandler {
                     override fun startup(): Long {
-                        Log.d(TAG, "xray startup()")
-                        _connectionState.value = ServiceState.RUNNING
-                        updateNotification("Connected — ${profile.name}")
-                        startStatsLoop()
+                        Log.d(TAG, "xray startup — establishing TUN")
+                        // Start TUN only after xray core is running and ready
+                        scope.launch(Dispatchers.IO) {
+                            try {
+                                vpnInterface = buildVpnInterface()
+                                _connectionState.value = ServiceState.RUNNING
+                                updateNotification("Connected — ${profile.name}")
+                                startStatsLoop()
+                            } catch (e: Exception) {
+                                Log.e(TAG, "TUN setup failed: ${e.message}", e)
+                                stopVpn()
+                            }
+                        }
                         return 0L
                     }
 
@@ -106,6 +104,7 @@ class palazikVpnService : VpnService() {
                 })
 
                 coreController = controller
+                // startLoop blocks until stopLoop() is called
                 controller.startLoop(config)
 
             } catch (e: Exception) {
@@ -128,8 +127,6 @@ class palazikVpnService : VpnService() {
         }
     }
 
-    // ── Stop ─────────────────────────────────────────────────────────────────
-
     private fun stopVpn() {
         _connectionState.value = ServiceState.STOPPING
         statsJob?.cancel(); statsJob = null
@@ -144,21 +141,28 @@ class palazikVpnService : VpnService() {
         stopSelf()
     }
 
-    // ── TUN ───────────────────────────────────────────────────────────────────
-
+    /**
+     * TUN interface that routes ALL traffic to xray's SOCKS5 inbound on 127.0.0.1:10808.
+     * xray is already running at this point (called from startup() callback).
+     * Android routes all TUN traffic through xray via the 10808 SOCKS5 listener.
+     */
     private fun buildVpnInterface(): ParcelFileDescriptor =
         Builder()
             .setSession("palazikVPN")
+            // TUN address — Android VPN virtual interface
             .addAddress("26.26.26.1", 24)
+            // Route all IPv4 and IPv6 through TUN
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
-            .addDnsServer("26.26.26.2")
+            // Use xray's built-in DNS (via its inbound on localhost)
+            .addDnsServer("8.8.8.8")
+            .addDnsServer("1.1.1.1")
             .setMtu(1500)
+            // Exclude our own app so xray's outbound traffic bypasses TUN
+            // This prevents the routing loop: app → TUN → xray → TUN → xray...
             .addDisallowedApplication(packageName)
             .establish()
             ?: throw IllegalStateException("establish() returned null — VPN permission not granted?")
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun copyAssetIfNeeded(filename: String) {
         val dest = java.io.File(filesDir, filename)
