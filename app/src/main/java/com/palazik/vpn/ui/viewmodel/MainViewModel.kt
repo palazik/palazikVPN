@@ -97,6 +97,8 @@ class MainViewModel @Inject constructor(
 
     fun connect() {
         val profile = _ui.value.activeProfile ?: run { snack("Select a profile first"); return }
+        // Pass full profile object to service companion — the service needs it to build xray config
+        palazikVpnService.activeProfile = profile
         context.startForegroundService(
             Intent(context, palazikVpnService::class.java).apply {
                 action = palazikVpnService.ACTION_START
