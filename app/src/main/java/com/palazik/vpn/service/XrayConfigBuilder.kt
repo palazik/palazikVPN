@@ -6,15 +6,14 @@ import org.json.JSONObject
 
 object XrayConfigBuilder {
 
-    // tunFd = -1 means no TUN inbound (SOCKS-only mode, e.g. for ping/test)
-    fun build(profile: VpnProfile, tunFd: Int = -1): String =
+    fun build(profile: VpnProfile): String =
         JSONObject().apply {
             put("log",       buildLog())
             put("dns",       buildDns())
-            put("inbounds",  buildInbounds(tunFd))
+            put("inbounds",  buildInbounds())
             put("outbounds", buildOutbounds(profile))
             put("routing",   buildRouting())
-            put("stats",     JSONObject())   // needed for queryStats to work
+            put("stats",     JSONObject())
             put("policy",    buildPolicy())
         }.toString(2)
 
@@ -22,8 +21,7 @@ object XrayConfigBuilder {
         put("loglevel", "warning")
     }
 
-    private fun buildInbounds(tunFd: Int) = JSONArray().apply {
-        // SOCKS5 inbound — always present for local proxy access
+    private fun buildInbounds() = JSONArray().apply {
         put(JSONObject().apply {
             put("tag", "socks")
             put("port", 10808)
@@ -40,7 +38,6 @@ object XrayConfigBuilder {
                 })
             })
         })
-        // HTTP inbound
         put(JSONObject().apply {
             put("tag", "http")
             put("port", 10809)
@@ -48,24 +45,6 @@ object XrayConfigBuilder {
             put("protocol", "http")
             put("settings", JSONObject())
         })
-        // TUN inbound — only added when we have a valid fd
-        // xray reads the fd via /proc/self/fd/<n> on Android
-        if (tunFd >= 0) {
-            put(JSONObject().apply {
-                put("tag", "tun")
-                put("protocol", "tun")
-                put("settings", JSONObject().apply {
-                    put("fd",  tunFd)
-                    put("mtu", 1500)
-                })
-                put("sniffing", JSONObject().apply {
-                    put("enabled", true)
-                    put("destOverride", JSONArray().apply {
-                        put("http"); put("tls"); put("quic")
-                    })
-                })
-            })
-        }
     }
 
     private fun buildOutbounds(profile: VpnProfile) = JSONArray().apply {
