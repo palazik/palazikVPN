@@ -64,57 +64,56 @@ class palazikVpnService : VpnService() {
 
         scope.launch {
             try {
-                // Init xray assets (geoip.dat, geosite.dat)
-                val assetPath = applicationContext.filesDir.absolutePath
-                Libv2ray.initCoreEnv(assetPath, "")
+                // Init xray assets path
+                Libv2ray.initCoreEnv(applicationContext.filesDir.absolutePath, "")
 
                 val config = XrayConfigBuilder.build(profile)
-                Log.d(TAG, "config built for ${profile.name}")
+                Log.d(TAG, "Starting xray: ${profile.name} (${profile.protocol}+${profile.transport})")
 
+                // Create TUN interface first to get the fd
                 val iface = buildVpnInterface()
                 vpnInterface = iface
 
-                // Pass TUN fd to xray via environment variable
-                System.setProperty("xray.tun.fd", iface.fd.toString())
-
-                // Go mobile lowercases method names: OnEmitStatus → onEmitStatus
-                // CoreController constructor takes the handler directly
-                val controller = CoreController(object : CoreCallbackHandler {
-                    override fun startup(): Int {
-                        Log.d(TAG, "xray started")
+                // NewCoreController is the factory function (gomobile: NewXxx -> newXxx)
+                // CoreCallbackHandler methods: startup/shutdown return Long, onEmitStatus(Long, String): Long
+                val controller = Libv2ray.newCoreController(object : CoreCallbackHandler {
+                    override fun startup(): Long {
+                        Log.d(TAG, "xray core started")
                         _connectionState.value = ServiceState.RUNNING
                         updateNotification("Connected — ${profile.name}")
-                        return 0
+                        return 0L
                     }
-                    override fun shutdown(): Int {
-                        Log.d(TAG, "xray stopped")
-                        return 0
+                    override fun shutdown(): Long {
+                        Log.d(TAG, "xray core stopped")
+                        return 0L
                     }
-                    override fun onEmitStatus(level: Int, msg: String): Int {
+                    override fun onEmitStatus(level: Long, msg: String): Long {
                         Log.d(TAG, "xray[$level]: $msg")
-                        return 0
+                        return 0L
                     }
                 })
 
-                // Go mobile lowercases method names: StartCore → startCore
-                controller.startCore(config)
+                // StartLoop(configContent, tunFd) — passes TUN fd directly, returns error string or null
+                // tunFd is Int32 in Go → Int in Kotlin
+                controller.startLoop(config, iface.fd)
                 coreController = controller
 
                 _bytesIn.value  = 0L
                 _bytesOut.value = 0L
 
+                // QueryStats(tag, direction) — two params, returns Long
                 statsJob = scope.launch {
                     while (isActive) {
                         delay(1000)
                         runCatching {
-                            _bytesIn.value  = controller.queryStats("inbound>>>socks>>>traffic>>>downlink")
-                            _bytesOut.value = controller.queryStats("inbound>>>socks>>>traffic>>>uplink")
+                            _bytesIn.value  += controller.queryStats("proxy", "downlink")
+                            _bytesOut.value += controller.queryStats("proxy", "uplink")
                         }
                     }
                 }
 
             } catch (e: Exception) {
-                Log.e(TAG, "start error: ${e.message}", e)
+                Log.e(TAG, "VPN start error: ${e.message}", e)
                 stopVpn()
             }
         }
@@ -136,11 +135,10 @@ class palazikVpnService : VpnService() {
     private fun stopVpn() {
         _connectionState.value = ServiceState.STOPPING
         statsJob?.cancel(); statsJob = null
-        runCatching { coreController?.stopCore() }
+        runCatching { coreController?.stopLoop() }
         coreController = null
         runCatching { vpnInterface?.close() }
         vpnInterface = null
-        System.clearProperty("xray.tun.fd")
         _connectionState.value = ServiceState.STOPPED
         _bytesIn.value  = 0L
         _bytesOut.value = 0L
