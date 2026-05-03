@@ -17,20 +17,14 @@ android {
         versionCode   = 1
         versionName   = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
-        }
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
     }
 
     buildTypes {
         release {
             isMinifyEnabled   = true
             isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -42,75 +36,66 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-
-    buildFeatures {
-        compose = true
-    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { compose = true }
 }
 
-// ── Download libv2ray.aar if missing ──────────────────────────────────────────
-// libv2ray.aar = AndroidLibXrayLite — xray-core compiled as a Go mobile AAR.
-// It provides Libv2ray.newV2RayPoint() which accepts a TUN fd and runs the full
-// xray-core Go runtime (VLESS, VMess, XHTTP, REALITY, TLS, tun2socks — everything).
-//
-// Source: https://github.com/2dust/AndroidLibXrayLite
-// The task below downloads it automatically on first build.
-// For manual download: grab libv2ray.aar from the releases page and put it in app/libs/
+// ── Download libv2ray.aar ─────────────────────────────────────────────────────
+// libv2ray.aar = AndroidLibXrayLite — xray-core as Go mobile AAR.
+// Uses wget/curl with --location to follow GitHub release redirects.
+// ant.get does NOT follow redirects and always fails on GitHub URLs.
 
-val libxrayVersion = "26.2.6"
+val libxrayVersion = "25.12.2"  // tag from AndroidLibXrayLite releases (without 'v' prefix in URL)
+val libxrayFile    = file("libs/libv2ray.aar")
 
 tasks.register("downloadLibxray") {
-    description = "Download libv2ray.aar from AndroidLibXrayLite releases if not present"
-    val destFile = file("libs/libv2ray.aar")
-    onlyIf { !destFile.exists() }
+    description = "Download libv2ray.aar from AndroidLibXrayLite if not present"
+    onlyIf { !libxrayFile.exists() }
     doLast {
-        destFile.parentFile.mkdirs()
-        val url = "https://github.com/2dust/AndroidLibXrayLite/releases/download/$libxrayVersion/libv2ray.aar"
-        println("Downloading libv2ray.aar $libxrayVersion...")
-        ant.invokeMethod("get", mapOf("src" to url, "dest" to destFile, "verbose" to "true"))
-        println("Done: ${destFile.length()} bytes")
+        libxrayFile.parentFile.mkdirs()
+        val url = "https://github.com/2dust/AndroidLibXrayLite/releases/download/v$libxrayVersion/libv2ray.aar"
+        println("Downloading libv2ray.aar v$libxrayVersion...")
+        // wget follows redirects by default; curl needs --location
+        val result = exec {
+            commandLine("wget", "-q", "--show-progress", "-O", libxrayFile.absolutePath, url)
+            isIgnoreExitValue = true
+        }
+        if (result.exitValue != 0 || !libxrayFile.exists() || libxrayFile.length() < 1000) {
+            // fallback to curl
+            exec {
+                commandLine("curl", "-L", "-o", libxrayFile.absolutePath, url)
+            }
+        }
+        require(libxrayFile.exists() && libxrayFile.length() > 1000) {
+            "Failed to download libv2ray.aar. Download manually from:\n$url\nPlace in app/libs/"
+        }
+        println("libv2ray.aar downloaded: ${libxrayFile.length()} bytes")
     }
 }
 
 tasks.named("preBuild") { dependsOn("downloadLibxray") }
 
 dependencies {
-    // libv2ray.aar — xray-core for Android (downloaded by downloadLibxray task above)
+    // xray-core AAR — downloaded by downloadLibxray task above
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
 
-    // ── Core ──────────────────────────────────────────────────────────────────
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
-
-    // ── Compose BOM ───────────────────────────────────────────────────────────
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
-
-    // ── Navigation ────────────────────────────────────────────────────────────
     implementation(libs.androidx.navigation.compose)
-
-    // ── Hilt ──────────────────────────────────────────────────────────────────
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.androidx.hilt.navigation.compose)
-
-    // ── ViewModel / Lifecycle ─────────────────────────────────────────────────
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
-
-    // ── Networking ────────────────────────────────────────────────────────────
     implementation(libs.okhttp)
 
-    // ── Test ──────────────────────────────────────────────────────────────────
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
