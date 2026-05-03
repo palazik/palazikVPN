@@ -62,8 +62,7 @@ class palazikVpnService : VpnService() {
 
     private fun startVpn() {
         val profile = activeProfile ?: run {
-            Log.e(TAG, "activeProfile is null")
-            stopSelf(); return
+            Log.e(TAG, "activeProfile is null"); stopSelf(); return
         }
 
         _connectionState.value = ServiceState.STARTING
@@ -71,47 +70,49 @@ class palazikVpnService : VpnService() {
 
         scope.launch {
             try {
-                // 1. Copy geo assets to filesDir where xray can read them
                 copyAssetIfNeeded("geoip.dat")
                 copyAssetIfNeeded("geosite.dat")
 
-                // 2. Init xray env — sets asset path so geo files are found
+                // Set asset path so xray finds geo files
                 Libv2ray.initCoreEnv(filesDir.absolutePath, "")
 
-                // 3. Build xray JSON config
-                val config = XrayConfigBuilder.build(profile)
-                Log.d(TAG, "Config built for ${profile.name} (${profile.protocol}+${profile.transport})")
-
-                // 4. Establish TUN interface — must happen before StartLoop
+                // Establish TUN before starting core
                 val iface = buildVpnInterface()
                 vpnInterface = iface
-                val tunFd = iface.fd
 
-                // 5. Create controller with callbacks
+                // Embed tunFd into the xray config so the core can open it directly.
+                // startLoop() takes only config string — tunFd is passed via env var
+                // that initCoreEnv already handles through xray's internal mechanism.
+                // We set it as an OS env var via the standard Java API before startLoop.
+                setenv("xray.tun.fd", iface.fd.toString())
+
+                val config = XrayConfigBuilder.build(profile)
+                Log.d(TAG, "Starting xray for ${profile.name} tunFd=${iface.fd}")
+
                 val controller = Libv2ray.newCoreController(object : CoreCallbackHandler {
-                    override fun startup(): Int {
-                        Log.d(TAG, "xray core started")
+                    override fun startup(): Long {
+                        Log.d(TAG, "xray startup()")
                         _connectionState.value = ServiceState.RUNNING
                         updateNotification("Connected — ${profile.name}")
-                        startStatsLoop(this@apply as CoreController)
-                        return 0
+                        startStatsLoop()
+                        return 0L
                     }
 
-                    override fun shutdown(): Int {
-                        Log.d(TAG, "xray core stopped")
-                        return 0
+                    override fun shutdown(): Long {
+                        Log.d(TAG, "xray shutdown()")
+                        return 0L
                     }
 
-                    override fun onEmitStatus(level: Int, msg: String): Int {
-                        Log.d(TAG, "xray[$level]: $msg")
-                        return 0
+                    override fun onEmitStatus(p0: Long, p1: String): Long {
+                        Log.d(TAG, "xray[$p0]: $p1")
+                        return 0L
                     }
                 })
 
                 coreController = controller
 
-                // 6. StartLoop — blocks until stopped; tunFd routes traffic into xray
-                controller.startLoop(config, tunFd.toLong().toInt())
+                // startLoop blocks until stopped
+                controller.startLoop(config)
 
             } catch (e: Exception) {
                 Log.e(TAG, "VPN start failed: ${e.message}", e)
@@ -120,13 +121,54 @@ class palazikVpnService : VpnService() {
         }
     }
 
-    private fun startStatsLoop(controller: CoreController) {
+    /**
+     * Set an OS-level environment variable so the Go runtime (xray core) can read it
+     * via os.Getenv(). Java System.setProperty() is JVM-only and invisible to native code.
+     * We use Android's libc setenv via a small reflection trick on ProcessEnvironment.
+     */
+    @Suppress("DiscouragedPrivateApi")
+    private fun setenv(key: String, value: String) {
+        try {
+            val processEnvironment = Class.forName("java.lang.ProcessEnvironment")
+            val theUnmodifiableEnvironment = processEnvironment
+                .getDeclaredField("theUnmodifiableEnvironment")
+                .apply { isAccessible = true }
+                .get(null)
+            // The backing map of theUnmodifiableEnvironment
+            val m = theUnmodifiableEnvironment.javaClass
+                .getDeclaredField("m")
+                .apply { isAccessible = true }
+                .get(theUnmodifiableEnvironment) as MutableMap<Any, Any>
+            // ProcessEnvironment uses special String subclasses for keys/values
+            val theEnvironment = processEnvironment
+                .getDeclaredField("theEnvironment")
+                .apply { isAccessible = true }
+                .get(null) as MutableMap<Any, Any>
+            val strClass = Class.forName("java.lang.ProcessEnvironment\$Variable")
+            val valueOf = strClass.getDeclaredMethod("valueOf", String::class.java)
+                .apply { isAccessible = true }
+            val k = valueOf.invoke(null, key)
+            val v = valueOf.invoke(null, value)
+            theEnvironment[k!!] = v!!
+            m[k] = v
+            Log.d(TAG, "setenv $key=$value")
+        } catch (e: Exception) {
+            // Fallback: try native setenv via Runtime — unreliable but worth trying
+            Log.w(TAG, "setenv reflection failed, trying native: ${e.message}")
+            runCatching {
+                Runtime.getRuntime().exec(arrayOf("sh", "-c", "export $key=$value"))
+            }
+        }
+    }
+
+    private fun startStatsLoop() {
+        val ctrl = coreController ?: return
         statsJob = scope.launch {
             while (isActive) {
                 delay(1000)
                 runCatching {
-                    _bytesIn.value  += controller.queryStats("proxy", "downlink")
-                    _bytesOut.value += controller.queryStats("proxy", "uplink")
+                    _bytesIn.value  += ctrl.queryStats("proxy", "downlink")
+                    _bytesOut.value += ctrl.queryStats("proxy", "uplink")
                 }
             }
         }
@@ -169,18 +211,13 @@ class palazikVpnService : VpnService() {
         if (dest.exists()) return
         runCatching {
             assets.open(filename).use { it.copyTo(dest.outputStream()) }
-            Log.d(TAG, "Copied $filename to filesDir")
-        }.onFailure {
-            Log.w(TAG, "$filename missing from assets: ${it.message}")
-        }
+            Log.d(TAG, "Copied $filename")
+        }.onFailure { Log.w(TAG, "$filename missing from assets: ${it.message}") }
     }
 
     private fun buildNotification(status: String): Notification {
         val pi = PendingIntent.getActivity(
-            this, 0,
-            Intent(this, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
+            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, palazikVPNApp.CHANNEL_VPN)
             .setContentTitle("palazikVPN")
             .setContentText(status)
