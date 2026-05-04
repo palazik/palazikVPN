@@ -14,9 +14,10 @@ import com.palazik.vpn.ui.MainActivity
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import libv2ray.CoreCallbackHandler
+import libv2ray.CoreController
 import libv2ray.Libv2ray
-import libv2ray.V2RayPoint
-import libv2ray.V2RayVPNServiceSupportsSet
+import libv2ray.ProcessFinder
 
 class palazikVpnService : VpnService() {
 
@@ -41,7 +42,7 @@ class palazikVpnService : VpnService() {
     enum class ServiceState { STOPPED, STARTING, RUNNING, STOPPING }
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private var v2rayPoint: V2RayPoint? = null
+    private var coreController: CoreController? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var statsJob: Job? = null
 
@@ -70,30 +71,29 @@ class palazikVpnService : VpnService() {
 
         scope.launch {
             try {
-                copyAssetIfNeeded("geoip.dat")
-                copyAssetIfNeeded("geosite.dat")
-
                 val config = XrayConfigBuilder.build(profile)
                 Log.d(TAG, "Xray config built for ${profile.name}")
 
-                // Libv2ray.newV2RayPoint(supportSet, enableLocalDns)
-                // DO NOT pass true for enableLocalDns unless you have a local DNS inbound —
-                // it will intercept port 53 and break resolution if misconfigured.
-                val point = Libv2ray.newV2RayPoint(V2RayCallback(), false)
-                point.configureFileContent = config
-                point.domainName           = profile.address
-                point.enableLocalDns       = false
-                point.blockedApps          = ""
-                point.packageName          = packageName
+                // Establish TUN interface first so setup() can return the fd
+                val iface = buildVpnInterface()
+                vpnInterface = iface
+                Log.d(TAG, "TUN established, fd=${iface.fd}")
 
-                v2rayPoint = point
+                // Create CoreController with our callbacks
+                val controller = Libv2ray.newV2RayPoint(
+                    V2RayCallback(iface),
+                    false,  // enableLocalDns — only enable if you have DNS inbound configured
+                )
+                controller.configureFileContent = config
+                controller.domainName           = profile.address
+                coreController = controller
 
-                // runLoop() is BLOCKING. It calls setup() on our callback first to get
-                // the tun fd, starts the Xray core, then blocks until stopLoop() is called.
-                point.runLoop()
+                // startLoop() starts Xray core — non-blocking in new API
+                controller.startLoop()
 
-                // We only get here after stopLoop() — clean up
-                withContext(Dispatchers.Main) { stopVpn() }
+                _connectionState.value = ServiceState.RUNNING
+                updateNotification("Connected — ${profile.name}")
+                startStatsPolling()
 
             } catch (e: Exception) {
                 Log.e(TAG, "VPN start failed: ${e.message}", e)
@@ -102,6 +102,19 @@ class palazikVpnService : VpnService() {
         }
     }
 
+    private fun buildVpnInterface(): ParcelFileDescriptor =
+        Builder()
+            .setSession("palazikVPN")
+            .addAddress("26.26.26.1", 24)
+            .addRoute("0.0.0.0", 0)
+            .addRoute("::", 0)
+            .addDnsServer("8.8.8.8")
+            .addDnsServer("1.1.1.1")
+            .setMtu(1500)
+            .addDisallowedApplication(packageName)
+            .establish()
+            ?: throw IllegalStateException("establish() returned null — missing VPN permission?")
+
     // ── Stop ──────────────────────────────────────────────────────────────────
 
     private fun stopVpn() {
@@ -109,9 +122,9 @@ class palazikVpnService : VpnService() {
         _connectionState.value = ServiceState.STOPPING
         statsJob?.cancel()
         statsJob = null
-        runCatching { v2rayPoint?.stopLoop() }
-        v2rayPoint = null
-        runCatching { vpnInterface?.close() }
+        try { coreController?.stopLoop() } catch (e: Exception) { Log.w(TAG, "stopLoop: ${e.message}") }
+        coreController = null
+        try { vpnInterface?.close() } catch (e: Exception) { Log.w(TAG, "iface close: ${e.message}") }
         vpnInterface = null
         _connectionState.value = ServiceState.STOPPED
         _bytesIn.value  = 0L
@@ -120,85 +133,22 @@ class palazikVpnService : VpnService() {
         stopSelf()
     }
 
-    // ── V2RayVPNServiceSupportsSet ────────────────────────────────────────────
-    //
-    // libv2ray calls these from the Go side over JNI.
-    //
-    // IMPORTANT — return types:
-    //   shutdown()      → Long  (0 = ok)
-    //   prepare()       → Long  (0 = ok)
-    //   protect(Long)   → Long  (0 = protected, 1 = failed)   ← NOT Boolean
-    //   onEmitStatus()  → Long  (0 = ok)
-    //   setup(String)   → Long  (the tun fd number)           ← NOT 0L
-    //
-    // setup() is how libv2ray gets the tun fd from us.
-    // We call establish() here and return iface.fd.toLong().
-    // Returning 0L or 1L here is wrong — it tells the Go core fd=0 or fd=1.
+    // ── CoreCallbackHandler + ProcessFinder ───────────────────────────────────
 
-    private inner class V2RayCallback : V2RayVPNServiceSupportsSet {
+    private inner class V2RayCallback(
+        private val iface: ParcelFileDescriptor,
+    ) : CoreCallbackHandler, ProcessFinder {
 
-        override fun shutdown(): Long {
-            Log.d(TAG, "shutdown() called by libv2ray")
-            stopVpn()
-            return 0L
-        }
-
-        override fun prepare(): Long {
-            // VpnService.prepare() permission is handled in MainActivity before
-            // we ever start the service, so nothing to do here.
-            return 0L
-        }
-
-        override fun protect(socket: Long): Long {
-            return if (this@palazikVpnService.protect(socket.toInt())) 0L else 1L
-        }
-
+        // CoreCallbackHandler — called by Xray core on status changes
         override fun onEmitStatus(level: Long, msg: String): Long {
             Log.d(TAG, "xray[$level]: $msg")
-            // Xray core emits "Xray X.X.X started" when it's up
-            if (msg.contains("started", ignoreCase = true)) {
-                _connectionState.value = ServiceState.RUNNING
-                updateNotification("Connected — ${activeProfile?.name ?: ""}")
-                startStatsPolling()
-            }
             return 0L
         }
 
-        /**
-         * libv2ray calls setup() when it needs the tun fd.
-         * We establish the VPN interface here and return iface.fd.toLong().
-         * Any value <= 0 is treated as an error by libv2ray.
-         */
-        override fun setup(parameters: String): Long {
-            Log.d(TAG, "setup() called by libv2ray, params=$parameters")
-            return try {
-                // Close any stale interface from a previous connection
-                runCatching { vpnInterface?.close() }
-
-                val builder = Builder()
-                    .setSession("palazikVPN")
-                    .addAddress("26.26.26.1", 24)
-                    .addRoute("0.0.0.0", 0)
-                    .addRoute("::", 0)
-                    .addDnsServer("8.8.8.8")
-                    .addDnsServer("1.1.1.1")
-                    .setMtu(1500)
-                    // Exclude our own app so the VPN doesn't loop back on itself
-                    .addDisallowedApplication(packageName)
-
-                val iface = builder.establish()
-                    ?: run {
-                        Log.e(TAG, "establish() returned null — missing VPN permission?")
-                        return 1L
-                    }
-
-                vpnInterface = iface
-                Log.d(TAG, "TUN fd=${iface.fd}")
-                iface.fd.toLong()   // ← THIS is how libv2ray gets the fd
-            } catch (e: Exception) {
-                Log.e(TAG, "setup() exception: ${e.message}", e)
-                1L
-            }
+        // ProcessFinder — called by libv2ray to protect sockets from VPN loop-back
+        // protect() must return true if the socket was protected successfully
+        override fun protect(socket: Long): Boolean {
+            return this@palazikVpnService.protect(socket.toInt())
         }
     }
 
@@ -209,26 +159,16 @@ class palazikVpnService : VpnService() {
         statsJob = scope.launch {
             while (isActive) {
                 delay(1000)
-                runCatching {
-                    _bytesIn.value  += v2rayPoint?.queryStats("proxy", "downlink") ?: 0L
-                    _bytesOut.value += v2rayPoint?.queryStats("proxy", "uplink")   ?: 0L
-                }
+                try {
+                    val ctrl = coreController ?: break
+                    _bytesIn.value  += ctrl.queryStats("proxy", "downlink")
+                    _bytesOut.value += ctrl.queryStats("proxy", "uplink")
+                } catch (_: Exception) {}
             }
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private fun copyAssetIfNeeded(filename: String) {
-        val dest = java.io.File(filesDir, filename)
-        if (dest.exists()) return
-        runCatching {
-            assets.open(filename).use { it.copyTo(dest.outputStream()) }
-            Log.d(TAG, "Copied asset $filename → filesDir")
-        }.onFailure {
-            Log.w(TAG, "$filename not found in assets — routing rules won't work: ${it.message}")
-        }
-    }
+    // ── Notification ──────────────────────────────────────────────────────────
 
     private fun buildNotification(status: String): Notification {
         val pi = PendingIntent.getActivity(
