@@ -140,6 +140,7 @@ class palazikVpnService : VpnService() {
         }
     }
 
+        // 🆕 FIX: Initialize Libv2ray with correct 2-parameter signature
     private fun initializeLibv2ray() {
         val assetsPath = applicationContext.applicationInfo.sourceDir + "!/assets/"
         val writablePath = applicationContext.filesDir.absolutePath
