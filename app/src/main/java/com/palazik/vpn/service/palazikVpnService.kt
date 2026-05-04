@@ -88,7 +88,7 @@ class palazikVpnService : VpnService() {
                         srcPort: Long,
                         dst: String,
                         dstPort: Long,
-                    ): String = ""
+                    ): Long = 0L
                 })
                 coreController = controller
 
