@@ -59,15 +59,39 @@ jobs:
           echo "CCACHE_EXEC=$(which ccache)" >> $GITHUB_ENV
           echo "NDK_CCACHE=$(which ccache)"  >> $GITHUB_ENV
 
+      # 🆕 FIX: Download libs and geo files with verification
       - name: Download libs and geo files
         run: |
           mkdir -p app/libs app/src/main/assets
+          
+          # Download libv2ray.aar
           curl -fL --retry 3 -o app/libs/libv2ray.aar \
             https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.5.3/libv2ray.aar
+          
+          # Download geoip.dat (official v2fly source)
           curl -fL --retry 3 -o app/src/main/assets/geoip.dat \
             https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
+          
+          # Download geosite.dat (official Loyalsoldier source - more reliable than dlc.dat)
           curl -fL --retry 3 -o app/src/main/assets/geosite.dat \
-            https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat
+            https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+          
+          # Verify files exist and have content
+          for file in app/libs/libv2ray.aar app/src/main/assets/geoip.dat app/src/main/assets/geosite.dat; do
+            if [ ! -s "$file" ]; then
+              echo "❌ Error: $file is missing or empty"
+              exit 1
+            fi
+            echo "✓ $file ($(du -h $file | cut -f1))"
+          done
+
+      # 🆕 FIX: Verify assets are included in APK build
+      - name: Pre-build verification
+        run: |
+          echo "=== Assets directory ==="
+          ls -lh app/src/main/assets/
+          echo "=== Libs directory ==="
+          ls -lh app/libs/
 
       # ── Build ───────────────────────────────────────────────────────────────
       - name: Build Debug APK
@@ -78,6 +102,15 @@ jobs:
 
       - name: Print ccache stats
         run: ccache --show-stats
+
+      # 🆕 FIX: Verify geodata in APK
+      - name: Verify APK contents
+        run: |
+          echo "=== Checking debug APK for geodata ==="
+          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -E "geo(ip|site).dat" || echo "⚠️ Geodata not found in APK!"
+          
+          echo "=== Checking release APK for geodata ==="
+          unzip -l app/build/outputs/apk/release/app-release-unsigned.apk | grep -E "geo(ip|site).dat" || echo "⚠️ Geodata not found in APK!"
 
       # ── Artifacts ───────────────────────────────────────────────────────────
       - name: Upload Debug APK to Actions
