@@ -374,25 +374,17 @@ object XrayConfigBuilder {
         })
     }
 
-    // ── Routing ───────────────────────────────────────────────────────────────
-    // 🆕 FIX: Use IP-based rules only to avoid geodata dependency issues
+        // ── Routing ───────────────────────────────────────────────────────────────
     private fun buildRouting() = JSONObject().apply {
         put("domainStrategy", "IPIfNonMatch")
         put("domainMatcher",  "hybrid")
         put("rules", JSONArray().apply {
-            // Block ads via IP ranges only (no geosite dependency)
             put(JSONObject().apply {
-                put("type", "field")
-                put("outboundTag", "block")
-                put("ip", JSONArray().apply {
-                    // Common ad network IP ranges (optional - can be removed)
-                    // put("103.224.182.0/24")
-                })
+                put("type", "field"); put("outboundTag", "block")
+                put("domain", JSONArray().apply { put("geosite:category-ads-all") })
             })
-            // Direct local/private IPs
             put(JSONObject().apply {
-                put("type", "field")
-                put("outboundTag", "direct")
+                put("type", "field"); put("outboundTag", "direct")
                 put("ip", JSONArray().apply {
                     put("geoip:private")
                     put("127.0.0.0/8")
@@ -401,10 +393,8 @@ object XrayConfigBuilder {
                     put("192.168.0.0/16")
                 })
             })
-            // Route everything else through proxy
             put(JSONObject().apply {
-                put("type", "field")
-                put("outboundTag", "proxy")
+                put("type", "field"); put("outboundTag", "proxy")
                 put("network", "tcp,udp")
             })
         })
