@@ -137,7 +137,7 @@ class palazikVpnService : VpnService() {
 
                 // Pass actual TUN fd — xray reads packets from it via the "tun" inbound.
                 // 0 = socks/http proxy only mode, fd = full TUN mode.
-                controller.startLoop(config, iface.fd.toLong())
+                controller.startLoop(config, iface.fd)
 
                 _connectionState.value = ServiceState.RUNNING
                 updateNotification("Connected — ${profile.name}")
