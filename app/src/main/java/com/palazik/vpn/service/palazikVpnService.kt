@@ -74,22 +74,26 @@ class palazikVpnService : VpnService() {
                 val config = XrayConfigBuilder.build(profile)
                 Log.d(TAG, "Xray config built for ${profile.name}")
 
-                // Establish TUN interface first so setup() can return the fd
+                // Establish TUN interface
                 val iface = buildVpnInterface()
                 vpnInterface = iface
                 Log.d(TAG, "TUN established, fd=${iface.fd}")
 
                 // Create CoreController with our callbacks
-                val controller = Libv2ray.newV2RayPoint(
-                    V2RayCallback(iface),
-                    false,  // enableLocalDns — only enable if you have DNS inbound configured
-                )
-                controller.configureFileContent = config
-                controller.domainName           = profile.address
+                val controller = Libv2ray.newCoreController(V2RayCallback())
+                controller.registerProcessFinder(object : ProcessFinder {
+                    override fun findProcessByConnection(
+                        network: String,
+                        src: String,
+                        srcPort: Long,
+                        dst: String,
+                        dstPort: Long,
+                    ): String = ""
+                })
                 coreController = controller
 
-                // startLoop() starts Xray core — non-blocking in new API
-                controller.startLoop()
+                // startLoop(config, port) — pass 0 to use ports defined in config inbounds
+                controller.startLoop(config, 0)
 
                 _connectionState.value = ServiceState.RUNNING
                 updateNotification("Connected — ${profile.name}")
@@ -133,22 +137,23 @@ class palazikVpnService : VpnService() {
         stopSelf()
     }
 
-    // ── CoreCallbackHandler + ProcessFinder ───────────────────────────────────
+    // ── CoreCallbackHandler ───────────────────────────────────────────────────
 
-    private inner class V2RayCallback(
-        private val iface: ParcelFileDescriptor,
-    ) : CoreCallbackHandler, ProcessFinder {
+    private inner class V2RayCallback : CoreCallbackHandler {
 
-        // CoreCallbackHandler — called by Xray core on status changes
         override fun onEmitStatus(level: Long, msg: String): Long {
             Log.d(TAG, "xray[$level]: $msg")
             return 0L
         }
 
-        // ProcessFinder — called by libv2ray to protect sockets from VPN loop-back
-        // protect() must return true if the socket was protected successfully
-        override fun protect(socket: Long): Boolean {
-            return this@palazikVpnService.protect(socket.toInt())
+        override fun shutdown(): Long {
+            Log.d(TAG, "xray: shutdown requested")
+            return 0L
+        }
+
+        override fun startup(): Long {
+            Log.d(TAG, "xray: startup requested")
+            return 0L
         }
     }
 
