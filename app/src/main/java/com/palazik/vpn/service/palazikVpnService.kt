@@ -59,9 +59,9 @@ class palazikVpnService : VpnService() {
     }
 
     override fun onRevoke() { stopVpn() }
-    override fun onDestroy() { 
+    override fun onDestroy() {
         scope.cancel()
-        super.onDestroy() 
+        super.onDestroy()
     }
 
     // ── Start ─────────────────────────────────────────────────────────────────
@@ -78,19 +78,18 @@ class palazikVpnService : VpnService() {
 
         scope.launch {
             try {
-                // 🆕 FIX: Prepare geodata files and initialize Libv2ray
+                // 1. Copy geodata assets → filesDir (must happen before initCoreEnv)
                 prepareGeodata()
+                // 2. Init xray pointing at filesDir so it finds the copied geodata
                 initializeLibv2ray()
-                
+
                 val config = XrayConfigBuilder.build(profile)
                 Log.d(TAG, "Xray config built for ${profile.name}")
 
-                // Establish TUN interface
                 val iface = buildVpnInterface()
                 vpnInterface = iface
                 Log.d(TAG, "TUN established, fd=${iface.fd}")
 
-                // Create CoreController with our callbacks
                 val controller = Libv2ray.newCoreController(V2RayCallback())
                 controller.registerProcessFinder(object : ProcessFinder {
                     override fun findProcessByConnection(
@@ -103,7 +102,6 @@ class palazikVpnService : VpnService() {
                 })
                 coreController = controller
 
-                // startLoop(config, port) — pass 0 to use ports defined in config inbounds
                 controller.startLoop(config, 0)
 
                 _connectionState.value = ServiceState.RUNNING
@@ -117,37 +115,38 @@ class palazikVpnService : VpnService() {
         }
     }
 
-    // 🆕 FIX: Copy geodata files from assets to writable directory
+    // Copy geoip.dat / geosite.dat from assets to filesDir.
+    // Throws if a file is missing from assets so the error is visible in logs.
     private fun prepareGeodata() {
-        val assets = applicationContext.assets
+        val assets   = applicationContext.assets
         val filesDir = applicationContext.filesDir
-        
+
         listOf("geoip.dat", "geosite.dat").forEach { fileName ->
-            try {
-                val destFile = File(filesDir, fileName)
-                // Only copy if file doesn't exist or is empty
-                if (!destFile.exists() || destFile.length() == 0L) {
+            val dest = File(filesDir, fileName)
+            if (!dest.exists() || dest.length() == 0L) {
+                try {
                     assets.open(fileName).use { input ->
-                        FileOutputStream(destFile).use { output ->
+                        FileOutputStream(dest).use { output ->
                             input.copyTo(output)
                         }
                     }
-                    Log.d(TAG, "Copied $fileName to ${destFile.absolutePath}")
+                    Log.d(TAG, "Copied $fileName → ${dest.absolutePath} (${dest.length()} bytes)")
+                } catch (e: Exception) {
+                    throw RuntimeException("Missing asset: $fileName", e)
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to copy $fileName: ${e.message}")
+            } else {
+                Log.d(TAG, "$fileName already present (${dest.length()} bytes)")
             }
         }
     }
 
-        // 🆕 FIX: Initialize Libv2ray with correct 2-parameter signature
+    // Pass filesDir for both params — xray must resolve geodata from the
+    // writable copy, not from the APK zip path (base.apk!/assets/) which
+    // is not a real filesystem path and causes "no such file or directory".
     private fun initializeLibv2ray() {
-        val assetsPath = applicationContext.applicationInfo.sourceDir + "!/assets/"
-        val writablePath = applicationContext.filesDir.absolutePath
-        
-        // Direct call with correct signature from inspection: initCoreEnv(String, String)
-        Libv2ray.initCoreEnv(assetsPath, writablePath)
-        Log.d(TAG, "✓ Libv2ray.initCoreEnv(assets, writable) called")
+        val filesDir = applicationContext.filesDir.absolutePath
+        Libv2ray.initCoreEnv(filesDir, filesDir)
+        Log.d(TAG, "✓ Libv2ray.initCoreEnv(filesDir, filesDir)")
     }
 
     private fun buildVpnInterface(): ParcelFileDescriptor =
