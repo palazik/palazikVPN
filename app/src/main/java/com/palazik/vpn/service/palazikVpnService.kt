@@ -19,6 +19,7 @@ import libv2ray.CoreController
 import libv2ray.Libv2ray
 import libv2ray.ProcessFinder
 import java.io.File
+import java.io.FileOutputStream
 
 class palazikVpnService : VpnService() {
 
@@ -58,13 +59,18 @@ class palazikVpnService : VpnService() {
     }
 
     override fun onRevoke() { stopVpn() }
-    override fun onDestroy() { scope.cancel(); super.onDestroy() }
+    override fun onDestroy() { 
+        scope.cancel()
+        super.onDestroy() 
+    }
 
     // ── Start ─────────────────────────────────────────────────────────────────
 
     private fun startVpn() {
         val profile = activeProfile ?: run {
-            Log.e(TAG, "activeProfile is null"); stopSelf(); return
+            Log.e(TAG, "activeProfile is null")
+            stopSelf()
+            return
         }
 
         _connectionState.value = ServiceState.STARTING
@@ -72,12 +78,10 @@ class palazikVpnService : VpnService() {
 
         scope.launch {
             try {
-                // 🆕 FIX: Initialize Libv2ray with assets path BEFORE creating CoreController
-                // This tells Xray where to find geoip.dat and geosite.dat
-                val assetsPath = applicationContext.applicationInfo.sourceDir + "!/assets/"
-                Libv2ray.initLibrary(assetsPath)
-                Log.d(TAG, "Libv2ray initialized with assets: $assetsPath")
-
+                // 🆕 FIX: Prepare geodata files and initialize Libv2ray
+                prepareGeodata()
+                initializeLibv2ray()
+                
                 val config = XrayConfigBuilder.build(profile)
                 Log.d(TAG, "Xray config built for ${profile.name}")
 
@@ -109,6 +113,82 @@ class palazikVpnService : VpnService() {
             } catch (e: Exception) {
                 Log.e(TAG, "VPN start failed: ${e.message}", e)
                 withContext(Dispatchers.Main) { stopVpn() }
+            }
+        }
+    }
+
+    // 🆕 FIX: Copy geodata files from assets to writable directory
+    private fun prepareGeodata() {
+        val assets = applicationContext.assets
+        val filesDir = applicationContext.filesDir
+        
+        listOf("geoip.dat", "geosite.dat").forEach { fileName ->
+            try {
+                val destFile = File(filesDir, fileName)
+                // Only copy if file doesn't exist or is empty
+                if (!destFile.exists() || destFile.length() == 0L) {
+                    assets.open(fileName).use { input ->
+                        FileOutputStream(destFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    Log.d(TAG, "Copied $fileName to ${destFile.absolutePath}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to copy $fileName: ${e.message}")
+            }
+        }
+    }
+
+    // 🆕 FIX: Initialize Libv2ray with correct paths (handles multiple API versions)
+    private fun initializeLibv2ray() {
+        val assetsPath = applicationContext.applicationInfo.sourceDir + "!/assets/"
+        val writablePath = applicationContext.filesDir.absolutePath
+        
+        try {
+            // Try newer API first: initLibrary(String)
+            Libv2ray::class.java.methods.find { 
+                it.name == "initLibrary" && it.parameterCount == 1 
+            }?.invoke(null, assetsPath)
+            Log.d(TAG, "✓ Libv2ray initialized via initLibrary()")
+            return
+        } catch (e: Exception) {
+            Log.d(TAG, "initLibrary() not available, trying InitV2Env...")
+        }
+        
+        try {
+            // Fallback to older API: InitV2Env(String, String)
+            Libv2ray::class.java.methods.find { 
+                it.name == "InitV2Env" && it.parameterCount == 2 
+            }?.invoke(null, assetsPath, writablePath)
+            Log.d(TAG, "✓ Libv2ray initialized via InitV2Env()")
+            return
+        } catch (e: Exception) {
+            Log.d(TAG, "InitV2Env() not available, trying InitCoreEnv...")
+        }
+        
+        try {
+            // Last resort: InitCoreEnv(String)
+            Libv2ray::class.java.methods.find { 
+                it.name == "InitCoreEnv" && it.parameterCount == 1 
+            }?.invoke(null, assetsPath)
+            Log.d(TAG, "✓ Libv2ray initialized via InitCoreEnv()")
+            return
+        } catch (e: Exception) {
+            Log.w(TAG, "All init methods failed: ${e.message}")
+        }
+        
+        // If all reflection attempts fail, try direct calls (for known versions)
+        try {
+            Libv2ray.initLibrary(assetsPath)
+            Log.d(TAG, "✓ Libv2ray initialized via direct initLibrary()")
+        } catch (e: NoSuchMethodError) {
+            try {
+                Libv2ray.InitV2Env(assetsPath, writablePath)
+                Log.d(TAG, "✓ Libv2ray initialized via direct InitV2Env()")
+            } catch (e2: Exception) {
+                Log.e(TAG, "❌ Failed to initialize Libv2ray: ${e2.message}")
+                throw RuntimeException("Libv2ray initialization failed", e2)
             }
         }
     }
