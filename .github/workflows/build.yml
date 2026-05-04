@@ -59,6 +59,13 @@ jobs:
           echo "CCACHE_EXEC=$(which ccache)" >> $GITHUB_ENV
           echo "NDK_CCACHE=$(which ccache)"  >> $GITHUB_ENV
 
+      - name: Download libv2ray.aar
+        run: |
+          mkdir -p app/libs
+          curl -fL --retry 3 \
+            -o app/libs/libv2ray.aar \
+            https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.5.3/libv2ray.aar
+
       # ── Build ───────────────────────────────────────────────────────────────
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
