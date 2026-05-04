@@ -55,10 +55,6 @@ class palazikVpnService : VpnService() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var statsJob: Job? = null
 
-    // ── Network callback (API 28+): keeps setUnderlyingNetworks up to date so
-    //   xray's outbound sockets are protected on the real network interface,
-    //   not looped back into the TUN. Without this, xray connects but traffic
-    //   goes TUN→xray→TUN→... and the internet doesn't work.
     private val connectivity by lazy {
         getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
     }
@@ -122,8 +118,6 @@ class palazikVpnService : VpnService() {
                 vpnInterface = iface
                 Log.d(TAG, "TUN established, fd=${iface.fd}")
 
-                // Register network callback before startLoop so setUnderlyingNetworks
-                // is set before xray tries to make outbound connections.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     try {
                         connectivity.requestNetwork(networkRequest, networkCallback)
@@ -141,9 +135,8 @@ class palazikVpnService : VpnService() {
                 })
                 coreController = controller
 
-                // Pass the actual TUN fd — xray uses it to read/write packets.
-                // Passing 0 means xray runs as a plain proxy (socks/http only)
-                // and never processes TUN traffic, so internet doesn't work.
+                // Pass actual TUN fd — xray reads packets from it via the "tun" inbound.
+                // 0 = socks/http proxy only mode, fd = full TUN mode.
                 controller.startLoop(config, iface.fd.toLong())
 
                 _connectionState.value = ServiceState.RUNNING
