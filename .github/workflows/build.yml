@@ -59,12 +59,15 @@ jobs:
           echo "CCACHE_EXEC=$(which ccache)" >> $GITHUB_ENV
           echo "NDK_CCACHE=$(which ccache)"  >> $GITHUB_ENV
 
-      - name: Download libv2ray.aar
+      - name: Download libs and geo files
         run: |
-          mkdir -p app/libs
-          curl -fL --retry 3 \
-            -o app/libs/libv2ray.aar \
+          mkdir -p app/libs app/src/main/assets
+          curl -fL --retry 3 -o app/libs/libv2ray.aar \
             https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.5.3/libv2ray.aar
+          curl -fL --retry 3 -o app/src/main/assets/geoip.dat \
+            https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
+          curl -fL --retry 3 -o app/src/main/assets/geosite.dat \
+            https://github.com/v2fly/domain-list-community/releases/latest/download/dlc.dat
 
       # ── Build ───────────────────────────────────────────────────────────────
       - name: Build Debug APK
