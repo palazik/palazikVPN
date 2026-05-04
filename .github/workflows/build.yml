@@ -71,10 +71,10 @@ jobs:
 
       # ── Build ───────────────────────────────────────────────────────────────
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-
+        run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
+      
       - name: Build Release APK (unsigned)
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --no-configuration-cache --stacktrace
 
       - name: Print ccache stats
         run: ccache --show-stats
