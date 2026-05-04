@@ -15,6 +15,16 @@ jobs:
             https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.5.3/libv2ray.aar
           echo "AAR size: $(ls -lh app/libs/libv2ray.aar)"
 
+      - name: Decompile class signatures
+        run: |
+          mkdir -p /tmp/decompile && cd /tmp/decompile
+          unzip -p ~/work/palazikVPN/palazikVPN/app/libs/libv2ray.aar classes.jar > classes.jar
+          jar xf classes.jar
+          echo "=== Libv2ray ===" && javap -p libv2ray/Libv2ray.class
+          echo "=== CoreController ===" && javap -p libv2ray/CoreController.class
+          echo "=== CoreCallbackHandler ===" && javap -p libv2ray/CoreCallbackHandler.class
+          echo "=== ProcessFinder ===" && javap -p libv2ray/ProcessFinder.class
+
       - name: Extract and inspect classes
         run: |
           mkdir -p /tmp/aar_inspect
