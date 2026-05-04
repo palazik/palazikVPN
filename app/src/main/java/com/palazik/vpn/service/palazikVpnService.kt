@@ -3,7 +3,12 @@ package com.palazik.vpn.service
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.provider.Settings
 import android.util.Base64
@@ -50,6 +55,33 @@ class palazikVpnService : VpnService() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var statsJob: Job? = null
 
+    // ── Network callback (API 28+): keeps setUnderlyingNetworks up to date so
+    //   xray's outbound sockets are protected on the real network interface,
+    //   not looped back into the TUN. Without this, xray connects but traffic
+    //   goes TUN→xray→TUN→... and the internet doesn't work.
+    private val connectivity by lazy {
+        getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+    }
+    private val networkRequest by lazy {
+        NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+            .build()
+    }
+    private val networkCallback by lazy {
+        object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                setUnderlyingNetworks(arrayOf(network))
+            }
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                setUnderlyingNetworks(arrayOf(network))
+            }
+            override fun onLost(network: Network) {
+                setUnderlyingNetworks(null)
+            }
+        }
+    }
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -90,19 +122,29 @@ class palazikVpnService : VpnService() {
                 vpnInterface = iface
                 Log.d(TAG, "TUN established, fd=${iface.fd}")
 
+                // Register network callback before startLoop so setUnderlyingNetworks
+                // is set before xray tries to make outbound connections.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    try {
+                        connectivity.requestNetwork(networkRequest, networkCallback)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "requestNetwork failed: ${e.message}")
+                    }
+                }
+
                 val controller = Libv2ray.newCoreController(V2RayCallback())
                 controller.registerProcessFinder(object : ProcessFinder {
                     override fun findProcessByConnection(
-                        network: String,
-                        src: String,
-                        srcPort: Long,
-                        dst: String,
-                        dstPort: Long,
+                        network: String, src: String, srcPort: Long,
+                        dst: String, dstPort: Long,
                     ): Long = 0L
                 })
                 coreController = controller
 
-                controller.startLoop(config, 0)
+                // Pass the actual TUN fd — xray uses it to read/write packets.
+                // Passing 0 means xray runs as a plain proxy (socks/http only)
+                // and never processes TUN traffic, so internet doesn't work.
+                controller.startLoop(config, iface.fd.toLong())
 
                 _connectionState.value = ServiceState.RUNNING
                 updateNotification("Connected — ${profile.name}")
@@ -115,15 +157,13 @@ class palazikVpnService : VpnService() {
         }
     }
 
-    // Returns the writable directory where geodata is stored.
-    // Matches v2rayNG: getExternalFilesDir("assets") with fallback to getDir("assets", 0)
+    // ── Geodata / init ────────────────────────────────────────────────────────
+
     private fun userAssetPath(): String {
         return (applicationContext.getExternalFilesDir("assets")
             ?: applicationContext.getDir("assets", 0)).absolutePath
     }
 
-    // Generates the XUDP BaseKey from ANDROID_ID — exactly as v2rayNG does.
-    // This is the SECOND param of initCoreEnv, NOT a file path.
     private fun getDeviceIdForXUDPBaseKey(): String {
         val androidId = Settings.Secure.ANDROID_ID.toByteArray(Charsets.UTF_8)
         return Base64.encodeToString(
@@ -132,8 +172,6 @@ class palazikVpnService : VpnService() {
         )
     }
 
-    // Copy geoip.dat / geosite.dat from APK assets → userAssetPath().
-    // Only copies if file doesn't already exist (same logic as v2rayNG initAssets).
     private fun prepareGeodata() {
         val assets  = applicationContext.assets
         val destDir = File(userAssetPath()).also { it.mkdirs() }
@@ -143,9 +181,7 @@ class palazikVpnService : VpnService() {
             if (!dest.exists() || dest.length() == 0L) {
                 try {
                     assets.open(fileName).use { input ->
-                        FileOutputStream(dest).use { output ->
-                            input.copyTo(output)
-                        }
+                        FileOutputStream(dest).use { output -> input.copyTo(output) }
                     }
                     Log.d(TAG, "Copied $fileName → ${dest.absolutePath} (${dest.length()} bytes)")
                 } catch (e: Exception) {
@@ -157,16 +193,14 @@ class palazikVpnService : VpnService() {
         }
     }
 
-    // initCoreEnv(assetPath, deviceId):
-    //   param 1 — directory containing geoip.dat / geosite.dat
-    //   param 2 — Base64(ANDROID_ID.copyOf(32)) used as XUDP BaseKey
-    // Passing a file path as param 2 caused "BaseKey must be 32 bytes: len 0"
     private fun initializeLibv2ray() {
         val assetPath = userAssetPath()
         val deviceId  = getDeviceIdForXUDPBaseKey()
         Libv2ray.initCoreEnv(assetPath, deviceId)
-        Log.d(TAG, "✓ Libv2ray.initCoreEnv(assetPath=$assetPath, deviceId=[${deviceId.length} chars])")
+        Log.d(TAG, "✓ Libv2ray.initCoreEnv(assetPath=$assetPath)")
     }
+
+    // ── TUN interface ─────────────────────────────────────────────────────────
 
     private fun buildVpnInterface(): ParcelFileDescriptor =
         Builder()
@@ -178,6 +212,11 @@ class palazikVpnService : VpnService() {
             .addDnsServer("1.1.1.1")
             .setMtu(1500)
             .addDisallowedApplication(packageName)
+            .also {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    it.setMetered(false)
+                }
+            }
             .establish()
             ?: throw IllegalStateException("establish() returned null — missing VPN permission?")
 
@@ -188,6 +227,11 @@ class palazikVpnService : VpnService() {
         _connectionState.value = ServiceState.STOPPING
         statsJob?.cancel()
         statsJob = null
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try { connectivity.unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
+        }
+
         try { coreController?.stopLoop() } catch (e: Exception) { Log.w(TAG, "stopLoop: ${e.message}") }
         coreController = null
         try { vpnInterface?.close() } catch (e: Exception) { Log.w(TAG, "iface close: ${e.message}") }
@@ -202,17 +246,14 @@ class palazikVpnService : VpnService() {
     // ── CoreCallbackHandler ───────────────────────────────────────────────────
 
     private inner class V2RayCallback : CoreCallbackHandler {
-
         override fun onEmitStatus(level: Long, msg: String): Long {
             Log.d(TAG, "xray[$level]: $msg")
             return 0L
         }
-
         override fun shutdown(): Long {
             Log.d(TAG, "xray: shutdown requested")
             return 0L
         }
-
         override fun startup(): Long {
             Log.d(TAG, "xray: startup requested")
             return 0L
