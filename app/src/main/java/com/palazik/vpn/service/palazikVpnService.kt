@@ -18,6 +18,7 @@ import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
 import libv2ray.ProcessFinder
+import java.io.File
 
 class palazikVpnService : VpnService() {
 
@@ -71,6 +72,12 @@ class palazikVpnService : VpnService() {
 
         scope.launch {
             try {
+                // 🆕 FIX: Initialize Libv2ray with assets path BEFORE creating CoreController
+                // This tells Xray where to find geoip.dat and geosite.dat
+                val assetsPath = applicationContext.applicationInfo.sourceDir + "!/assets/"
+                Libv2ray.initLibrary(assetsPath)
+                Log.d(TAG, "Libv2ray initialized with assets: $assetsPath")
+
                 val config = XrayConfigBuilder.build(profile)
                 Log.d(TAG, "Xray config built for ${profile.name}")
 
