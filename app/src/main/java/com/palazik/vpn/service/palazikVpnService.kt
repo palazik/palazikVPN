@@ -5,6 +5,8 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
+import android.provider.Settings
+import android.util.Base64
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.palazik.vpn.R
@@ -78,9 +80,7 @@ class palazikVpnService : VpnService() {
 
         scope.launch {
             try {
-                // 1. Copy geodata assets → filesDir (must happen before initCoreEnv)
                 prepareGeodata()
-                // 2. Init xray pointing at filesDir so it finds the copied geodata
                 initializeLibv2ray()
 
                 val config = XrayConfigBuilder.build(profile)
@@ -115,14 +115,31 @@ class palazikVpnService : VpnService() {
         }
     }
 
-    // Copy geoip.dat / geosite.dat from assets to filesDir.
-    // Throws if a file is missing from assets so the error is visible in logs.
+    // Returns the writable directory where geodata is stored.
+    // Matches v2rayNG: getExternalFilesDir("assets") with fallback to getDir("assets", 0)
+    private fun userAssetPath(): String {
+        return (applicationContext.getExternalFilesDir("assets")
+            ?: applicationContext.getDir("assets", 0)).absolutePath
+    }
+
+    // Generates the XUDP BaseKey from ANDROID_ID — exactly as v2rayNG does.
+    // This is the SECOND param of initCoreEnv, NOT a file path.
+    private fun getDeviceIdForXUDPBaseKey(): String {
+        val androidId = Settings.Secure.ANDROID_ID.toByteArray(Charsets.UTF_8)
+        return Base64.encodeToString(
+            androidId.copyOf(32),
+            Base64.NO_PADDING or Base64.URL_SAFE
+        )
+    }
+
+    // Copy geoip.dat / geosite.dat from APK assets → userAssetPath().
+    // Only copies if file doesn't already exist (same logic as v2rayNG initAssets).
     private fun prepareGeodata() {
-        val assets   = applicationContext.assets
-        val filesDir = applicationContext.filesDir
+        val assets  = applicationContext.assets
+        val destDir = File(userAssetPath()).also { it.mkdirs() }
 
         listOf("geoip.dat", "geosite.dat").forEach { fileName ->
-            val dest = File(filesDir, fileName)
+            val dest = File(destDir, fileName)
             if (!dest.exists() || dest.length() == 0L) {
                 try {
                     assets.open(fileName).use { input ->
@@ -140,13 +157,15 @@ class palazikVpnService : VpnService() {
         }
     }
 
-    // Pass filesDir for both params — xray must resolve geodata from the
-    // writable copy, not from the APK zip path (base.apk!/assets/) which
-    // is not a real filesystem path and causes "no such file or directory".
+    // initCoreEnv(assetPath, deviceId):
+    //   param 1 — directory containing geoip.dat / geosite.dat
+    //   param 2 — Base64(ANDROID_ID.copyOf(32)) used as XUDP BaseKey
+    // Passing a file path as param 2 caused "BaseKey must be 32 bytes: len 0"
     private fun initializeLibv2ray() {
-        val filesDir = applicationContext.filesDir.absolutePath
-        Libv2ray.initCoreEnv(filesDir, filesDir)
-        Log.d(TAG, "✓ Libv2ray.initCoreEnv(filesDir, filesDir)")
+        val assetPath = userAssetPath()
+        val deviceId  = getDeviceIdForXUDPBaseKey()
+        Libv2ray.initCoreEnv(assetPath, deviceId)
+        Log.d(TAG, "✓ Libv2ray.initCoreEnv(assetPath=$assetPath, deviceId=[${deviceId.length} chars])")
     }
 
     private fun buildVpnInterface(): ParcelFileDescriptor =
