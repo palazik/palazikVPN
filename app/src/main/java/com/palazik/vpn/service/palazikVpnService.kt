@@ -18,6 +18,8 @@ import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
 import libv2ray.ProcessFinder
+import java.io.File
+import java.io.FileOutputStream
 
 class palazikVpnService : VpnService() {
 
@@ -46,6 +48,8 @@ class palazikVpnService : VpnService() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var statsJob: Job? = null
 
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> startVpn()
@@ -55,11 +59,18 @@ class palazikVpnService : VpnService() {
     }
 
     override fun onRevoke() { stopVpn() }
-    override fun onDestroy() { scope.cancel(); super.onDestroy() }
+    override fun onDestroy() { 
+        scope.cancel()
+        super.onDestroy() 
+    }
+
+    // ── Start ─────────────────────────────────────────────────────────────────
 
     private fun startVpn() {
         val profile = activeProfile ?: run {
-            Log.e(TAG, "activeProfile is null"); stopSelf(); return
+            Log.e(TAG, "activeProfile is null")
+            stopSelf()
+            return
         }
 
         _connectionState.value = ServiceState.STARTING
@@ -67,19 +78,19 @@ class palazikVpnService : VpnService() {
 
         scope.launch {
             try {
+                // 🆕 FIX: Prepare geodata files and initialize Libv2ray
+                prepareGeodata()
+                initializeLibv2ray()
+                
                 val config = XrayConfigBuilder.build(profile)
                 Log.d(TAG, "Xray config built for ${profile.name}")
 
+                // Establish TUN interface
                 val iface = buildVpnInterface()
                 vpnInterface = iface
                 Log.d(TAG, "TUN established, fd=${iface.fd}")
 
-                // 🔧 FIX: Initialize geodata paths BEFORE starting Xray core
-                val assetsPath = applicationContext.applicationInfo.sourceDir + "!/assets/"
-                val writablePath = applicationContext.filesDir.absolutePath
-                Libv2ray.initCoreEnv(assetsPath, writablePath)
-                Log.d(TAG, "✓ Libv2ray.initCoreEnv() called")
-
+                // Create CoreController with our callbacks
                 val controller = Libv2ray.newCoreController(V2RayCallback())
                 controller.registerProcessFinder(object : ProcessFinder {
                     override fun findProcessByConnection(
@@ -92,6 +103,7 @@ class palazikVpnService : VpnService() {
                 })
                 coreController = controller
 
+                // startLoop(config, port) — pass 0 to use ports defined in config inbounds
                 controller.startLoop(config, 0)
 
                 _connectionState.value = ServiceState.RUNNING
@@ -103,6 +115,38 @@ class palazikVpnService : VpnService() {
                 withContext(Dispatchers.Main) { stopVpn() }
             }
         }
+    }
+
+    // 🆕 FIX: Copy geodata files from assets to writable directory
+    private fun prepareGeodata() {
+        val assets = applicationContext.assets
+        val filesDir = applicationContext.filesDir
+        
+        listOf("geoip.dat", "geosite.dat").forEach { fileName ->
+            try {
+                val destFile = File(filesDir, fileName)
+                // Only copy if file doesn't exist or is empty
+                if (!destFile.exists() || destFile.length() == 0L) {
+                    assets.open(fileName).use { input ->
+                        FileOutputStream(destFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    Log.d(TAG, "Copied $fileName to ${destFile.absolutePath}")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to copy $fileName: ${e.message}")
+            }
+        }
+    }
+
+    private fun initializeLibv2ray() {
+        val assetsPath = applicationContext.applicationInfo.sourceDir + "!/assets/"
+        val writablePath = applicationContext.filesDir.absolutePath
+        
+        // Direct call with correct signature from inspection: initCoreEnv(String, String)
+        Libv2ray.initCoreEnv(assetsPath, writablePath)
+        Log.d(TAG, "✓ Libv2ray.initCoreEnv(assets, writable) called")
     }
 
     private fun buildVpnInterface(): ParcelFileDescriptor =
@@ -117,6 +161,8 @@ class palazikVpnService : VpnService() {
             .addDisallowedApplication(packageName)
             .establish()
             ?: throw IllegalStateException("establish() returned null — missing VPN permission?")
+
+    // ── Stop ──────────────────────────────────────────────────────────────────
 
     private fun stopVpn() {
         if (_connectionState.value == ServiceState.STOPPED) return
@@ -134,20 +180,27 @@ class palazikVpnService : VpnService() {
         stopSelf()
     }
 
+    // ── CoreCallbackHandler ───────────────────────────────────────────────────
+
     private inner class V2RayCallback : CoreCallbackHandler {
+
         override fun onEmitStatus(level: Long, msg: String): Long {
             Log.d(TAG, "xray[$level]: $msg")
             return 0L
         }
+
         override fun shutdown(): Long {
             Log.d(TAG, "xray: shutdown requested")
             return 0L
         }
+
         override fun startup(): Long {
             Log.d(TAG, "xray: startup requested")
             return 0L
         }
     }
+
+    // ── Stats polling ─────────────────────────────────────────────────────────
 
     private fun startStatsPolling() {
         statsJob?.cancel()
@@ -162,6 +215,8 @@ class palazikVpnService : VpnService() {
             }
         }
     }
+
+    // ── Notification ──────────────────────────────────────────────────────────
 
     private fun buildNotification(status: String): Notification {
         val pi = PendingIntent.getActivity(
