@@ -26,6 +26,24 @@ object XrayConfigBuilder {
     // ── Inbounds ──────────────────────────────────────────────────────────────
 
     private fun buildInbounds() = JSONArray().apply {
+        // TUN inbound — required when startLoop() is called with a non-zero tunFd.
+        // xray reads packets directly from the TUN fd and routes them through this inbound.
+        // Without it, the TUN interface is established but xray ignores the fd entirely.
+        put(JSONObject().apply {
+            put("tag", "tun")
+            put("protocol", "tun")
+            put("settings", JSONObject().apply {
+                put("name", "xray0")
+                put("mtu", 1500)
+                put("userLevel", 8)
+            })
+            put("sniffing", JSONObject().apply {
+                put("enabled", true)
+                put("destOverride", JSONArray().apply {
+                    put("http"); put("tls")
+                })
+            })
+        })
         put(JSONObject().apply {
             put("tag", "socks")
             put("port", 10808)
