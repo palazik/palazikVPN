@@ -1,5 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Minimal XML theme — real theming is handled entirely by Compose -->
-    <style name="Theme.palazikVPN" parent="android:Theme.Material.Light.NoActionBar" />
+    <!--
+        Base XML theme — real theming (colors, typography) is done entirely in Compose.
+        We use Theme.Material3 so the window background, status bar, and nav bar are
+        transparent by default on API 29+, avoiding the white flash on launch in light mode.
+
+        windowBackground is set to the Cyber dark color (#0A0E1A) to match the default
+        Compose background — this prevents any white flash before Compose renders.
+
+        statusBarColor / navigationBarColor are set to transparent here so that
+        the Compose SystemBarColors() composable in MainActivity has full control
+        without the XML theme overriding them.
+    -->
+    <style name="Theme.palazikVPN" parent="android:Theme.Material.NoTitleBar">
+        <item name="android:windowBackground">@color/ic_launcher_background</item>
+        <item name="android:windowTranslucentStatus">false</item>
+        <item name="android:windowTranslucentNavigation">false</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode" tools:targetApi="o_mr1">shortEdges</item>
+    </style>
 </resources>
