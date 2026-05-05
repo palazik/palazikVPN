@@ -26,13 +26,12 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      # Regenerate gradlew + wrapper jar using the just-installed Gradle 8.9
       - name: Regenerate Gradle wrapper
         run: |
           gradle wrapper --gradle-version=8.9
           chmod +x gradlew
 
-      # ── Android SDK + NDK ───────────────────────────────────────────────────
+      # ── Android SDK ─────────────────────────────────────────────────────────
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
@@ -59,68 +58,63 @@ jobs:
           echo "CCACHE_EXEC=$(which ccache)" >> $GITHUB_ENV
           echo "NDK_CCACHE=$(which ccache)"  >> $GITHUB_ENV
 
-      # 🆕 FIX: Download libs and geo files with verification
+      # ── Download libs + geodata (baked into APK assets) ─────────────────────
       - name: Download libs and geo files
         run: |
           mkdir -p app/libs app/src/main/assets
-          
-          # Download libv2ray.aar
+
           curl -fL --retry 3 -o app/libs/libv2ray.aar \
             https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.5.3/libv2ray.aar
-          
-          # Download geoip.dat (official v2fly source)
+
+          # geoip.dat and geosite.dat are bundled into APK assets so the app
+          # never needs to download them at runtime (no network dependency on first launch)
           curl -fL --retry 3 -o app/src/main/assets/geoip.dat \
             https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
-          
-          # Download geosite.dat (official Loyalsoldier source - more reliable than dlc.dat)
+
           curl -fL --retry 3 -o app/src/main/assets/geosite.dat \
             https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
-          
-          # Verify files exist and have content
+
           for file in app/libs/libv2ray.aar app/src/main/assets/geoip.dat app/src/main/assets/geosite.dat; do
             if [ ! -s "$file" ]; then
-              echo "❌ Error: $file is missing or empty"
+              echo "❌ $file is missing or empty"
               exit 1
             fi
             echo "✓ $file ($(du -h $file | cut -f1))"
           done
 
-      # 🆕 FIX: Verify assets are included in APK build
       - name: Pre-build verification
         run: |
-          echo "=== Assets directory ==="
-          ls -lh app/src/main/assets/
-          echo "=== Libs directory ==="
-          ls -lh app/libs/
+          echo "=== Assets ===" && ls -lh app/src/main/assets/
+          echo "=== Libs ===" && ls -lh app/libs/
 
       # ── Build ───────────────────────────────────────────────────────────────
-      - name: Build Debug APK
+      # ABI splits produce: arm64-v8a APK, armeabi-v7a APK, universal APK
+      - name: Build Debug APKs
         run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
-      
-      - name: Build Release APK (unsigned)
+
+      - name: Build Release APKs (unsigned)
         run: ./gradlew assembleRelease --no-daemon --no-configuration-cache --stacktrace
 
       - name: Print ccache stats
         run: ccache --show-stats
 
-      # 🆕 FIX: Verify geodata in APK
-      - name: Verify APK contents
+      # ── Verify ──────────────────────────────────────────────────────────────
+      - name: List produced APKs and sizes
         run: |
-          echo "=== Checking debug APK for geodata ==="
-          unzip -l app/build/outputs/apk/debug/app-debug.apk | grep -E "geo(ip|site).dat" || echo "⚠️ Geodata not found in APK!"
-          
-          echo "=== Checking release APK for geodata ==="
-          unzip -l app/build/outputs/apk/release/app-release-unsigned.apk | grep -E "geo(ip|site).dat" || echo "⚠️ Geodata not found in APK!"
+          echo "=== Debug APKs ==="
+          find app/build/outputs/apk/debug -name "*.apk" -exec sh -c 'echo "$(du -h "$1" | cut -f1)  $1"' _ {} \;
+          echo "=== Release APKs ==="
+          find app/build/outputs/apk/release -name "*.apk" -exec sh -c 'echo "$(du -h "$1" | cut -f1)  $1"' _ {} \;
 
-      # ── Artifacts ───────────────────────────────────────────────────────────
-      - name: Upload Debug APK to Actions
+      # ── GitHub Artifacts ────────────────────────────────────────────────────
+      - name: Upload Debug APKs to Actions
         uses: actions/upload-artifact@v4
         with:
           name: palazikVPN-debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      - name: Upload Release APK to Actions
+      - name: Upload Release APKs to Actions
         uses: actions/upload-artifact@v4
         with:
           name: palazikVPN-release-unsigned
@@ -128,32 +122,58 @@ jobs:
           retention-days: 30
 
       # ── Telegram ────────────────────────────────────────────────────────────
-      - name: Resolve APK paths
-        id: apks
-        run: |
-          DEBUG_APK=$(find app/build/outputs/apk/debug   -name "*.apk" | head -1)
-          REL_APK=$(find   app/build/outputs/apk/release -name "*.apk" | head -1)
-          echo "debug=$DEBUG_APK"  >> $GITHUB_OUTPUT
-          echo "release=$REL_APK" >> $GITHUB_OUTPUT
-
-      - name: Send Debug APK to Telegram
+      # Sends per-ABI APKs individually — each is ~40MB, under TG's 50MB limit.
+      # Universal APK is skipped for TG (too large); it's available in Actions artifacts.
+      - name: Send APKs to Telegram
         run: |
           SHORT_SHA="${{ github.sha }}"
           SHORT_SHA="${SHORT_SHA:0:7}"
-          CAPTION="*palazikVPN* — Debug"$'\n'"Branch: \`${{ github.ref_name }}\`"$'\n'"Commit: \`${SHORT_SHA}\`"$'\n'"Run: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
-            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F document=@"${{ steps.apks.outputs.debug }}" \
-            -F caption="${CAPTION}" \
-            -F parse_mode="Markdown"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-      - name: Send Release APK to Telegram
-        run: |
-          SHORT_SHA="${{ github.sha }}"
-          SHORT_SHA="${SHORT_SHA:0:7}"
-          CAPTION="*palazikVPN* — Release (unsigned)"$'\n'"Branch: \`${{ github.ref_name }}\`"$'\n'"Commit: \`${SHORT_SHA}\`"$'\n'"Run: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
-            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F document=@"${{ steps.apks.outputs.release }}" \
-            -F caption="${CAPTION}" \
-            -F parse_mode="Markdown"
+          send_apk() {
+            local APK_PATH="$1"
+            local LABEL="$2"
+            local FILENAME
+            FILENAME=$(basename "$APK_PATH")
+            local SIZE
+            SIZE=$(du -h "$APK_PATH" | cut -f1)
+
+            CAPTION="*palazikVPN* — ${LABEL}
+            Branch: \`${{ github.ref_name }}\`
+            Commit: \`${SHORT_SHA}\`
+            File: \`${FILENAME}\` (${SIZE})
+            Run: [#${{ github.run_number }}](${RUN_URL})"
+
+            RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
+              -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+              -F document=@"${APK_PATH}" \
+              -F caption="${CAPTION}" \
+              -F parse_mode="Markdown")
+
+            if echo "$RESPONSE" | grep -q '"ok":true'; then
+              echo "✓ Sent: ${FILENAME} (${SIZE})"
+            else
+              echo "❌ Failed: ${FILENAME} — $RESPONSE"
+            fi
+          }
+
+          # Send per-ABI debug APKs (skip universal — too large for TG)
+          for APK in app/build/outputs/apk/debug/*.apk; do
+            FNAME=$(basename "$APK")
+            # Skip universal APK for Telegram
+            if [[ "$FNAME" == *"universal"* ]]; then
+              echo "⏭ Skipping universal APK for TG (available in Actions artifacts)"
+              continue
+            fi
+            send_apk "$APK" "Debug"
+          done
+
+          # Send per-ABI release APKs (skip universal)
+          for APK in app/build/outputs/apk/release/*.apk; do
+            FNAME=$(basename "$APK")
+            if [[ "$FNAME" == *"universal"* ]]; then
+              echo "⏭ Skipping universal APK for TG (available in Actions artifacts)"
+              continue
+            fi
+            send_apk "$APK" "Release (unsigned)"
+          done
