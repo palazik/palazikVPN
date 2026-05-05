@@ -4,8 +4,10 @@ import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.List
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,12 +22,11 @@ sealed class Screen(
     val route: String,
     val label: String,
     val icon: ImageVector,
-    val iconSelected: ImageVector = icon,
 ) {
-    object Home          : Screen("home",     "Home",    Icons.Rounded.Home,          Icons.Rounded.Home)
-    object Profiles      : Screen("profiles", "Profiles",Icons.Rounded.List,          Icons.Rounded.List)
-    object Subscriptions : Screen("subs",     "Subs",    Icons.Rounded.Subscriptions, Icons.Rounded.Subscriptions)
-    object Settings      : Screen("settings", "Settings",Icons.Rounded.Settings,      Icons.Rounded.Settings)
+    object Home          : Screen("home",     "Home",    Icons.Rounded.Home)
+    object Profiles      : Screen("profiles", "Profiles", Icons.AutoMirrored.Rounded.List)
+    object Subscriptions : Screen("subs",     "Subs",    Icons.Rounded.Subscriptions)
+    object Settings      : Screen("settings", "Settings", Icons.Rounded.Settings)
 }
 
 @Composable
@@ -47,6 +48,7 @@ fun AppNavHost(
     }
 
     Scaffold(
+        modifier     = Modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(snackState) },
         bottomBar = {
             NavigationBar(tonalElevation = NavigationBarDefaults.Elevation) {
@@ -55,25 +57,20 @@ fun AppNavHost(
                 tabs.forEach { screen ->
                     val selected = currentDest?.hierarchy?.any { it.route == screen.route } == true
                     NavigationBarItem(
-                        selected  = selected,
-                        onClick   = {
+                        selected = selected,
+                        onClick  = {
                             navController.navigate(screen.route) {
                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                 launchSingleTop = true
                                 restoreState    = true
                             }
                         },
-                        icon  = {
-                            Icon(
-                                imageVector = if (selected) screen.iconSelected else screen.icon,
-                                contentDescription = screen.label,
-                            )
-                        },
+                        icon  = { Icon(screen.icon, screen.label) },
                         label = { Text(screen.label) },
                     )
                 }
             }
-        }
+        },
     ) { innerPadding ->
         NavHost(
             navController    = navController,
