@@ -1,9 +1,12 @@
 package com.palazik.vpn.ui.screen
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -48,13 +52,26 @@ fun ProfilesScreen(vm: MainViewModel) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment     = Alignment.CenterVertically,
         ) {
-            Text("Profiles", style = MaterialTheme.typography.headlineSmall)
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                IconButton(onClick = { vm.pingAll() }) {
-                    Icon(Icons.Rounded.Speed, "Ping all")
+            Column {
+                Text("Profiles", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                if (ui.profiles.isNotEmpty()) {
+                    Text(
+                        "${ui.profiles.size} profiles",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    )
                 }
-                IconButton(onClick = { vm.generateShareLink(); showShareLink = true }) {
-                    Icon(Icons.Rounded.Share, "Share active")
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (ui.profiles.isNotEmpty()) {
+                    IconButton(onClick = { vm.pingAll() }) {
+                        Icon(Icons.Rounded.NetworkCheck, "Ping all")
+                    }
+                }
+                if (ui.activeProfile != null) {
+                    IconButton(onClick = { vm.generateShareLink(); showShareLink = true }) {
+                        Icon(Icons.Rounded.Share, "Share active")
+                    }
                 }
                 OutlinedButton(onClick = { showImport = true }) {
                     Icon(Icons.Rounded.Link, null, Modifier.size(16.dp))
@@ -74,15 +91,29 @@ fun ProfilesScreen(vm: MainViewModel) {
         if (ui.profiles.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Rounded.VpnKey, null, Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.outline)
-                    Spacer(Modifier.height(12.dp))
-                    Text("No profiles yet", style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.outline)
-                    Spacer(Modifier.height(4.dp))
-                    Text("Import via link or add manually",
+                    Icon(
+                        Icons.Rounded.VpnKey, null,
+                        Modifier.size(72.dp),
+                        tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "No profiles yet",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "Import via link or add manually",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline)
+                        color = MaterialTheme.colorScheme.outline,
+                    )
+                    Spacer(Modifier.height(24.dp))
+                    FilledTonalButton(onClick = { showManual = true }) {
+                        Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Add Profile")
+                    }
                 }
             }
         } else {
@@ -91,15 +122,20 @@ fun ProfilesScreen(vm: MainViewModel) {
                     val subName = profile.subscriptionId?.let { sid ->
                         ui.subscriptions.firstOrNull { it.id == sid }?.name
                     }
-                    ProfileCard(
-                        profile  = profile,
-                        subName  = subName,
-                        isActive = profile.isActive,
-                        onSelect = { vm.selectProfile(profile.id) },
-                        onDelete = { vm.removeProfile(profile.id) },
-                        onPing   = { vm.pingProfile(profile) },
-                        onEdit   = { editProfile = profile },
-                    )
+                    AnimatedVisibility(
+                        visible = true,
+                        enter   = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
+                    ) {
+                        ProfileCard(
+                            profile  = profile,
+                            subName  = subName,
+                            isActive = profile.isActive,
+                            onSelect = { vm.selectProfile(profile.id) },
+                            onDelete = { vm.removeProfile(profile.id) },
+                            onPing   = { vm.pingProfile(profile) },
+                            onEdit   = { editProfile = profile },
+                        )
+                    }
                 }
             }
         }
@@ -114,7 +150,8 @@ fun ProfilesScreen(vm: MainViewModel) {
                 OutlinedTextField(
                     value         = importText,
                     onValueChange = { importText = it },
-                    label         = { Text("vmess://, vless://, ss://, trojan://, palazikVPN://…") },
+                    label         = { Text("Paste your share link here") },
+                    placeholder   = { Text("vmess://, vless://, ss://, trojan://…", style = MaterialTheme.typography.bodySmall) },
                     modifier      = Modifier.fillMaxWidth(),
                     minLines      = 3,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -123,7 +160,7 @@ fun ProfilesScreen(vm: MainViewModel) {
             },
             confirmButton = {
                 Button(onClick = {
-                    vm.importProfileFromLink(importText)
+                    vm.importProfileFromLink(importText.trim())
                     showImport = false; importText = ""
                 }) { Text("Import") }
             },
@@ -156,17 +193,24 @@ fun ProfilesScreen(vm: MainViewModel) {
         AlertDialog(
             onDismissRequest = { showShareLink = false; vm.clearShareLink() },
             title = { Text("Share Profile") },
+            icon  = { Icon(Icons.Rounded.Share, null) },
             text = {
                 Column {
-                    Text("Send this link to another palazikVPN device:",
-                        style = MaterialTheme.typography.bodySmall)
-                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Send this link to another palazikVPN device:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(12.dp))
                     Surface(
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = MaterialTheme.shapes.small,
+                        shape = MaterialTheme.shapes.medium,
                     ) {
-                        Text(ui.shareLink!!, modifier = Modifier.padding(8.dp),
-                            style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            ui.shareLink!!,
+                            modifier = Modifier.padding(12.dp),
+                            style    = MaterialTheme.typography.bodySmall,
+                        )
                     }
                 }
             },
@@ -175,8 +219,8 @@ fun ProfilesScreen(vm: MainViewModel) {
                     clipboard.setText(AnnotatedString(ui.shareLink!!))
                     showShareLink = false; vm.clearShareLink()
                 }) {
-                    Icon(Icons.Rounded.ContentCopy, null)
-                    Spacer(Modifier.width(4.dp))
+                    Icon(Icons.Rounded.ContentCopy, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text("Copy")
                 }
             },
@@ -201,90 +245,154 @@ private fun ProfileCard(
     onPing: () -> Unit,
     onEdit: () -> Unit,
 ) {
-    val containerColor = if (isActive)
-        MaterialTheme.colorScheme.primaryContainer
-    else
-        MaterialTheme.colorScheme.surfaceVariant
+    val containerColor by animateColorAsState(
+        targetValue   = if (isActive) MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surfaceVariant,
+        animationSpec = tween(300),
+        label         = "card_color",
+    )
 
     ElevatedCard(
         onClick  = onSelect,
         colors   = CardDefaults.elevatedCardColors(containerColor = containerColor),
         modifier = Modifier.fillMaxWidth(),
+        shape    = MaterialTheme.shapes.large,
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                // Protocol badge
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                    shape = MaterialTheme.shapes.small,
+                    shape = CircleShape,
                 ) {
                     Text(
                         text     = profile.protocol.name,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         style    = MaterialTheme.typography.labelSmall,
                         color    = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold,
                     )
                 }
                 if (profile.transport != Transport.TCP) {
-                    Spacer(Modifier.width(4.dp))
+                    Spacer(Modifier.width(6.dp))
                     Surface(
                         color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f),
-                        shape = MaterialTheme.shapes.small,
+                        shape = CircleShape,
                     ) {
                         Text(
                             text     = profile.transport.name,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                             style    = MaterialTheme.typography.labelSmall,
                             color    = MaterialTheme.colorScheme.secondary,
                         )
                     }
                 }
+                if (isActive) {
+                    Spacer(Modifier.width(6.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                        shape = CircleShape,
+                    ) {
+                        Text(
+                            "ACTIVE",
+                            modifier   = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style      = MaterialTheme.typography.labelSmall,
+                            color      = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
                 Spacer(Modifier.weight(1f))
-                if (profile.latencyMs >= 0) {
-                    Text(
-                        "${profile.latencyMs}ms",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = when {
-                            profile.latencyMs < 150 -> MaterialTheme.colorScheme.primary
-                            profile.latencyMs < 400 -> MaterialTheme.colorScheme.secondary
-                            else                    -> MaterialTheme.colorScheme.error
-                        },
-                    )
-                    Spacer(Modifier.width(4.dp))
-                }
-                IconButton(onClick = onPing,   Modifier.size(32.dp)) {
-                    Icon(Icons.Rounded.Speed, "Ping", Modifier.size(18.dp))
-                }
-                IconButton(onClick = onEdit,   Modifier.size(32.dp)) {
-                    Icon(Icons.Rounded.Edit, "Edit", Modifier.size(18.dp))
-                }
-                IconButton(onClick = onDelete, Modifier.size(32.dp)) {
-                    Icon(Icons.Rounded.Delete, "Delete", Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.error)
+                // Latency badge
+                AnimatedVisibility(
+                    visible = profile.latencyMs >= 0,
+                    enter   = fadeIn() + scaleIn(),
+                    exit    = fadeOut() + scaleOut(),
+                ) {
+                    Surface(
+                        color = latencyChipColor(profile.latencyMs).copy(alpha = 0.15f),
+                        shape = CircleShape,
+                    ) {
+                        Text(
+                            "${profile.latencyMs}ms",
+                            modifier   = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                            style      = MaterialTheme.typography.labelSmall,
+                            color      = latencyChipColor(profile.latencyMs),
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
                 }
             }
-            Spacer(Modifier.height(4.dp))
-            Text(profile.name, style = MaterialTheme.typography.titleSmall)
+
+            Spacer(Modifier.height(8.dp))
+            Text(profile.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
             Text(
                 "${profile.address}:${profile.port}",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
             )
+
             if (subName != null) {
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.Subscriptions, null, Modifier.size(12.dp),
-                        tint = MaterialTheme.colorScheme.tertiary)
+                    Icon(
+                        Icons.Rounded.Subscriptions, null,
+                        Modifier.size(12.dp),
+                        tint = MaterialTheme.colorScheme.tertiary,
+                    )
                     Spacer(Modifier.width(4.dp))
-                    Text(subName, style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary)
+                    Text(
+                        subName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(6.dp))
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                thickness = 0.5.dp,
+            )
+            Spacer(Modifier.height(4.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.End,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                TextButton(onClick = onPing, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Icon(Icons.Rounded.NetworkCheck, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Ping", style = MaterialTheme.typography.labelMedium)
+                }
+                TextButton(onClick = onEdit, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Icon(Icons.Rounded.Edit, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Edit", style = MaterialTheme.typography.labelMedium)
+                }
+                TextButton(
+                    onClick = onDelete,
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) {
+                    Icon(Icons.Rounded.Delete, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Delete", style = MaterialTheme.typography.labelMedium)
                 }
             }
         }
     }
 }
 
+@Composable
+private fun latencyChipColor(ms: Long) = when {
+    ms < 150 -> MaterialTheme.colorScheme.primary
+    ms < 400 -> MaterialTheme.colorScheme.secondary
+    else     -> MaterialTheme.colorScheme.error
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Manual add / edit dialog
+// Manual add / edit dialog — unchanged logic, minor cleanup
 // ─────────────────────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -322,81 +430,50 @@ private fun ManualProfileDialog(
     var transportExpanded by remember { mutableStateOf(false) }
     var securityExpanded  by remember { mutableStateOf(false) }
 
-    // Protocols that have no transport concept
-    val noTransportProtos = listOf(
-        Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.HYSTERIA2, Protocol.SOCKS5
-    )
-    // Protocols that have no security concept (they handle it natively)
-    val noSecurityProtos = listOf(
-        Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.SOCKS5
-    )
-    // Protocols where path/host fields are meaningful
-    // BUG FIX: show path/host for ALL proxy protocols (TCP included), not just specific transports.
-    // Some VLESS-over-TCP configs use host headers; subscriptions import these fields always.
-    val showPathHostProtos = listOf(
-        Protocol.VLESS, Protocol.VMESS, Protocol.TROJAN, Protocol.TUIC
-    )
+    val noTransportProtos = listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.HYSTERIA2, Protocol.SOCKS5)
+    val noSecurityProtos  = listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.SOCKS5)
+    val showPathHostProtos = listOf(Protocol.VLESS, Protocol.VMESS, Protocol.TROJAN, Protocol.TUIC)
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (isEdit) "Edit Profile" else "Add Profile Manually") },
         text = {
             Column(
-                Modifier
-                    .verticalScroll(rememberScrollState())
-                    .fillMaxWidth(),
+                Modifier.verticalScroll(rememberScrollState()).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                // Name
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Profile Name") },
                     modifier = Modifier.fillMaxWidth(), singleLine = true,
                 )
 
-                // Protocol
-                // FIX: XHTTP and REALITY removed from this list — they are not protocols
-                ExposedDropdownMenuBox(
-                    expanded = protoExpanded,
-                    onExpandedChange = { protoExpanded = it },
-                ) {
+                ExposedDropdownMenuBox(expanded = protoExpanded, onExpandedChange = { protoExpanded = it }) {
                     OutlinedTextField(
-                        value         = protocol.name,
-                        onValueChange = {},
-                        readOnly      = true,
-                        label         = { Text("Protocol") },
-                        trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(protoExpanded) },
-                        modifier      = Modifier.fillMaxWidth().menuAnchor(),
+                        value = protocol.name, onValueChange = {}, readOnly = true,
+                        label = { Text("Protocol") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(protoExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
                     )
-                    ExposedDropdownMenu(
-                        expanded = protoExpanded,
-                        onDismissRequest = { protoExpanded = false },
-                    ) {
+                    ExposedDropdownMenu(expanded = protoExpanded, onDismissRequest = { protoExpanded = false }) {
                         listOf(
                             Protocol.VLESS, Protocol.VMESS, Protocol.SHADOWSOCKS,
                             Protocol.TROJAN, Protocol.HYSTERIA2, Protocol.WIREGUARD,
                             Protocol.SOCKS5, Protocol.TUIC,
-                            // XHTTP removed: select VLESS + Transport XHTTP instead
-                            // REALITY removed: it is a Security option, not a Protocol
                         ).forEach { p ->
-                            DropdownMenuItem(
-                                text    = { Text(p.name) },
-                                onClick = { protocol = p; protoExpanded = false },
-                            )
+                            DropdownMenuItem(text = { Text(p.name) }, onClick = { protocol = p; protoExpanded = false })
                         }
                     }
                 }
 
-                // XHTTP hint — shown when user picks VLESS, reminding them transport controls xhttp
                 if (protocol == Protocol.VLESS) {
                     Text(
-                        "Tip: for XHTTP, select Protocol = VLESS and Transport = XHTTP below.",
+                        "Tip: for XHTTP, select Transport = XHTTP below.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
-                // Address + Port
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = address, onValueChange = { address = it },
@@ -411,7 +488,6 @@ private fun ManualProfileDialog(
                     )
                 }
 
-                // Protocol-specific credential fields
                 when (protocol) {
                     Protocol.VMESS, Protocol.VLESS, Protocol.TROJAN,
                     Protocol.SOCKS5, Protocol.TUIC -> {
@@ -427,87 +503,38 @@ private fun ManualProfileDialog(
                         )
                     }
                     Protocol.SHADOWSOCKS -> {
-                        OutlinedTextField(
-                            value = ssMethod, onValueChange = { ssMethod = it },
-                            label = { Text("Cipher") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        )
-                        OutlinedTextField(
-                            value = ssPassword, onValueChange = { ssPassword = it },
-                            label = { Text("Password") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        )
+                        OutlinedTextField(value = ssMethod,   onValueChange = { ssMethod   = it }, label = { Text("Cipher")   }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        OutlinedTextField(value = ssPassword, onValueChange = { ssPassword = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
                     Protocol.HYSTERIA2 -> {
-                        OutlinedTextField(
-                            value = hystPwd, onValueChange = { hystPwd = it },
-                            label = { Text("Password") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        )
+                        OutlinedTextField(value = hystPwd, onValueChange = { hystPwd = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
                     Protocol.WIREGUARD -> {
-                        OutlinedTextField(
-                            value = wgPrivKey, onValueChange = { wgPrivKey = it },
-                            label = { Text("Private Key") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        )
-                        OutlinedTextField(
-                            value = wgPubKey, onValueChange = { wgPubKey = it },
-                            label = { Text("Peer Public Key") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        )
-                        OutlinedTextField(
-                            value = wgPsk, onValueChange = { wgPsk = it },
-                            label = { Text("Pre-Shared Key (optional)") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        )
+                        OutlinedTextField(value = wgPrivKey, onValueChange = { wgPrivKey = it }, label = { Text("Private Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        OutlinedTextField(value = wgPubKey,  onValueChange = { wgPubKey  = it }, label = { Text("Peer Public Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        OutlinedTextField(value = wgPsk,     onValueChange = { wgPsk     = it }, label = { Text("Pre-Shared Key (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = wgDns, onValueChange = { wgDns = it },
-                                label = { Text("DNS") },
-                                modifier = Modifier.weight(1f), singleLine = true,
-                            )
-                            OutlinedTextField(
-                                value = wgMtu, onValueChange = { wgMtu = it },
-                                label = { Text("MTU") },
-                                modifier = Modifier.width(90.dp), singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            )
+                            OutlinedTextField(value = wgDns, onValueChange = { wgDns = it }, label = { Text("DNS") }, modifier = Modifier.weight(1f), singleLine = true)
+                            OutlinedTextField(value = wgMtu, onValueChange = { wgMtu = it }, label = { Text("MTU") }, modifier = Modifier.width(90.dp), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                         }
                     }
                     else -> {}
                 }
 
-                // Transport
                 if (protocol !in noTransportProtos) {
-                    ExposedDropdownMenuBox(
-                        expanded = transportExpanded,
-                        onExpandedChange = { transportExpanded = it },
-                    ) {
+                    ExposedDropdownMenuBox(expanded = transportExpanded, onExpandedChange = { transportExpanded = it }) {
                         OutlinedTextField(
-                            value         = transport.name,
-                            onValueChange = {},
-                            readOnly      = true,
-                            label         = { Text("Transport") },
-                            trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(transportExpanded) },
-                            modifier      = Modifier.fillMaxWidth().menuAnchor(),
+                            value = transport.name, onValueChange = {}, readOnly = true,
+                            label = { Text("Transport") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(transportExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
                         )
-                        ExposedDropdownMenu(
-                            expanded = transportExpanded,
-                            onDismissRequest = { transportExpanded = false },
-                        ) {
+                        ExposedDropdownMenu(expanded = transportExpanded, onDismissRequest = { transportExpanded = false }) {
                             Transport.values().forEach { t ->
-                                DropdownMenuItem(
-                                    text    = { Text(t.name) },
-                                    onClick = { transport = t; transportExpanded = false },
-                                )
+                                DropdownMenuItem(text = { Text(t.name) }, onClick = { transport = t; transportExpanded = false })
                             }
                         }
                     }
-
-                    // BUG FIX: show Path and Host for ALL transports, not just WS/H2/XHTTP/GRPC.
-                    // TCP configs can carry host headers too, and subscription imports always
-                    // include these fields regardless of transport.
                     if (protocol in showPathHostProtos) {
                         OutlinedTextField(
                             value = path, onValueChange = { path = it },
@@ -522,55 +549,27 @@ private fun ManualProfileDialog(
                     }
                 }
 
-                // Security
                 if (protocol !in noSecurityProtos) {
-                    ExposedDropdownMenuBox(
-                        expanded = securityExpanded,
-                        onExpandedChange = { securityExpanded = it },
-                    ) {
+                    ExposedDropdownMenuBox(expanded = securityExpanded, onExpandedChange = { securityExpanded = it }) {
                         OutlinedTextField(
-                            value         = security.name,
-                            onValueChange = {},
-                            readOnly      = true,
-                            label         = { Text("Security") },
-                            trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(securityExpanded) },
-                            modifier      = Modifier.fillMaxWidth().menuAnchor(),
+                            value = security.name, onValueChange = {}, readOnly = true,
+                            label = { Text("Security") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(securityExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
                         )
-                        ExposedDropdownMenu(
-                            expanded = securityExpanded,
-                            onDismissRequest = { securityExpanded = false },
-                        ) {
+                        ExposedDropdownMenu(expanded = securityExpanded, onDismissRequest = { securityExpanded = false }) {
                             Security.values().forEach { s ->
-                                DropdownMenuItem(
-                                    text    = { Text(s.name) },
-                                    onClick = { security = s; securityExpanded = false },
-                                )
+                                DropdownMenuItem(text = { Text(s.name) }, onClick = { security = s; securityExpanded = false })
                             }
                         }
                     }
                     if (security != Security.NONE) {
-                        OutlinedTextField(
-                            value = sni, onValueChange = { sni = it },
-                            label = { Text("SNI") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        )
-                        OutlinedTextField(
-                            value = fingerprint, onValueChange = { fingerprint = it },
-                            label = { Text("Fingerprint") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        )
+                        OutlinedTextField(value = sni,         onValueChange = { sni         = it }, label = { Text("SNI") },         modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        OutlinedTextField(value = fingerprint, onValueChange = { fingerprint = it }, label = { Text("Fingerprint") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
                     if (security == Security.REALITY) {
-                        OutlinedTextField(
-                            value = publicKey, onValueChange = { publicKey = it },
-                            label = { Text("Public Key (pbk)") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        )
-                        OutlinedTextField(
-                            value = shortId, onValueChange = { shortId = it },
-                            label = { Text("Short ID (sid)") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                        )
+                        OutlinedTextField(value = publicKey, onValueChange = { publicKey = it }, label = { Text("Public Key (pbk)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        OutlinedTextField(value = shortId,   onValueChange = { shortId   = it }, label = { Text("Short ID (sid)") },  modifier = Modifier.fillMaxWidth(), singleLine = true)
                     }
                 }
             }
