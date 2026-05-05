@@ -215,6 +215,10 @@ object ProfileCodec {
                 port       = uri.port.takeIf { it > 0 } ?: 8388,
                 ssMethod   = method,
                 ssPassword = pwd,
+                // SS does not use TLS — must override the default Security.TLS
+                // otherwise XrayConfigBuilder adds tlsSettings and xray fails to connect
+                security   = Security.NONE,
+                transport  = Transport.TCP,
             )
         } catch (_: Exception) {
             VpnProfile(name = Uri.decode(fragment), protocol = Protocol.SHADOWSOCKS)
