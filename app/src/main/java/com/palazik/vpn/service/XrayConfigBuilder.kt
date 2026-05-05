@@ -13,7 +13,7 @@ object XrayConfigBuilder {
             put("inbounds",  buildInbounds())
             put("outbounds", buildOutbounds(profile))
             put("routing",   buildRouting())
-            put("stats",     buildStats())
+            put("stats",     JSONObject())
             put("policy",    buildPolicy())
         }.toString(2)
 
@@ -25,10 +25,10 @@ object XrayConfigBuilder {
 
     // ── Inbounds ──────────────────────────────────────────────────────────────
 
+    // Mirrors v2ray_config_with_tun.json from v2rayNG assets.
+    // TUN inbound must be present for xray to process packets from the tunFd
+    // passed to startLoop(). Without it xray ignores the fd entirely.
     private fun buildInbounds() = JSONArray().apply {
-        // TUN inbound — required when startLoop() is called with a non-zero tunFd.
-        // xray reads packets directly from the TUN fd and routes them through this inbound.
-        // Without it, the TUN interface is established but xray ignores the fd entirely.
         put(JSONObject().apply {
             put("tag", "tun")
             put("protocol", "tun")
@@ -39,9 +39,7 @@ object XrayConfigBuilder {
             })
             put("sniffing", JSONObject().apply {
                 put("enabled", true)
-                put("destOverride", JSONArray().apply {
-                    put("http"); put("tls")
-                })
+                put("destOverride", JSONArray().apply { put("http"); put("tls") })
             })
         })
         put(JSONObject().apply {
@@ -52,12 +50,11 @@ object XrayConfigBuilder {
             put("settings", JSONObject().apply {
                 put("auth", "noauth")
                 put("udp", true)
+                put("userLevel", 8)
             })
             put("sniffing", JSONObject().apply {
                 put("enabled", true)
-                put("destOverride", JSONArray().apply {
-                    put("http"); put("tls"); put("quic")
-                })
+                put("destOverride", JSONArray().apply { put("http"); put("tls") })
             })
         })
         put(JSONObject().apply {
@@ -65,7 +62,7 @@ object XrayConfigBuilder {
             put("port", 10809)
             put("listen", "127.0.0.1")
             put("protocol", "http")
-            put("settings", JSONObject())
+            put("settings", JSONObject().apply { put("userLevel", 8) })
         })
     }
 
@@ -81,7 +78,14 @@ object XrayConfigBuilder {
         put(JSONObject().apply {
             put("tag", "block")
             put("protocol", "blackhole")
-            put("settings", JSONObject())
+            put("settings", JSONObject().apply {
+                put("response", JSONObject().apply { put("type", "http") })
+            })
+        })
+        // Required for TUN mode: intercepts DNS queries from TUN and resolves them
+        put(JSONObject().apply {
+            put("tag", "dns-out")
+            put("protocol", "dns")
         })
     }
 
@@ -100,17 +104,12 @@ object XrayConfigBuilder {
             else                 -> buildVless(this, profile)
         }
 
-        val needsStream = profile.protocol !in listOf(
-            Protocol.HYSTERIA2, Protocol.WIREGUARD
-        )
-        if (needsStream) {
-            put("streamSettings", buildStreamSettings(profile))
-        }
+        val needsStream = profile.protocol !in listOf(Protocol.HYSTERIA2, Protocol.WIREGUARD)
+        if (needsStream) put("streamSettings", buildStreamSettings(profile))
 
         val useMux = profile.protocol !in listOf(
             Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.TUIC, Protocol.SOCKS5
         ) && profile.transport !in listOf(Transport.XHTTP, Transport.QUIC)
-
         put("mux", JSONObject().apply {
             put("enabled", useMux)
             if (useMux) put("concurrency", 8)
@@ -118,10 +117,6 @@ object XrayConfigBuilder {
     }
 
     // ── Protocol builders ─────────────────────────────────────────────────────
-    // [Keep all your existing protocol builder functions unchanged]
-    // buildVless, buildVmess, buildShadowsocks, buildTrojan, 
-    // buildHysteria2, buildWireguard, buildSocksOut, buildTuic
-    // ... (same as your original file)
 
     private fun buildVless(obj: JSONObject, p: VpnProfile) {
         obj.put("protocol", "vless")
@@ -215,22 +210,17 @@ object XrayConfigBuilder {
         obj.put("protocol", "wireguard")
         obj.put("settings", JSONObject().apply {
             put("secretKey", p.wgPrivateKey)
-            put("address", JSONArray().apply {
-                put(p.address.ifEmpty { "10.0.0.2/32" })
-            })
+            put("address", JSONArray().apply { put(p.address.ifEmpty { "10.0.0.2/32" }) })
             put("peers", JSONArray().apply {
                 put(JSONObject().apply {
-                    put("publicKey",    p.wgPeerPublicKey)
-                    put("allowedIPs",   JSONArray().apply { put("0.0.0.0/0"); put("::/0") })
-                    val endpoint = p.wgEndpoint.ifEmpty { "${p.address}:${p.port}" }
-                    put("endpoint", endpoint)
+                    put("publicKey",  p.wgPeerPublicKey)
+                    put("allowedIPs", JSONArray().apply { put("0.0.0.0/0"); put("::/0") })
+                    put("endpoint",   p.wgEndpoint.ifEmpty { "${p.address}:${p.port}" })
                     if (p.wgPreSharedKey.isNotEmpty()) put("preSharedKey", p.wgPreSharedKey)
                 })
             })
             put("mtu", p.wgMtu)
-            if (p.wgDns.isNotEmpty()) {
-                put("domainStrategy", "UseIPv4")
-            }
+            if (p.wgDns.isNotEmpty()) put("domainStrategy", "UseIPv4")
         })
     }
 
@@ -257,10 +247,10 @@ object XrayConfigBuilder {
     private fun buildTuic(obj: JSONObject, p: VpnProfile) {
         obj.put("protocol", "tuic")
         obj.put("settings", JSONObject().apply {
-            put("server",   p.address)
-            put("port",     p.port)
-            put("uuid",     p.uuid)
-            put("password", p.ssPassword)
+            put("server",            p.address)
+            put("port",              p.port)
+            put("uuid",              p.uuid)
+            put("password",          p.ssPassword)
             put("congestionControl", "bbr")
             put("udpRelayMode",      "native")
             put("zeroRttHandshake",  false)
@@ -288,9 +278,7 @@ object XrayConfigBuilder {
             })
             Transport.WS -> put("wsSettings", JSONObject().apply {
                 put("path", p.path.ifEmpty { "/" })
-                if (p.host.isNotEmpty()) {
-                    put("headers", JSONObject().apply { put("Host", p.host) })
-                }
+                if (p.host.isNotEmpty()) put("headers", JSONObject().apply { put("Host", p.host) })
             })
             Transport.GRPC -> put("grpcSettings", JSONObject().apply {
                 put("serviceName", p.path.ifEmpty { "" })
@@ -298,9 +286,7 @@ object XrayConfigBuilder {
             })
             Transport.H2 -> put("httpSettings", JSONObject().apply {
                 put("path", p.path.ifEmpty { "/" })
-                if (p.host.isNotEmpty()) {
-                    put("host", JSONArray().apply { put(p.host) })
-                }
+                if (p.host.isNotEmpty()) put("host", JSONArray().apply { put(p.host) })
             })
             Transport.TCP -> {
                 if (p.host.isNotEmpty()) {
@@ -309,10 +295,10 @@ object XrayConfigBuilder {
                             put("type", "http")
                             put("request", JSONObject().apply {
                                 put("version", "1.1")
-                                put("method", "GET")
-                                put("path", JSONArray().apply { put(p.path.ifEmpty { "/" }) })
+                                put("method",  "GET")
+                                put("path",    JSONArray().apply { put(p.path.ifEmpty { "/" }) })
                                 put("headers", JSONObject().apply {
-                                    put("Host", JSONArray().apply { put(p.host) })
+                                    put("Host",       JSONArray().apply { put(p.host) })
                                     put("User-Agent", JSONArray().apply { put("Mozilla/5.0") })
                                 })
                             })
@@ -360,7 +346,24 @@ object XrayConfigBuilder {
 
     // ── DNS ───────────────────────────────────────────────────────────────────
 
+    // v2rayNG CoreConfigManager.getDns():
+    // - hosts map pre-resolves known DoH provider domains to their IPs
+    //   to prevent DNS loop (xray intercepts DNS → tries to resolve DoH domain
+    //   → DNS intercept again → infinite loop)
+    // - remote DNS (1.1.1.1 DoH) for proxied traffic
+    // - direct DNS (223.5.5.5) for local/cn traffic
     private fun buildDns() = JSONObject().apply {
+        put("tag", "dns-in")
+        put("hosts", JSONObject().apply {
+            // Hardcoded per v2rayNG to fix DNS loop for popular DoH providers
+            put("dns.google",         JSONArray().apply { put("8.8.8.8"); put("8.8.4.4") })
+            put("one.one.one.one",    JSONArray().apply { put("1.1.1.1"); put("1.0.0.1") })
+            put("cloudflare-dns.com", JSONArray().apply { put("1.1.1.1"); put("1.0.0.1") })
+            put("dns.cloudflare.com", JSONArray().apply { put("1.1.1.1"); put("1.0.0.1") })
+            put("dns.alidns.com",     JSONArray().apply { put("223.5.5.5"); put("223.6.6.6") })
+            // v2rayNG: fix Play Store problems
+            put("clients4.google.com", "clients.google.com")
+        })
         put("servers", JSONArray().apply {
             put(JSONObject().apply {
                 put("address", "https://1.1.1.1/dns-query")
@@ -371,19 +374,16 @@ object XrayConfigBuilder {
         })
     }
 
-    // ── Stats ─────────────────────────────────────────────────────────────────
-
-    private fun buildStats() = JSONObject().apply {
-        put("userLevel", 0)
-    }
-
     // ── Policy ────────────────────────────────────────────────────────────────
 
+    // v2rayNG v2ray_config_with_tun.json policy section
     private fun buildPolicy() = JSONObject().apply {
         put("levels", JSONObject().apply {
-            put("0", JSONObject().apply {
-                put("statsUserUplink",   true)
-                put("statsUserDownlink", true)
+            put("8", JSONObject().apply {
+                put("handshake",    4)
+                put("connIdle",     300)
+                put("uplinkOnly",   1)
+                put("downlinkOnly", 1)
             })
         })
         put("system", JSONObject().apply {
@@ -392,27 +392,51 @@ object XrayConfigBuilder {
         })
     }
 
-        // ── Routing ───────────────────────────────────────────────────────────────
+    // ── Routing ───────────────────────────────────────────────────────────────
+
+    // v2rayNG CoreConfigManager.getCustomLocalDns() adds a DNS intercept rule:
+    //   inboundTag=["tun"], port="53" → outboundTag="dns-out"
+    // This is critical — without it DNS packets from TUN go into proxy,
+    // proxy resolves them, returns through TUN, xray intercepts again → loop.
     private fun buildRouting() = JSONObject().apply {
         put("domainStrategy", "IPIfNonMatch")
         put("domainMatcher",  "hybrid")
         put("rules", JSONArray().apply {
+
+            // Rule 1: DNS from TUN → dns-out (MUST be first)
             put(JSONObject().apply {
-                put("type", "field"); put("outboundTag", "block")
+                put("type", "field")
+                put("inboundTag", JSONArray().apply { put("tun") })
+                put("outboundTag", "dns-out")
+                put("port", "53")
+            })
+
+            // Rule 2: Block ads
+            put(JSONObject().apply {
+                put("type", "field")
+                put("outboundTag", "block")
                 put("domain", JSONArray().apply { put("geosite:category-ads-all") })
             })
+
+            // Rule 3: Private/LAN IPs → direct
             put(JSONObject().apply {
-                put("type", "field"); put("outboundTag", "direct")
+                put("type", "field")
+                put("outboundTag", "direct")
                 put("ip", JSONArray().apply {
                     put("geoip:private")
                     put("127.0.0.0/8")
                     put("10.0.0.0/8")
                     put("172.16.0.0/12")
                     put("192.168.0.0/16")
+                    put("169.254.0.0/16")
+                    put("224.0.0.0/4")
                 })
             })
+
+            // Rule 4: All other traffic → proxy
             put(JSONObject().apply {
-                put("type", "field"); put("outboundTag", "proxy")
+                put("type", "field")
+                put("outboundTag", "proxy")
                 put("network", "tcp,udp")
             })
         })
