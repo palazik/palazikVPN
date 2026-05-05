@@ -2,22 +2,30 @@ package com.palazik.vpn.ui.screen
 
 import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.*
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 
-sealed class Screen(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    object Home          : Screen("home",    "Home",    Icons.Rounded.Home)
-    object Profiles      : Screen("profiles","Profiles",Icons.Rounded.List)
-    object Subscriptions : Screen("subs",    "Subs",    Icons.Rounded.Subscriptions)
-    object Settings      : Screen("settings","Settings",Icons.Rounded.Settings)
+sealed class Screen(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+    val iconSelected: ImageVector = icon,
+) {
+    object Home          : Screen("home",     "Home",    Icons.Rounded.Home,          Icons.Rounded.Home)
+    object Profiles      : Screen("profiles", "Profiles",Icons.Rounded.List,          Icons.Rounded.List)
+    object Subscriptions : Screen("subs",     "Subs",    Icons.Rounded.Subscriptions, Icons.Rounded.Subscriptions)
+    object Settings      : Screen("settings", "Settings",Icons.Rounded.Settings,      Icons.Rounded.Settings)
 }
 
 @Composable
@@ -41,12 +49,13 @@ fun AppNavHost(
     Scaffold(
         snackbarHost = { SnackbarHost(snackState) },
         bottomBar = {
-            NavigationBar {
+            NavigationBar(tonalElevation = NavigationBarDefaults.Elevation) {
                 val navBackStack by navController.currentBackStackEntryAsState()
                 val currentDest = navBackStack?.destination
                 tabs.forEach { screen ->
+                    val selected = currentDest?.hierarchy?.any { it.route == screen.route } == true
                     NavigationBarItem(
-                        selected  = currentDest?.hierarchy?.any { it.route == screen.route } == true,
+                        selected  = selected,
                         onClick   = {
                             navController.navigate(screen.route) {
                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -54,14 +63,39 @@ fun AppNavHost(
                                 restoreState    = true
                             }
                         },
-                        icon  = { Icon(screen.icon, screen.label) },
+                        icon  = {
+                            Icon(
+                                imageVector = if (selected) screen.iconSelected else screen.icon,
+                                contentDescription = screen.label,
+                            )
+                        },
                         label = { Text(screen.label) },
                     )
                 }
             }
         }
     ) { innerPadding ->
-        NavHost(navController, startDestination = Screen.Home.route, Modifier.padding(innerPadding)) {
+        NavHost(
+            navController    = navController,
+            startDestination = Screen.Home.route,
+            modifier         = Modifier.padding(innerPadding),
+            enterTransition  = {
+                fadeIn(tween(220, easing = EaseOutQuart)) +
+                    slideInHorizontally(tween(220, easing = EaseOutQuart)) { it / 10 }
+            },
+            exitTransition   = {
+                fadeOut(tween(180)) +
+                    slideOutHorizontally(tween(180)) { -it / 10 }
+            },
+            popEnterTransition = {
+                fadeIn(tween(220, easing = EaseOutQuart)) +
+                    slideInHorizontally(tween(220, easing = EaseOutQuart)) { -it / 10 }
+            },
+            popExitTransition  = {
+                fadeOut(tween(180)) +
+                    slideOutHorizontally(tween(180)) { it / 10 }
+            },
+        ) {
             composable(Screen.Home.route)          { HomeScreen(vm, permLauncher) }
             composable(Screen.Profiles.route)      { ProfilesScreen(vm) }
             composable(Screen.Subscriptions.route) { SubscriptionsScreen(vm) }
@@ -69,3 +103,5 @@ fun AppNavHost(
         }
     }
 }
+
+private val EaseOutQuart = CubicBezierEasing(0.25f, 1f, 0.5f, 1f)
