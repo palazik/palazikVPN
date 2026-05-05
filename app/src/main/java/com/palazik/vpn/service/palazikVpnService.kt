@@ -10,6 +10,7 @@ import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.StrictMode
 import android.provider.Settings
 import android.util.Base64
 import android.util.Log
@@ -18,6 +19,7 @@ import com.palazik.vpn.R
 import com.palazik.vpn.data.model.VpnProfile
 import com.palazik.vpn.palazikVPNApp
 import com.palazik.vpn.ui.MainActivity
+import go.Seq
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +29,7 @@ import libv2ray.Libv2ray
 import libv2ray.ProcessFinder
 import java.io.File
 import java.io.FileOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
 
 class palazikVpnService : VpnService() {
 
@@ -36,6 +39,9 @@ class palazikVpnService : VpnService() {
         const val EXTRA_PROFILE   = "profile_id"
         const val NOTIFICATION_ID = 1001
         private const val TAG     = "palazikVPN"
+
+        // initCoreEnv must only be called once per process lifetime (like v2rayNG)
+        private val coreEnvInitialized = AtomicBoolean(false)
 
         private val _connectionState = MutableStateFlow(ServiceState.STOPPED)
         val connectionState: StateFlow<ServiceState> = _connectionState
@@ -55,16 +61,19 @@ class palazikVpnService : VpnService() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var statsJob: Job? = null
 
-    private val connectivity by lazy {
-        getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
-    }
-    private val networkRequest by lazy {
+    // v2rayNG: registerDefaultNetworkCallback returns our VPN interface, so we use
+    // requestNetwork with a specific request to get the real underlying network,
+    // then call setUnderlyingNetworks so xray's outbound sockets bypass the TUN.
+    private val connectivity by lazy { getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager }
+
+    private val defaultNetworkRequest by lazy {
         NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
             .build()
     }
-    private val networkCallback by lazy {
+
+    private val defaultNetworkCallback by lazy {
         object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 setUnderlyingNetworks(arrayOf(network))
@@ -80,6 +89,14 @@ class palazikVpnService : VpnService() {
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
+    override fun onCreate() {
+        super.onCreate()
+        // v2rayNG sets permitAll thread policy in onCreate to avoid NetworkOnMainThreadException
+        // during core init which may do brief I/O
+        val policy = StrictMode.ThreadPolicy.Builder().permitAll().build()
+        StrictMode.setThreadPolicy(policy)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> startVpn()
@@ -89,6 +106,7 @@ class palazikVpnService : VpnService() {
     }
 
     override fun onRevoke() { stopVpn() }
+
     override fun onDestroy() {
         scope.cancel()
         super.onDestroy()
@@ -114,17 +132,19 @@ class palazikVpnService : VpnService() {
                 val config = XrayConfigBuilder.build(profile)
                 Log.d(TAG, "Xray config built for ${profile.name}")
 
-                val iface = buildVpnInterface()
-                vpnInterface = iface
-                Log.d(TAG, "TUN established, fd=${iface.fd}")
-
+                // Register network callback BEFORE establish() so setUnderlyingNetworks
+                // is set before the TUN interface captures all traffic
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                     try {
-                        connectivity.requestNetwork(networkRequest, networkCallback)
+                        connectivity.requestNetwork(defaultNetworkRequest, defaultNetworkCallback)
                     } catch (e: Exception) {
                         Log.w(TAG, "requestNetwork failed: ${e.message}")
                     }
                 }
+
+                val iface = buildVpnInterface()
+                vpnInterface = iface
+                Log.d(TAG, "TUN established, fd=${iface.fd}")
 
                 val controller = Libv2ray.newCoreController(V2RayCallback())
                 controller.registerProcessFinder(object : ProcessFinder {
@@ -136,8 +156,8 @@ class palazikVpnService : VpnService() {
                 coreController = controller
 
                 // Pass actual TUN fd — xray reads packets from it via the "tun" inbound.
-                // 0 = socks/http proxy only mode, fd = full TUN mode.
-                controller.startLoop(config, iface.fd)
+                // v2rayNG: tunFd = vpnInterface?.fd ?: 0
+                controller.startLoop(config, iface.fd.toLong())
 
                 _connectionState.value = ServiceState.RUNNING
                 updateNotification("Connected — ${profile.name}")
@@ -152,11 +172,13 @@ class palazikVpnService : VpnService() {
 
     // ── Geodata / init ────────────────────────────────────────────────────────
 
+    // v2rayNG: getExternalFilesDir("assets") ?: getDir("assets", 0)
     private fun userAssetPath(): String {
         return (applicationContext.getExternalFilesDir("assets")
             ?: applicationContext.getDir("assets", 0)).absolutePath
     }
 
+    // v2rayNG: ANDROID_ID.toByteArray().copyOf(32) → Base64(NO_PADDING | URL_SAFE)
     private fun getDeviceIdForXUDPBaseKey(): String {
         val androidId = Settings.Secure.ANDROID_ID.toByteArray(Charsets.UTF_8)
         return Base64.encodeToString(
@@ -180,30 +202,41 @@ class palazikVpnService : VpnService() {
                 } catch (e: Exception) {
                     throw RuntimeException("Missing asset: $fileName", e)
                 }
-            } else {
-                Log.d(TAG, "$fileName already present (${dest.length()} bytes)")
             }
         }
     }
 
+    // v2rayNG CoreNativeManager: Seq.setContext() first, then initCoreEnv(), only once via AtomicBoolean
     private fun initializeLibv2ray() {
-        val assetPath = userAssetPath()
-        val deviceId  = getDeviceIdForXUDPBaseKey()
-        Libv2ray.initCoreEnv(assetPath, deviceId)
-        Log.d(TAG, "✓ Libv2ray.initCoreEnv(assetPath=$assetPath)")
+        if (coreEnvInitialized.compareAndSet(false, true)) {
+            try {
+                Seq.setContext(applicationContext)
+                val assetPath = userAssetPath()
+                val deviceId  = getDeviceIdForXUDPBaseKey()
+                Libv2ray.initCoreEnv(assetPath, deviceId)
+                Log.d(TAG, "✓ Libv2ray.initCoreEnv($assetPath)")
+            } catch (e: Exception) {
+                coreEnvInitialized.set(false)
+                throw e
+            }
+        } else {
+            Log.d(TAG, "Libv2ray already initialized, skipping")
+        }
     }
 
     // ── TUN interface ─────────────────────────────────────────────────────────
 
+    // v2rayNG uses /30 mask with point-to-point pair (e.g. 10.10.14.1/30),
+    // not /24. This matches xray-core's TUN expectations.
     private fun buildVpnInterface(): ParcelFileDescriptor =
         Builder()
             .setSession("palazikVPN")
-            .addAddress("26.26.26.1", 24)
+            .setMtu(1500)
+            .addAddress("10.10.14.1", 30)   // v2rayNG default: OPTION_1
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
             .addDnsServer("8.8.8.8")
             .addDnsServer("1.1.1.1")
-            .setMtu(1500)
             .addDisallowedApplication(packageName)
             .also {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -222,18 +255,26 @@ class palazikVpnService : VpnService() {
         statsJob = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            try { connectivity.unregisterNetworkCallback(networkCallback) } catch (_: Exception) {}
+            try { connectivity.unregisterNetworkCallback(defaultNetworkCallback) } catch (_: Exception) {}
         }
 
+        // v2rayNG: stopSelf() BEFORE mInterface.close() — otherwise core fails to stop
+        // and subsequent startLoop calls report "port in use"
         try { coreController?.stopLoop() } catch (e: Exception) { Log.w(TAG, "stopLoop: ${e.message}") }
         coreController = null
+
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+
+        // Small delay to allow async core stop before closing TUN (v2rayNG: Thread.sleep(100))
+        Thread.sleep(100)
+
         try { vpnInterface?.close() } catch (e: Exception) { Log.w(TAG, "iface close: ${e.message}") }
         vpnInterface = null
+
         _connectionState.value = ServiceState.STOPPED
         _bytesIn.value  = 0L
         _bytesOut.value = 0L
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
     }
 
     // ── CoreCallbackHandler ───────────────────────────────────────────────────
@@ -244,13 +285,11 @@ class palazikVpnService : VpnService() {
             return 0L
         }
         override fun shutdown(): Long {
-            Log.d(TAG, "xray: shutdown requested")
+            Log.d(TAG, "xray: shutdown")
+            scope.launch(Dispatchers.Main) { stopVpn() }
             return 0L
         }
-        override fun startup(): Long {
-            Log.d(TAG, "xray: startup requested")
-            return 0L
-        }
+        override fun startup(): Long = 0L
     }
 
     // ── Stats polling ─────────────────────────────────────────────────────────
