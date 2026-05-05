@@ -70,8 +70,11 @@ class ProfileRepository @Inject constructor(
     }
 
     fun removeSubscription(id: String) {
-        _subscriptions.value = _subscriptions.value.filter { it.id != id }
-        _profiles.value = _profiles.value.filter { it.subscriptionId != id }
+        // FIX #2: atomically remove both sub and its profiles, then save both
+        val newProfiles = _profiles.value.filter { it.subscriptionId != id }
+        val newSubs     = _subscriptions.value.filter { it.id != id }
+        _profiles.value      = newProfiles
+        _subscriptions.value = newSubs
         saveProfiles()
         saveSubscriptions()
     }
@@ -80,17 +83,43 @@ class ProfileRepository @Inject constructor(
         runCatching {
             val req    = Request.Builder().url(sub.url).build()
             val body   = httpClient.newCall(req).execute().use { it.body?.string() ?: "" }
-            val parsed = ProfileCodec.decodeSubscriptionBody(body)
+            val fresh  = ProfileCodec.decodeSubscriptionBody(body)
                 .map { it.copy(subscriptionId = sub.id) }
 
-            _profiles.value = _profiles.value.filter { it.subscriptionId != sub.id } + parsed
+            // FIX #1: deduplicate by (address, port, uuid, protocol) fingerprint.
+            // When the same server appears in both the existing list and the fresh fetch,
+            // keep the existing entry's id/isActive/latency so state is preserved,
+            // but update its name and other fields from the fresh data.
+            val nonSubProfiles = _profiles.value.filter { it.subscriptionId != sub.id }
+
+            fun VpnProfile.fingerprint() = "$address:$port:$uuid:${protocol.name}"
+            val existingByFingerprint = _profiles.value
+                .filter { it.subscriptionId == sub.id }
+                .associateBy { it.fingerprint() }
+
+            val merged = fresh.map { newProfile ->
+                val existing = existingByFingerprint[newProfile.fingerprint()]
+                if (existing != null) {
+                    // Preserve id, active state, latency — update everything else
+                    newProfile.copy(
+                        id             = existing.id,
+                        isActive       = existing.isActive,
+                        latencyMs      = existing.latencyMs,
+                        subscriptionId = sub.id,
+                    )
+                } else {
+                    newProfile
+                }
+            }
+
+            _profiles.value = nonSubProfiles + merged
             saveProfiles()
 
-            val updated = sub.copy(lastUpdated = System.currentTimeMillis(), profileCount = parsed.size)
+            val updated = sub.copy(lastUpdated = System.currentTimeMillis(), profileCount = merged.size)
             _subscriptions.value = _subscriptions.value.map { if (it.id == sub.id) updated else it }
             saveSubscriptions()
 
-            parsed.size
+            merged.size
         }
     }
 
@@ -108,7 +137,6 @@ class ProfileRepository @Inject constructor(
         val latency = runCatching {
             when (_pingMode.value) {
                 PingMode.TCP -> {
-                    // Raw TCP connect — most accurate, works even without HTTP
                     val start = System.currentTimeMillis()
                     Socket().use { sock ->
                         sock.connect(InetSocketAddress(profile.address, profile.port), 5000)
@@ -116,25 +144,41 @@ class ProfileRepository @Inject constructor(
                     System.currentTimeMillis() - start
                 }
                 PingMode.PROXY_GET -> {
+                    // FIX #3: GET/HEAD must go through the local SOCKS5 proxy that Xray exposes
+                    // on 127.0.0.1:10808, not directly to the server address.
+                    // Direct HTTPS to a proxy server address returns TLS errors / timeouts
+                    // because the server is a proxy endpoint, not an HTTPS web server.
+                    val proxyClient = httpClient.newBuilder()
+                        .proxy(java.net.Proxy(
+                            java.net.Proxy.Type.SOCKS,
+                            InetSocketAddress("127.0.0.1", 10808)
+                        ))
+                        .build()
                     val req = Request.Builder()
-                        .url("https://${profile.address}:${profile.port}/")
+                        .url("http://cp.cloudflare.com/")
                         .get()
                         .build()
                     val start = System.currentTimeMillis()
-                    httpClient.newCall(req).execute().use { }
+                    proxyClient.newCall(req).execute().use { }
                     System.currentTimeMillis() - start
                 }
                 PingMode.PROXY_HEAD -> {
+                    val proxyClient = httpClient.newBuilder()
+                        .proxy(java.net.Proxy(
+                            java.net.Proxy.Type.SOCKS,
+                            InetSocketAddress("127.0.0.1", 10808)
+                        ))
+                        .build()
                     val req = Request.Builder()
-                        .url("https://${profile.address}:${profile.port}/")
+                        .url("http://cp.cloudflare.com/")
                         .head()
                         .build()
                     val start = System.currentTimeMillis()
-                    httpClient.newCall(req).execute().use { }
+                    proxyClient.newCall(req).execute().use { }
                     System.currentTimeMillis() - start
                 }
             }
-        }.getOrElse { -1L }   // -1 = timeout/error
+        }.getOrElse { -1L }
 
         updateProfile(profile.copy(latencyMs = latency))
         latency
@@ -143,8 +187,6 @@ class ProfileRepository @Inject constructor(
     // ── Persistence ───────────────────────────────────────────────────────────
 
     private fun saveProfiles() {
-        // Links array: each entry is a full palazikVPN:// URI (codec handles encoding)
-        // Meta array: per-profile mutable state that isn't in the URI (isActive, latencyMs)
         val links = JSONArray()
         val meta  = JSONArray()
         _profiles.value.forEach { p ->
@@ -177,11 +219,9 @@ class ProfileRepository @Inject constructor(
     }
 
     private fun loadFromPrefs() {
-        // ── profiles ──────────────────────────────────────────────────────────
         val linksJson = prefs.getString("profiles_links", null)
         val metaJson  = prefs.getString("profiles_meta",  null)
 
-        // Build id -> (isActive, latencyMs, subscriptionId) from meta array
         data class Meta(val isActive: Boolean, val latency: Long, val subId: String?)
         val metaMap = mutableMapOf<String, Meta>()
         if (metaJson != null) runCatching {
@@ -212,7 +252,6 @@ class ProfileRepository @Inject constructor(
             _profiles.value = loaded
         }
 
-        // ── subscriptions ─────────────────────────────────────────────────────
         val subsJson = prefs.getString("subscriptions_json", null)
         if (subsJson != null) runCatching {
             val arr    = JSONArray(subsJson)
@@ -230,7 +269,6 @@ class ProfileRepository @Inject constructor(
             _subscriptions.value = loaded
         }
 
-        // ── ping mode ─────────────────────────────────────────────────────────
         val saved = prefs.getString("ping_mode", PingMode.TCP.name)
         _pingMode.value = runCatching { PingMode.valueOf(saved ?: "") }.getOrDefault(PingMode.TCP)
     }
