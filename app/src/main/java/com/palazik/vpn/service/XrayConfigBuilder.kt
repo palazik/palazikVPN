@@ -104,7 +104,8 @@ object XrayConfigBuilder {
             else                 -> buildVless(this, profile)
         }
 
-        val needsStream = profile.protocol !in listOf(Protocol.HYSTERIA2, Protocol.WIREGUARD)
+        // SS handles its own framing; streamSettings causes TLS handshake against plain SS servers
+        val needsStream = profile.protocol !in listOf(Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.SHADOWSOCKS)
         if (needsStream) put("streamSettings", buildStreamSettings(profile))
 
         // v2rayNG: mux disabled for SS, Trojan, WireGuard, Hysteria2, TUIC, SOCKS5
