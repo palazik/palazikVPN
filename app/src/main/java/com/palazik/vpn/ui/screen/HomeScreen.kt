@@ -121,26 +121,31 @@ fun HomeScreen(
                         .blur(32.dp)
                 )
             }
-            // Inner ring
-            AnimatedVisibility(
-                visible = isConnected,
-                enter   = scaleIn(spring(Spring.DampingRatioMediumBouncy)) + fadeIn(),
-                exit    = scaleOut(tween(200)) + fadeOut(),
-            ) {
-                Box(
-                    Modifier
-                        .size(196.dp)
-                        .background(
-                            Brush.radialGradient(
-                                listOf(
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                    Color.Transparent,
-                                )
-                            ),
-                            CircleShape,
-                        )
-                )
-            }
+            // Inner ring — animate via graphicsLayer to avoid ColumnScope receiver requirement
+            val innerRingAlpha by animateFloatAsState(
+                targetValue   = if (isConnected) 1f else 0f,
+                animationSpec = spring(Spring.DampingRatioMediumBouncy),
+                label         = "inner_ring_alpha",
+            )
+            val innerRingScale by animateFloatAsState(
+                targetValue   = if (isConnected) 1f else 0.6f,
+                animationSpec = spring(Spring.DampingRatioMediumBouncy),
+                label         = "inner_ring_scale",
+            )
+            Box(
+                Modifier
+                    .size(196.dp)
+                    .graphicsLayer { alpha = innerRingAlpha; scaleX = innerRingScale; scaleY = innerRingScale }
+                    .background(
+                        Brush.radialGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                                Color.Transparent,
+                            )
+                        ),
+                        CircleShape,
+                    )
+            )
 
             Button(
                 onClick  = { vm.toggleVpn(permLauncher) },
