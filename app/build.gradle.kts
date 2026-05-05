@@ -17,7 +17,18 @@ android {
         versionCode   = 1
         versionName   = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
+        // Only real-device ABIs — dropping x86/x86_64 saves ~36MB from libgojni.so
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+    }
+
+    // ABI splits: per-ABI APKs (~40MB each) + universal fat APK for TG/direct share
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true   // also produce a universal APK
+        }
     }
 
     buildTypes {
@@ -32,6 +43,15 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable        = true
+            // Enable splits for debug too so CI sends small per-ABI APKs to TG
+            splits {
+                abi {
+                    isEnable = true
+                    reset()
+                    include("arm64-v8a", "armeabi-v7a")
+                    isUniversalApk = true
+                }
+            }
         }
     }
 
@@ -50,6 +70,7 @@ android {
 }
 
 dependencies {
+    // libv2ray.aar + go.jar bundled inside it — geodata baked in assets at build time
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar", "*.jar"))))
 
     implementation(libs.androidx.core.ktx)
