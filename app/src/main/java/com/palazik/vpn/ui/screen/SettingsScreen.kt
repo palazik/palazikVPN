@@ -105,7 +105,7 @@ fun SettingsScreen(vm: MainViewModel) {
         SettingsSection(title = "About") {
             ListItem(
                 headlineContent   = { Text("palazikVPN") },
-                supportingContent = { Text("Built by palazik • kernel dev edition") },
+                supportingContent = { Text("V1.0.0 • by palaziks") },
                 leadingContent    = { Icon(Icons.Rounded.Info, null) },
             )
         }
