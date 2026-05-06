@@ -27,7 +27,12 @@ fun SubscriptionsScreen(vm: MainViewModel) {
     var subName by remember { mutableStateOf("") }
     var subUrl  by remember { mutableStateOf("") }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
 
         Row(
             Modifier.fillMaxWidth(),
@@ -36,7 +41,7 @@ fun SubscriptionsScreen(vm: MainViewModel) {
         ) {
             Column {
                 Text("Subscriptions", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                if (ui.subscriptions.isNotEmpty()) {
+                AnimatedVisibility(visible = ui.subscriptions.isNotEmpty()) {
                     Text(
                         "${ui.subscriptions.size} active",
                         style = MaterialTheme.typography.bodySmall,
@@ -45,7 +50,7 @@ fun SubscriptionsScreen(vm: MainViewModel) {
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (ui.subscriptions.isNotEmpty()) {
+                AnimatedVisibility(visible = ui.subscriptions.isNotEmpty()) {
                     OutlinedButton(onClick = { vm.updateAllSubscriptions() }) {
                         Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
@@ -62,53 +67,61 @@ fun SubscriptionsScreen(vm: MainViewModel) {
 
         Spacer(Modifier.height(12.dp))
 
-        if (ui.subscriptions.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(
-                        Icons.Rounded.Subscriptions, null,
-                        Modifier.size(72.dp),
-                        tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "No subscriptions yet",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Add a subscription URL to import profiles automatically.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
-                    )
-                    Spacer(Modifier.height(24.dp))
-                    FilledTonalButton(onClick = { showAdd = true }) {
-                        Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Add Subscription")
+        AnimatedContent(
+            targetState = ui.subscriptions.isEmpty(),
+            transitionSpec = { fadeIn(tween(300)) togetherWith fadeOut(tween(200)) },
+            label = "subs_content",
+        ) { isEmpty ->
+            if (isEmpty) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Rounded.Subscriptions, null,
+                            Modifier.size(72.dp),
+                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "No subscriptions yet",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Add a subscription URL to import profiles automatically.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                        Spacer(Modifier.height(24.dp))
+                        FilledTonalButton(onClick = { showAdd = true }) {
+                            Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Add Subscription")
+                        }
                     }
                 }
-            }
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(ui.subscriptions, key = { it.id }) { sub ->
-                    AnimatedVisibility(
-                        visible = true,
-                        enter   = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
-                    ) {
-                        SubscriptionCard(
-                            sub      = sub,
-                            onUpdate = { vm.updateSubscription(sub) },
-                            onDelete = { vm.removeSubscription(sub.id) },
-                        )
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(ui.subscriptions, key = { it.id }) { sub ->
+                        // Fade only — no slide
+                        AnimatedVisibility(
+                            visible = true,
+                            enter   = fadeIn(tween(200)),
+                        ) {
+                            SubscriptionCard(
+                                sub      = sub,
+                                onUpdate = { vm.updateSubscription(sub) },
+                                onDelete = { vm.removeSubscription(sub.id) },
+                            )
+                        }
                     }
+                    item { Spacer(Modifier.height(8.dp)) }
                 }
             }
         }
     }
 
-    // ── Add subscription dialog ───────────────────────────────────────────────
+    // ── Add dialog ───────────────────────────────────────────────────────────
     if (showAdd) {
         AlertDialog(
             onDismissRequest = { showAdd = false; subName = ""; subUrl = "" },
@@ -210,27 +223,21 @@ private fun SubscriptionCard(
 
             Spacer(Modifier.height(8.dp))
             HorizontalDivider(
-                color     = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                color     = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f),
                 thickness = 0.5.dp,
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(2.dp))
 
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(
-                    onClick = onUpdate,
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onUpdate, contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Update", style = MaterialTheme.typography.labelMedium)
                 }
                 TextButton(
-                    onClick = onDelete,
+                    onClick        = onDelete,
                     contentPadding = PaddingValues(horizontal = 8.dp),
-                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    colors         = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) {
                     Icon(Icons.Rounded.Delete, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
