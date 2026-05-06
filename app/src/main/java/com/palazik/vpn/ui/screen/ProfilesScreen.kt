@@ -4,7 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -26,8 +26,6 @@ import androidx.compose.ui.unit.dp
 import com.palazik.vpn.data.model.*
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 import java.util.UUID
-
-private val EaseOutBack = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,21 +124,16 @@ fun ProfilesScreen(vm: MainViewModel) {
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    itemsIndexed(ui.profiles, key = { _, p -> p.id }) { index, profile ->
+                    items(ui.profiles, key = { it.id }) { profile ->
                         val subName = remember(profile.subscriptionId, ui.subscriptions) {
                             profile.subscriptionId?.let { sid ->
                                 ui.subscriptions.firstOrNull { it.id == sid }?.name
                             }
                         }
-                        // Staggered entrance animation per item
-                        var visible by remember { mutableStateOf(false) }
-                        LaunchedEffect(Unit) {
-                            kotlinx.coroutines.delay((index * 40L).coerceAtMost(200L))
-                            visible = true
-                        }
+                        
                         AnimatedVisibility(
-                            visible = visible,
-                            enter   = fadeIn(tween(250)),
+                            visible = true,
+                            enter   = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
                         ) {
                             ProfileCard(
                                 profile  = profile,
@@ -326,8 +319,8 @@ private fun ProfileCard(
                 // Latency chip — animates in/out
                 AnimatedVisibility(
                     visible = profile.latencyMs >= 0,
-                    enter   = fadeIn(tween(200)) + scaleIn(tween(250, easing = EaseOutBack)),
-                    exit    = fadeOut(tween(150)) + scaleOut(tween(120)),
+                    enter   = fadeIn() + scaleIn(),
+                    exit    = fadeOut() + scaleOut(),
                 ) {
                     val latColor = when {
                         profile.latencyMs < 150 -> MaterialTheme.colorScheme.primary
