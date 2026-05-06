@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.palazikVPN" parent="android:Theme.Material.NoTitleBar">
+    <!-- Base XML theme — Compose handles all real theming.
+         android:Theme.Material.Light.NoActionBar is the correct parent for
+         a minSdk 26 app using Compose without AppCompat. -->
+    <style name="Theme.palazikVPN" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/ic_launcher_background</item>
         <item name="android:windowTranslucentStatus">false</item>
         <item name="android:windowTranslucentNavigation">false</item>
