@@ -60,7 +60,7 @@ fun SubscriptionsScreen(vm: MainViewModel) {
                 FilledTonalButton(onClick = { showAdd = true }) {
                     Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Add")
+                    Text("Add", color = MaterialTheme.colorScheme.onSecondaryContainer)
                 }
             }
         }
@@ -96,7 +96,7 @@ fun SubscriptionsScreen(vm: MainViewModel) {
                         FilledTonalButton(onClick = { showAdd = true }) {
                             Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Add Subscription")
+                            Text("Add Subscription", color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
                     }
                 }
