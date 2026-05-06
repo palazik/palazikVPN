@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
@@ -74,15 +75,18 @@ fun ProfilesScreen(vm: MainViewModel) {
                         Icon(Icons.Rounded.Share, "Share active")
                     }
                 }
-                OutlinedButton(onClick = { showImport = true }) {
-                    Icon(Icons.Rounded.Link, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Link")
+                // Bug fix #1: use IconButton + icon-only buttons to prevent text wrapping
+                IconButton(onClick = { showImport = true }) {
+                    Icon(Icons.Rounded.Link, "Import via link")
                 }
-                FilledTonalButton(onClick = { showManual = true }) {
+                FilledTonalButton(
+                    onClick = { showManual = true },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                ) {
                     Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Manual")
+                    // Bug fix #2: explicit color so text stays visible on any background
+                    Text("Manual", color = MaterialTheme.colorScheme.onSecondaryContainer)
                 }
             }
         }
@@ -118,36 +122,21 @@ fun ProfilesScreen(vm: MainViewModel) {
                         FilledTonalButton(onClick = { showManual = true }) {
                             Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Add Profile")
+                            Text("Add Profile", color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
                     }
                 }
             } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(ui.profiles, key = { it.id }) { profile ->
-                        val subName = remember(profile.subscriptionId, ui.subscriptions) {
-                            profile.subscriptionId?.let { sid ->
-                                ui.subscriptions.firstOrNull { it.id == sid }?.name
-                            }
-                        }
-                        
-                        AnimatedVisibility(
-                            visible = true,
-                            enter   = fadeIn(tween(200)) + slideInVertically(tween(200)) { it / 2 },
-                        ) {
-                            ProfileCard(
-                                profile  = profile,
-                                subName  = subName,
-                                isActive = profile.isActive,
-                                onSelect = { vm.selectProfile(profile.id) },
-                                onDelete = { vm.removeProfile(profile.id) },
-                                onPing   = { vm.pingProfile(profile) },
-                                onEdit   = { editProfile = profile },
-                            )
-                        }
-                    }
-                    item { Spacer(Modifier.height(8.dp)) }
-                }
+                // Bug fix #6: group profiles by subscription with collapsible sections
+                GroupedProfilesList(
+                    profiles      = ui.profiles,
+                    subscriptions = ui.subscriptions,
+                    onSelect      = { vm.selectProfile(it) },
+                    onDelete      = { vm.removeProfile(it) },
+                    onPing        = { vm.pingProfile(it) },
+                    onEdit        = { editProfile = it },
+                    onRefreshSub  = { sub -> vm.updateSubscription(sub) },
+                )
             }
         }
     }
@@ -240,6 +229,156 @@ fun ProfilesScreen(vm: MainViewModel) {
                 TextButton(onClick = { showShareLink = false; vm.clearShareLink() }) { Text("Close") }
             },
         )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Grouped profiles list (collapsible per subscription + manual group)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun GroupedProfilesList(
+    profiles: List<VpnProfile>,
+    subscriptions: List<Subscription>,
+    onSelect: (String) -> Unit,
+    onDelete: (String) -> Unit,
+    onPing: (VpnProfile) -> Unit,
+    onEdit: (VpnProfile) -> Unit,
+    onRefreshSub: (Subscription) -> Unit,
+) {
+    // Track expanded state per group key ("manual" or sub.id)
+    val expandedGroups = remember {
+        mutableStateMapOf<String, Boolean>().apply {
+            put("manual", true)
+            subscriptions.forEach { put(it.id, true) }
+        }
+    }
+    // Ensure new subs get an initial expanded state
+    LaunchedEffect(subscriptions) {
+        subscriptions.forEach { if (!expandedGroups.containsKey(it.id)) expandedGroups[it.id] = true }
+    }
+
+    val manualProfiles = profiles.filter { it.subscriptionId == null }
+    val subProfileMap  = subscriptions.associateWith { sub ->
+        profiles.filter { it.subscriptionId == sub.id }
+    }
+
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+
+        // ── Manual profiles group ──────────────────────────────────────────────
+        if (manualProfiles.isNotEmpty()) {
+            item(key = "header_manual") {
+                GroupHeader(
+                    title    = "Manual",
+                    count    = manualProfiles.size,
+                    expanded = expandedGroups["manual"] ?: true,
+                    onToggle = { expandedGroups["manual"] = !(expandedGroups["manual"] ?: true) },
+                    onRefresh = null,
+                )
+            }
+            if (expandedGroups["manual"] != false) {
+                items(manualProfiles, key = { it.id }) { profile ->
+                    ProfileCard(
+                        profile  = profile,
+                        subName  = null,
+                        isActive = profile.isActive,
+                        onSelect = { onSelect(profile.id) },
+                        onDelete = { onDelete(profile.id) },
+                        onPing   = { onPing(profile) },
+                        onEdit   = { onEdit(profile) },
+                    )
+                }
+            }
+        }
+
+        // ── Per-subscription groups ────────────────────────────────────────────
+        subProfileMap.forEach { (sub, subProfiles) ->
+            item(key = "header_${sub.id}") {
+                GroupHeader(
+                    title    = sub.name,
+                    count    = subProfiles.size,
+                    expanded = expandedGroups[sub.id] ?: true,
+                    onToggle = { expandedGroups[sub.id] = !(expandedGroups[sub.id] ?: true) },
+                    onRefresh = { onRefreshSub(sub) },
+                )
+            }
+            if (expandedGroups[sub.id] != false) {
+                items(subProfiles, key = { it.id }) { profile ->
+                    ProfileCard(
+                        profile  = profile,
+                        subName  = null, // name already shown in group header
+                        isActive = profile.isActive,
+                        onSelect = { onSelect(profile.id) },
+                        onDelete = { onDelete(profile.id) },
+                        onPing   = { onPing(profile) },
+                        onEdit   = { onEdit(profile) },
+                    )
+                }
+            }
+        }
+
+        item { Spacer(Modifier.height(8.dp)) }
+    }
+}
+
+@Composable
+private fun GroupHeader(
+    title: String,
+    count: Int,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onRefresh: (() -> Unit)?,
+) {
+    val rotation by animateFloatAsState(
+        targetValue   = if (expanded) 0f else -90f,
+        animationSpec = tween(200),
+        label         = "arrow_$title",
+    )
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onToggle, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Rounded.KeyboardArrowDown, null,
+                    Modifier.size(20.dp).graphicsLayer { rotationZ = rotation },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            Text(
+                title,
+                style      = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color      = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier   = Modifier.weight(1f),
+            )
+            Surface(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                shape = CircleShape,
+            ) {
+                Text(
+                    "$count",
+                    modifier   = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                    style      = MaterialTheme.typography.labelSmall,
+                    color      = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            if (onRefresh != null) {
+                Spacer(Modifier.width(8.dp))
+                IconButton(onClick = onRefresh, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Rounded.Refresh, "Refresh subscription", Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
     }
 }
 
