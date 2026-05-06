@@ -140,8 +140,7 @@ fun ProfilesScreen(vm: MainViewModel) {
                         }
                         AnimatedVisibility(
                             visible = visible,
-                            enter   = fadeIn(tween(250)) +
-                                      slideInVertically(tween(300, easing = EaseOutBack)) { it / 3 },
+                            enter   = fadeIn(tween(250)),
                         ) {
                             ProfileCard(
                                 profile  = profile,
