@@ -72,6 +72,7 @@ object ProfileCodec {
     fun encodePalazik(p: VpnProfile): String {
         val json = JSONObject().apply {
             put("v", 1)
+            put("id", p.id)   // FIX: persist id so active-profile state survives restart
             put("proto", p.protocol.name)
             put("addr", p.address)
             put("port", p.port)
@@ -109,7 +110,9 @@ object ProfileCodec {
         val protocol = runCatching { Protocol.valueOf(protoStr) }.getOrDefault(Protocol.VLESS)
         val transportStr = json.optString("transport", "TCP")
         val transport = runCatching { Transport.valueOf(transportStr) }.getOrDefault(Transport.TCP)
+        val savedId = json.optString("id").takeIf { it.isNotEmpty() }
         return VpnProfile(
+            id          = savedId ?: UUID.randomUUID().toString(),  // FIX: restore id
             protocol    = protocol,
             address     = json.optString("addr"),
             port        = json.optInt("port", 443),
