@@ -20,12 +20,14 @@ import org.json.JSONObject
 import java.net.InetSocketAddress
 import java.net.Socket
 import javax.inject.Inject
+import javax.inject.Named
 import javax.inject.Singleton
 
 @Singleton
 class ProfileRepository @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val httpClient: OkHttpClient,
+    @Named("direct") private val directClient: OkHttpClient,
+    @Named("proxy")  private val proxyClient:  OkHttpClient,
 ) {
     private val prefs = context.getSharedPreferences("palazik_profiles", Context.MODE_PRIVATE)
 
@@ -75,7 +77,7 @@ class ProfileRepository @Inject constructor(
     }
 
     fun removeSubscription(id: String) {
-        // FIX #2: atomically remove both sub and its profiles, then save both
+        // Atomically remove both the subscription and all its profiles, then persist both
         val newProfiles = _profiles.value.filter { it.subscriptionId != id }
         val newSubs     = _subscriptions.value.filter { it.id != id }
         _profiles.value      = newProfiles
@@ -84,48 +86,59 @@ class ProfileRepository @Inject constructor(
         saveSubscriptions()
     }
 
+    /**
+     * Update a subscription by fetching its URL and replacing old profiles with new ones.
+     *
+     * Strategy (mirrors v2rayNG AngConfigManager.updateConfigViaSub):
+     *  1. Try via the local SOCKS proxy (127.0.0.1:10808) — works when VPN is running.
+     *  2. On any failure, fall back to a direct connection — works when VPN is off.
+     *
+     * Profile replacement (mirrors v2rayNG parseBatchConfig with append=false):
+     *  - Remember the currently active profile for this subscription.
+     *  - DELETE all old profiles that belong to this subscription.
+     *  - ADD all freshly parsed profiles.
+     *  - If the previously-active profile appears in the new list (matched by fingerprint),
+     *    restore its active flag so the user's selection is preserved across updates.
+     */
     suspend fun updateSubscription(sub: Subscription): Result<Int> = withContext(Dispatchers.IO) {
         updateMutex.withLock {
-        runCatching {
-            val req    = Request.Builder().url(sub.url).build()
-            val body   = httpClient.newCall(req).execute().use { it.body?.string() ?: "" }
-            val fresh  = ProfileCodec.decodeSubscriptionBody(body)
-                .map { it.copy(subscriptionId = sub.id) }
+            runCatching {
+                val body = fetchSubscriptionBody(sub.url)
 
-            // Deduplicate by (address, port, uuid, protocol) fingerprint.
-            // Snapshot current profiles atomically before mutating.
-            fun VpnProfile.fingerprint() = "$address:$port:$uuid:${protocol.name}"
+                val freshProfiles = ProfileCodec.decodeSubscriptionBody(body)
+                    .map { it.copy(subscriptionId = sub.id) }
 
-            val snapshot = _profiles.value                          // single atomic read
-            val nonSubProfiles = snapshot.filter { it.subscriptionId != sub.id }
-            val existingByFingerprint = snapshot
-                .filter { it.subscriptionId == sub.id }
-                .associateBy { it.fingerprint() }
+                // v2rayNG: remember which profile was selected before wiping
+                val snapshot      = _profiles.value
+                val prevActive    = snapshot.firstOrNull { it.subscriptionId == sub.id && it.isActive }
+                fun VpnProfile.fingerprint() = "$address:$port:$uuid:${protocol.name}"
+                val prevFingerprint = prevActive?.fingerprint()
 
-            val merged = fresh.map { newProfile ->
-                val existing = existingByFingerprint[newProfile.fingerprint()]
-                if (existing != null) {
-                    newProfile.copy(
-                        id             = existing.id,
-                        isActive       = existing.isActive,
-                        latencyMs      = existing.latencyMs,
-                        subscriptionId = sub.id,
-                    )
-                } else {
-                    newProfile
+                // All profiles NOT belonging to this subscription are kept untouched
+                val retained = snapshot.filter { it.subscriptionId != sub.id }
+
+                // Map new profiles; restore active flag if fingerprint matches previous active
+                val merged = freshProfiles.map { p ->
+                    if (prevFingerprint != null && p.fingerprint() == prevFingerprint) {
+                        p.copy(isActive = true)
+                    } else {
+                        p
+                    }
                 }
+
+                // Single atomic write — old sub profiles deleted, new ones added
+                _profiles.value = retained + merged
+                saveProfiles()
+
+                val updated = sub.copy(
+                    lastUpdated  = System.currentTimeMillis(),
+                    profileCount = merged.size,
+                )
+                _subscriptions.value = _subscriptions.value.map { if (it.id == sub.id) updated else it }
+                saveSubscriptions()
+
+                merged.size
             }
-
-            // Single atomic write — prevents duplication from concurrent updates
-            _profiles.value = nonSubProfiles + merged
-            saveProfiles()
-
-            val updated = sub.copy(lastUpdated = System.currentTimeMillis(), profileCount = merged.size)
-            _subscriptions.value = _subscriptions.value.map { if (it.id == sub.id) updated else it }
-            saveSubscriptions()
-
-            merged.size
-        }
         }
     }
 
@@ -139,33 +152,67 @@ class ProfileRepository @Inject constructor(
         prefs.edit().putString("ping_mode", mode.name).apply()
     }
 
+    /**
+     * Ping a profile using the currently-selected ping mode.
+     *
+     * TCP  — Direct TCP connect to the server's address:port (v2rayNG SpeedtestManager.tcping).
+     *         Works without the VPN running. Measures raw reachability of the server.
+     *
+     * GET / HEAD — HTTP request to https://cp.cloudflare.com/ routed through the local SOCKS
+     *         proxy (127.0.0.1:10808) so it actually travels through the xray/proxy outbound.
+     *         v2rayNG routes real-ping tests through its local proxy port so the result
+     *         reflects end-to-end latency through the proxy profile.
+     *         Requires the VPN / xray service to be running.
+     */
     suspend fun pingProfile(profile: VpnProfile): Long = withContext(Dispatchers.IO) {
         val latency = runCatching {
             when (_pingMode.value) {
                 PingMode.TCP -> {
-                    val start = System.currentTimeMillis()
-                    Socket().use { sock ->
-                        sock.connect(InetSocketAddress(profile.address, profile.port), 5000)
+                    // v2rayNG SpeedtestManager.socketConnectTime: try twice, keep the best
+                    var best = -1L
+                    repeat(2) {
+                        val start  = System.currentTimeMillis()
+                        runCatching {
+                            Socket().use { sock ->
+                                sock.connect(InetSocketAddress(profile.address, profile.port), 3000)
+                            }
+                        }.onSuccess {
+                            val t = System.currentTimeMillis() - start
+                            if (best == -1L || t < best) best = t
+                        }
                     }
-                    System.currentTimeMillis() - start
+                    if (best == -1L) throw Exception("TCP connect failed")
+                    best
                 }
+
                 PingMode.HTTP_GET -> {
-                    // Use HTTPS — Android 9+ blocks cleartext HTTP by default
+                    // Route through local SOCKS proxy so the request travels via xray outbound.
+                    // v2rayNG: CoreNativeManager.measureOutboundDelay uses the running core's
+                    // local socks port for this same reason.
                     val req = Request.Builder()
                         .url("https://cp.cloudflare.com/")
                         .get()
                         .build()
                     val start = System.currentTimeMillis()
-                    httpClient.newCall(req).execute().use { }
+                    proxyClient.newCall(req).execute().use { resp ->
+                        if (!resp.isSuccessful && resp.code != 204) {
+                            throw Exception("HTTP GET returned ${resp.code}")
+                        }
+                    }
                     System.currentTimeMillis() - start
                 }
+
                 PingMode.HTTP_HEAD -> {
                     val req = Request.Builder()
                         .url("https://cp.cloudflare.com/")
                         .head()
                         .build()
                     val start = System.currentTimeMillis()
-                    httpClient.newCall(req).execute().use { }
+                    proxyClient.newCall(req).execute().use { resp ->
+                        if (!resp.isSuccessful && resp.code != 204) {
+                            throw Exception("HTTP HEAD returned ${resp.code}")
+                        }
+                    }
                     System.currentTimeMillis() - start
                 }
             }
@@ -263,10 +310,45 @@ class ProfileRepository @Inject constructor(
         val saved = prefs.getString("ping_mode", PingMode.TCP.name)
         _pingMode.value = runCatching { PingMode.valueOf(saved ?: "") }.getOrElse {
             when (saved) {
-                "PROXY_GET"  -> PingMode.HTTP_GET
-                "PROXY_HEAD" -> PingMode.HTTP_HEAD
-                else         -> PingMode.TCP
+                "PROXY_GET",  "HTTP_GET"  -> PingMode.HTTP_GET
+                "PROXY_HEAD", "HTTP_HEAD" -> PingMode.HTTP_HEAD
+                else                      -> PingMode.TCP
             }
+        }
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Fetch the raw subscription body.
+     *
+     * Mirrors v2rayNG AngConfigManager.updateConfigViaSub:
+     *  1. Try via local SOCKS/HTTP proxy (works when xray service is running).
+     *  2. On any error, retry direct (works when VPN is off).
+     *
+     * Returns the raw string (may be base64 or plain links). Throws if both fail.
+     */
+    private fun fetchSubscriptionBody(url: String): String {
+        val req = Request.Builder()
+            .url(url)
+            .header("User-Agent", "v2rayNG/1.0")
+            .build()
+
+        // Attempt 1: through proxy (so the fetch itself goes through the active profile)
+        val proxyResult = runCatching {
+            proxyClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+                resp.body?.string()?.takeIf { it.isNotBlank() }
+                    ?: throw Exception("Empty body")
+            }
+        }
+        if (proxyResult.isSuccess) return proxyResult.getOrThrow()
+
+        // Attempt 2: direct (VPN not running, or proxy refused)
+        return directClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+            resp.body?.string()?.takeIf { it.isNotBlank() }
+                ?: throw Exception("Empty body from direct fetch")
         }
     }
 }
