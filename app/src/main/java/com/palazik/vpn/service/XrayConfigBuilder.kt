@@ -6,10 +6,10 @@ import org.json.JSONObject
 
 object XrayConfigBuilder {
 
-    fun build(profile: VpnProfile): String =
+    fun build(profile: VpnProfile, settings: AppSettings = AppSettings()): String =
         JSONObject().apply {
             put("log",       buildLog())
-            put("dns",       buildDns())
+            put("dns",       buildDns(settings))
             put("inbounds",  buildInbounds())
             put("outbounds", buildOutbounds(profile))
             put("routing",   buildRouting())
@@ -199,6 +199,12 @@ object XrayConfigBuilder {
                     put("address",  p.address)
                     put("port",     p.port)
                     put("password", p.hystPassword)
+                    if (p.sni.isNotEmpty()) {
+                        put("tlsSettings", JSONObject().apply {
+                            put("serverName", p.sni)
+                            put("allowInsecure", false)
+                        })
+                    }
                     if (p.hystObfs.isNotEmpty()) {
                         put("obfs", JSONObject().apply {
                             put("type",     p.hystObfs)
@@ -356,7 +362,7 @@ object XrayConfigBuilder {
     //   → DNS intercept again → infinite loop)
     // - remote DNS (1.1.1.1 DoH) for proxied traffic
     // - direct DNS (223.5.5.5) for local/cn traffic
-    private fun buildDns() = JSONObject().apply {
+    private fun buildDns(settings: AppSettings) = JSONObject().apply {
         put("tag", "dns-in")
         put("hosts", JSONObject().apply {
             // Hardcoded per v2rayNG to fix DNS loop for popular DoH providers
@@ -370,10 +376,10 @@ object XrayConfigBuilder {
         })
         put("servers", JSONArray().apply {
             put(JSONObject().apply {
-                put("address", "https://1.1.1.1/dns-query")
+                put("address", settings.remoteDns)
                 put("domains", JSONArray().apply { put("geosite:geolocation-!cn") })
             })
-            put("223.5.5.5")
+            put(settings.directDns)
             put("localhost")
         })
     }

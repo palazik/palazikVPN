@@ -1,6 +1,9 @@
 package com.palazik.vpn.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -18,6 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.palazik.vpn.ui.screen.AppNavHost
@@ -37,6 +41,10 @@ class MainActivity : ComponentActivity() {
         if (result.resultCode == RESULT_OK) vm.connect()
     }
 
+    private val notificationPermLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -44,6 +52,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
+        requestNotificationPermissionIfNeeded()
         handleIntent(intent)
 
         setContent {
@@ -81,6 +90,14 @@ class MainActivity : ComponentActivity() {
         val data = intent?.data ?: return
         if (data.scheme == "palazikvpn") {
             vm.importProfileFromLink(data.getQueryParameter("config") ?: data.toString())
+        }
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 }

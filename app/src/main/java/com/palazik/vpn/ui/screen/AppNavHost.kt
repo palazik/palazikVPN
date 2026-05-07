@@ -41,8 +41,15 @@ fun AppNavHost(
 
     val snackState = remember { SnackbarHostState() }
     LaunchedEffect(ui.snackMessage) {
-        ui.snackMessage?.let {
-            snackState.showSnackbar(it, duration = SnackbarDuration.Short)
+        ui.snackMessage?.let { message ->
+            val result = snackState.showSnackbar(
+                message = message,
+                actionLabel = ui.snackActionLabel,
+                duration = SnackbarDuration.Short,
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                vm.undoSnackAction()
+            }
             vm.clearSnack()
         }
     }

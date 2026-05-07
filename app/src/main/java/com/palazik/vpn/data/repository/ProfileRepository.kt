@@ -2,7 +2,9 @@ package com.palazik.vpn.data.repository
 
 import android.content.Context
 import com.palazik.vpn.data.codec.ProfileCodec
+import com.palazik.vpn.data.model.AppSettings
 import com.palazik.vpn.data.model.PingMode
+import com.palazik.vpn.data.model.ProfileValidator
 import com.palazik.vpn.data.model.Subscription
 import com.palazik.vpn.data.model.VpnProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -39,6 +41,9 @@ class ProfileRepository @Inject constructor(
 
     private val _pingMode      = MutableStateFlow(PingMode.TCP)
     val pingMode: StateFlow<PingMode> = _pingMode.asStateFlow()
+
+    private val _settings      = MutableStateFlow(AppSettings())
+    val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
     // Serializes concurrent subscription updates to prevent profile duplication
     private val updateMutex = Mutex()
@@ -106,7 +111,9 @@ class ProfileRepository @Inject constructor(
                 val body = fetchSubscriptionBody(sub.url)
 
                 val freshProfiles = ProfileCodec.decodeSubscriptionBody(body)
+                    .filter { ProfileValidator.validate(it).isEmpty() }
                     .map { it.copy(subscriptionId = sub.id) }
+                if (freshProfiles.isEmpty()) throw Exception("No valid profiles in subscription")
 
                 // v2rayNG: remember which profile was selected before wiping
                 val snapshot      = _profiles.value
@@ -320,7 +327,56 @@ class ProfileRepository @Inject constructor(
                 else                      -> PingMode.TCP
             }
         }
+
+        val settingsJson = prefs.getString("app_settings", null)
+        if (settingsJson != null) runCatching {
+            val o = JSONObject(settingsJson)
+            _settings.value = AppSettings(
+                dnsServers = o.optJSONArray("dnsServers")?.toStringList()
+                    ?.filter { it.isNotBlank() }
+                    ?.ifEmpty { AppSettings().dnsServers }
+                    ?: AppSettings().dnsServers,
+                remoteDns = o.optString("remoteDns", AppSettings().remoteDns).ifBlank { AppSettings().remoteDns },
+                directDns = o.optString("directDns", AppSettings().directDns).ifBlank { AppSettings().directDns },
+                bypassPackages = o.optJSONArray("bypassPackages")?.toStringList()
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotBlank() }
+                    ?: emptyList(),
+                startOnBoot = o.optBoolean("startOnBoot", false),
+            )
+        }
     }
+
+    fun updateSettings(settings: AppSettings) {
+        val normalized = settings.copy(
+            dnsServers = settings.dnsServers.map { it.trim() }.filter { it.isNotBlank() }
+                .ifEmpty { AppSettings().dnsServers },
+            remoteDns = settings.remoteDns.trim().ifBlank { AppSettings().remoteDns },
+            directDns = settings.directDns.trim().ifBlank { AppSettings().directDns },
+            bypassPackages = settings.bypassPackages.map { it.trim() }.filter { it.isNotBlank() }.distinct(),
+        )
+        _settings.value = normalized
+        saveSettings()
+    }
+
+    private fun saveSettings() {
+        val settings = _settings.value
+        prefs.edit().putString(
+            "app_settings",
+            JSONObject().apply {
+                put("dnsServers", JSONArray().apply { settings.dnsServers.forEach { put(it) } })
+                put("remoteDns", settings.remoteDns)
+                put("directDns", settings.directDns)
+                put("bypassPackages", JSONArray().apply { settings.bypassPackages.forEach { put(it) } })
+                put("startOnBoot", settings.startOnBoot)
+            }.toString(),
+        ).apply()
+    }
+
+    private fun JSONArray.toStringList(): List<String> =
+        buildList {
+            for (i in 0 until length()) add(optString(i))
+        }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 

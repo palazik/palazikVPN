@@ -2,6 +2,7 @@ package com.palazik.vpn.service
 
 import android.app.Notification
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
@@ -16,6 +17,7 @@ import android.util.Base64
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.palazik.vpn.R
+import com.palazik.vpn.data.model.AppSettings
 import com.palazik.vpn.data.model.VpnProfile
 import com.palazik.vpn.palazikVPNApp
 import com.palazik.vpn.ui.MainActivity
@@ -27,6 +29,8 @@ import libv2ray.CoreCallbackHandler
 import libv2ray.CoreController
 import libv2ray.Libv2ray
 import libv2ray.ProcessFinder
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
@@ -54,7 +58,7 @@ class palazikVpnService : VpnService() {
         @Volatile var activeProfile: VpnProfile? = null
     }
 
-    enum class ServiceState { STOPPED, STARTING, RUNNING, STOPPING }
+    enum class ServiceState { STOPPED, STARTING, RUNNING, STOPPING, ERROR }
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private var coreController: CoreController? = null
@@ -108,6 +112,9 @@ class palazikVpnService : VpnService() {
     override fun onRevoke() { stopVpn() }
 
     override fun onDestroy() {
+        if (_connectionState.value != ServiceState.STOPPED && _connectionState.value != ServiceState.ERROR) {
+            stopVpn()
+        }
         scope.cancel()
         super.onDestroy()
     }
@@ -115,8 +122,13 @@ class palazikVpnService : VpnService() {
     // ── Start ─────────────────────────────────────────────────────────────────
 
     private fun startVpn() {
+        if (_connectionState.value == ServiceState.STARTING || _connectionState.value == ServiceState.RUNNING) {
+            Log.d(TAG, "VPN already starting/running")
+            return
+        }
         val profile = activeProfile ?: run {
             Log.e(TAG, "activeProfile is null")
+            _connectionState.value = ServiceState.ERROR
             stopSelf()
             return
         }
@@ -129,7 +141,8 @@ class palazikVpnService : VpnService() {
                 prepareGeodata()
                 initializeLibv2ray()
 
-                val config = XrayConfigBuilder.build(profile)
+                val settings = loadAppSettings()
+                val config = XrayConfigBuilder.build(profile, settings)
                 Log.d(TAG, "Xray config built for ${profile.name}")
 
                 // Register network callback BEFORE establish() so setUnderlyingNetworks
@@ -142,7 +155,7 @@ class palazikVpnService : VpnService() {
                     }
                 }
 
-                val iface = buildVpnInterface()
+                val iface = buildVpnInterface(settings)
                 vpnInterface = iface
                 Log.d(TAG, "TUN established, fd=${iface.fd}")
 
@@ -165,7 +178,7 @@ class palazikVpnService : VpnService() {
 
             } catch (e: Exception) {
                 Log.e(TAG, "VPN start failed: ${e.message}", e)
-                withContext(Dispatchers.Main) { stopVpn() }
+                withContext(Dispatchers.Main) { failVpn() }
             }
         }
     }
@@ -228,23 +241,63 @@ class palazikVpnService : VpnService() {
 
     // v2rayNG uses /30 mask with point-to-point pair (e.g. 10.10.14.1/30),
     // not /24. This matches xray-core's TUN expectations.
-    private fun buildVpnInterface(): ParcelFileDescriptor =
-        Builder()
+    private fun buildVpnInterface(settings: AppSettings): ParcelFileDescriptor {
+        val builder = Builder()
             .setSession("palazikVPN")
             .setMtu(1500)
             .addAddress("10.10.14.1", 30)   // v2rayNG default: OPTION_1
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
-            .addDnsServer("8.8.8.8")
-            .addDnsServer("1.1.1.1")
             .addDisallowedApplication(packageName)
-            .also {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    it.setMetered(false)
-                }
+
+        settings.dnsServers.forEach { dns ->
+            runCatching { builder.addDnsServer(dns) }
+                .onFailure { Log.w(TAG, "Invalid DNS server ignored: $dns") }
+        }
+
+        settings.bypassPackages.forEach { pkg ->
+            if (pkg != packageName) {
+                runCatching { builder.addDisallowedApplication(pkg) }
+                    .onFailure { Log.w(TAG, "Bypass package ignored: $pkg") }
             }
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setMetered(false)
+        }
+
+        return builder
             .establish()
             ?: throw IllegalStateException("establish() returned null — missing VPN permission?")
+    }
+
+    private fun loadAppSettings(): AppSettings {
+        val prefs = applicationContext.getSharedPreferences("palazik_profiles", Context.MODE_PRIVATE)
+        val raw = prefs.getString("app_settings", null) ?: return AppSettings()
+        return runCatching {
+            val o = JSONObject(raw)
+            AppSettings(
+                dnsServers = o.optJSONArray("dnsServers")?.toStringList()
+                    ?.filter { it.isNotBlank() }
+                    ?.ifEmpty { AppSettings().dnsServers }
+                    ?: AppSettings().dnsServers,
+                remoteDns = o.optString("remoteDns", AppSettings().remoteDns).ifBlank { AppSettings().remoteDns },
+                directDns = o.optString("directDns", AppSettings().directDns).ifBlank { AppSettings().directDns },
+                bypassPackages = o.optJSONArray("bypassPackages")?.toStringList()
+                    ?.map { it.trim() }
+                    ?.filter { it.isNotBlank() }
+                    ?: emptyList(),
+                startOnBoot = o.optBoolean("startOnBoot", false),
+            )
+        }.getOrDefault(AppSettings())
+    }
+
+    private fun JSONArray.toStringList(): List<String> =
+        buildList {
+            for (i in 0 until length()) {
+                add(optString(i))
+            }
+        }
 
     // ── Stop ──────────────────────────────────────────────────────────────────
 
@@ -275,6 +328,29 @@ class palazikVpnService : VpnService() {
         _connectionState.value = ServiceState.STOPPED
         _bytesIn.value  = 0L
         _bytesOut.value = 0L
+    }
+
+    private fun failVpn() {
+        if (_connectionState.value == ServiceState.STOPPED) {
+            _connectionState.value = ServiceState.ERROR
+            return
+        }
+        statsJob?.cancel()
+        statsJob = null
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try { connectivity.unregisterNetworkCallback(defaultNetworkCallback) } catch (_: Exception) {}
+        }
+
+        try { coreController?.stopLoop() } catch (e: Exception) { Log.w(TAG, "stopLoop: ${e.message}") }
+        coreController = null
+        try { stopForeground(STOP_FOREGROUND_REMOVE) } catch (_: Exception) {}
+        try { vpnInterface?.close() } catch (e: Exception) { Log.w(TAG, "iface close: ${e.message}") }
+        vpnInterface = null
+        _bytesIn.value = 0L
+        _bytesOut.value = 0L
+        _connectionState.value = ServiceState.ERROR
+        stopSelf()
     }
 
     // ── CoreCallbackHandler ───────────────────────────────────────────────────
@@ -319,7 +395,7 @@ class palazikVpnService : VpnService() {
         val builder = NotificationCompat.Builder(this, palazikVPNApp.CHANNEL_VPN)
             .setContentTitle("palazikVPN")
             .setContentText(status)
-            .setSmallIcon(R.drawable.ic_launcher_logo)
+            .setSmallIcon(R.drawable.ic_vpn_key)
             .setOngoing(true)
         builder.setContentIntent(pi)
         return builder.build()

@@ -27,6 +27,7 @@ fun SubscriptionsScreen(vm: MainViewModel) {
     var showAdd by remember { mutableStateOf(false) }
     var subName by remember { mutableStateOf("") }
     var subUrl  by remember { mutableStateOf("") }
+    var deleteSub by remember { mutableStateOf<Subscription?>(null) }
 
     Column(
         Modifier
@@ -53,7 +54,10 @@ fun SubscriptionsScreen(vm: MainViewModel) {
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 AnimatedVisibility(visible = ui.subscriptions.isNotEmpty()) {
-                    OutlinedButton(onClick = { vm.updateAllSubscriptions() }) {
+                    OutlinedButton(
+                        onClick = { vm.updateAllSubscriptions() },
+                        enabled = !ui.isUpdatingSubscriptions,
+                    ) {
                         Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Update All")
@@ -112,8 +116,9 @@ fun SubscriptionsScreen(vm: MainViewModel) {
                         ) {
                             SubscriptionCard(
                                 sub      = sub,
+                                isUpdating = ui.isUpdatingSubscriptions,
                                 onUpdate = { vm.updateSubscription(sub) },
-                                onDelete = { vm.removeSubscription(sub.id) },
+                                onDelete = { deleteSub = sub },
                             )
                         }
                     }
@@ -165,11 +170,34 @@ fun SubscriptionsScreen(vm: MainViewModel) {
             },
         )
     }
+
+    deleteSub?.let { sub ->
+        AlertDialog(
+            onDismissRequest = { deleteSub = null },
+            title = { Text("Delete Subscription") },
+            icon = { Icon(Icons.Rounded.Delete, null) },
+            text = { Text("Delete \"${sub.name}\" and all profiles from it?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.removeSubscription(sub.id)
+                        deleteSub = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteSub = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SubscriptionCard(
     sub: Subscription,
+    isUpdating: Boolean,
     onUpdate: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -195,7 +223,10 @@ private fun SubscriptionCard(
 
             Spacer(Modifier.height(10.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 Surface(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                     shape = CircleShape,
@@ -231,13 +262,22 @@ private fun SubscriptionCard(
             Spacer(Modifier.height(2.dp))
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onUpdate, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
+                TextButton(
+                    onClick = onUpdate,
+                    enabled = !isUpdating,
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
+                    if (isUpdating) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
+                    }
                     Spacer(Modifier.width(4.dp))
                     Text("Update", style = MaterialTheme.typography.labelMedium)
                 }
                 TextButton(
                     onClick        = onDelete,
+                    enabled        = !isUpdating,
                     contentPadding = PaddingValues(horizontal = 8.dp),
                     colors         = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) {

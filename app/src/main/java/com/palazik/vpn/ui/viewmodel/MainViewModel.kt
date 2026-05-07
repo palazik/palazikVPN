@@ -9,6 +9,7 @@ import androidx.lifecycle.viewModelScope
 import com.palazik.vpn.data.model.*
 import com.palazik.vpn.data.codec.ProfileCodec
 import com.palazik.vpn.data.repository.ProfileRepository
+import com.palazik.vpn.service.XrayConfigBuilder
 import com.palazik.vpn.service.palazikVpnService
 import com.palazik.vpn.ui.theme.AppTheme
 import com.palazik.vpn.ui.theme.DarkModePreference
@@ -26,10 +27,13 @@ data class UiState(
     val appTheme: AppTheme                = AppTheme.CYBER,
     val darkMode: DarkModePreference      = DarkModePreference.SYSTEM,
     val pingMode: PingMode                = PingMode.TCP,
+    val settings: AppSettings             = AppSettings(),
     val bytesIn: Long                     = 0L,
     val bytesOut: Long                    = 0L,
     val snackMessage: String?             = null,
+    val snackActionLabel: String?         = null,
     val shareLink: String?                = null,
+    val isUpdatingSubscriptions: Boolean  = false,
 )
 
 private const val THEME_PREFS  = "palazik_theme"
@@ -43,6 +47,7 @@ class MainViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val themePrefs = context.getSharedPreferences(THEME_PREFS, Context.MODE_PRIVATE)
+    private var deletedProfile: VpnProfile? = null
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
@@ -75,6 +80,11 @@ class MainViewModel @Inject constructor(
                 _ui.update { it.copy(pingMode = mode) }
             }
         }
+        viewModelScope.launch {
+            repo.settings.collect { settings ->
+                _ui.update { it.copy(settings = settings) }
+            }
+        }
 
         // Mirror VPN service state
         viewModelScope.launch {
@@ -84,6 +94,7 @@ class MainViewModel @Inject constructor(
                     palazikVpnService.ServiceState.STARTING -> VpnState.CONNECTING
                     palazikVpnService.ServiceState.STOPPING -> VpnState.DISCONNECTING
                     palazikVpnService.ServiceState.STOPPED  -> VpnState.DISCONNECTED
+                    palazikVpnService.ServiceState.ERROR    -> VpnState.ERROR
                 }) }
             }
         }
@@ -130,6 +141,11 @@ class MainViewModel @Inject constructor(
     fun importProfileFromLink(raw: String) {
         val profile = ProfileCodec.decode(raw)
         if (profile != null) {
+            val errors = ProfileValidator.validate(profile)
+            if (errors.isNotEmpty()) {
+                snack(errors.first())
+                return
+            }
             repo.addProfile(profile)
             snack("Profile \"${profile.name}\" imported")
         } else {
@@ -137,23 +153,73 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    fun addManualProfile(profile: VpnProfile) {
+    fun addManualProfile(profile: VpnProfile): Boolean {
+        val errors = ProfileValidator.validate(profile)
+        if (errors.isNotEmpty()) {
+            snack(errors.first())
+            return false
+        }
         repo.addProfile(profile)
         snack("Profile \"${profile.name}\" added")
+        return true
     }
 
     /** Update an existing profile (used by the edit dialog). */
-    fun updateProfile(profile: VpnProfile) {
+    fun updateProfile(profile: VpnProfile): Boolean {
+        val errors = ProfileValidator.validate(profile)
+        if (errors.isNotEmpty()) {
+            snack(errors.first())
+            return false
+        }
         repo.updateProfile(profile)
+        if (palazikVpnService.activeProfile?.id == profile.id) {
+            palazikVpnService.activeProfile = profile
+        }
         snack("Profile \"${profile.name}\" updated")
+        return true
     }
 
-    fun removeProfile(id: String) = repo.removeProfile(id)
+    fun removeProfile(id: String) {
+        val profile = _ui.value.profiles.firstOrNull { it.id == id }
+        deletedProfile = profile
+        if (profile?.id == palazikVpnService.activeProfile?.id) disconnect()
+        repo.removeProfile(id)
+        snack("Profile deleted", "Undo")
+    }
+
+    fun undoSnackAction() {
+        deletedProfile?.let {
+            repo.addProfile(it)
+            snack("Profile restored")
+        }
+        deletedProfile = null
+    }
+
     fun selectProfile(id: String) = repo.setActiveProfile(id)
+
+    fun duplicateProfile(profile: VpnProfile) {
+        val copy = profile.copy(
+            id = java.util.UUID.randomUUID().toString(),
+            name = "${profile.name} Copy",
+            isActive = false,
+            latencyMs = -1L,
+            addedAt = System.currentTimeMillis(),
+        )
+        repo.addProfile(copy)
+        snack("Profile duplicated")
+    }
 
     fun generateShareLink() {
         val profile = _ui.value.activeProfile ?: run { snack("No active profile"); return }
         _ui.update { it.copy(shareLink = ProfileCodec.encodePalazik(profile)) }
+    }
+
+    fun generateNativeLink(profile: VpnProfile) {
+        _ui.update { it.copy(shareLink = ProfileCodec.encodeNative(profile)) }
+    }
+
+    fun generateJsonConfig(profile: VpnProfile) {
+        _ui.update { it.copy(shareLink = XrayConfigBuilder.build(profile, _ui.value.settings)) }
     }
 
     fun clearShareLink() = _ui.update { it.copy(shareLink = null) }
@@ -178,6 +244,7 @@ class MainViewModel @Inject constructor(
         val sub = Subscription(name = name, url = url)
         repo.addSubscription(sub)
         viewModelScope.launch {
+            _ui.update { it.copy(isUpdatingSubscriptions = true) }
             repo.updateSubscription(sub).fold(
                 onSuccess = { count -> snack("Loaded $count profiles from \"$name\"") },
                 onFailure = {
@@ -185,26 +252,38 @@ class MainViewModel @Inject constructor(
                     snack("Failed to fetch subscription")
                 },
             )
+            _ui.update { it.copy(isUpdatingSubscriptions = false) }
         }
     }
 
-    fun removeSubscription(id: String) = repo.removeSubscription(id)
+    fun removeSubscription(id: String) {
+        if (_ui.value.profiles.any { it.subscriptionId == id && it.id == palazikVpnService.activeProfile?.id }) {
+            disconnect()
+        }
+        repo.removeSubscription(id)
+    }
 
     fun updateSubscription(sub: Subscription) {
         viewModelScope.launch {
+            _ui.update { it.copy(isUpdatingSubscriptions = true) }
             snack("Updating \"${sub.name}\"…")
             repo.updateSubscription(sub).fold(
                 onSuccess = { count -> snack("Updated: $count profiles") },
                 onFailure = { snack("Update failed") },
             )
+            _ui.update { it.copy(isUpdatingSubscriptions = false) }
         }
     }
 
     fun updateAllSubscriptions() {
         viewModelScope.launch {
+            _ui.update { it.copy(isUpdatingSubscriptions = true) }
             snack("Updating all subscriptions…")
-            repo.updateAllSubscriptions()
-            snack("All subscriptions updated")
+            val results = repo.updateAllSubscriptions()
+            val failed = results.count { it.isFailure }
+            val updated = results.sumOf { it.getOrDefault(0) }
+            snack(if (failed == 0) "Updated $updated profiles" else "Updated $updated profiles, $failed failed")
+            _ui.update { it.copy(isUpdatingSubscriptions = false) }
         }
     }
 
@@ -224,8 +303,12 @@ class MainViewModel @Inject constructor(
 
     fun setPingMode(mode: PingMode) = repo.setPingMode(mode)
 
+    fun updateAppSettings(settings: AppSettings) = repo.updateSettings(settings)
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private fun snack(msg: String) = _ui.update { it.copy(snackMessage = msg) }
-    fun clearSnack()               = _ui.update { it.copy(snackMessage = null) }
+    private fun snack(msg: String, action: String? = null) =
+        _ui.update { it.copy(snackMessage = msg, snackActionLabel = action) }
+
+    fun clearSnack() = _ui.update { it.copy(snackMessage = null, snackActionLabel = null) }
 }

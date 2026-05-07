@@ -269,6 +269,7 @@ object ProfileCodec {
             wgPrivateKey    = params["privatekey"] ?: "",
             wgPeerPublicKey = params["publickey"] ?: "",
             wgPreSharedKey  = params["presharedkey"] ?: "",
+            wgEndpoint      = params["endpoint"] ?: params["peer"] ?: "",
             wgDns           = params["dns"] ?: "1.1.1.1",
             wgMtu           = params["mtu"]?.toIntOrNull() ?: 1280,
         )
@@ -401,6 +402,7 @@ object ProfileCodec {
             .authority("${p.address}:${p.port}")
             .appendQueryParameter("privatekey", p.wgPrivateKey)
             .appendQueryParameter("publickey", p.wgPeerPublicKey)
+            .appendQueryParameter("endpoint", p.wgEndpoint)
             .appendQueryParameter("dns", p.wgDns)
             .appendQueryParameter("mtu", p.wgMtu.toString())
             .fragment(p.name).build().toString()

@@ -25,6 +25,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.palazik.vpn.data.model.*
 import com.palazik.vpn.ui.viewmodel.MainViewModel
@@ -40,6 +42,7 @@ fun ProfilesScreen(vm: MainViewModel) {
     var showImport    by remember { mutableStateOf(false) }
     var showManual    by remember { mutableStateOf(false) }
     var editProfile   by remember { mutableStateOf<VpnProfile?>(null) }
+    var deleteProfile by remember { mutableStateOf<VpnProfile?>(null) }
     var showShareLink by remember { mutableStateOf(false) }
     var importText    by remember { mutableStateOf("") }
 
@@ -135,9 +138,12 @@ fun ProfilesScreen(vm: MainViewModel) {
                     profiles      = ui.profiles,
                     subscriptions = ui.subscriptions,
                     onSelect      = { vm.selectProfile(it) },
-                    onDelete      = { vm.removeProfile(it) },
+                    onDelete      = { profile -> deleteProfile = profile },
                     onPing        = { vm.pingProfile(it) },
                     onEdit        = { editProfile = it },
+                    onDuplicate   = { vm.duplicateProfile(it) },
+                    onExportNative = { vm.generateNativeLink(it); showShareLink = true },
+                    onExportJson  = { vm.generateJsonConfig(it); showShareLink = true },
                     onRefreshSub  = { sub -> vm.updateSubscription(sub) },
                 )
             }
@@ -178,7 +184,7 @@ fun ProfilesScreen(vm: MainViewModel) {
     if (showManual) {
         ManualProfileDialog(
             initial   = null,
-            onSave    = { vm.addManualProfile(it); showManual = false },
+            onSave    = { if (vm.addManualProfile(it)) showManual = false },
             onDismiss = { showManual = false },
         )
     }
@@ -187,8 +193,29 @@ fun ProfilesScreen(vm: MainViewModel) {
     editProfile?.let { toEdit ->
         ManualProfileDialog(
             initial   = toEdit,
-            onSave    = { vm.updateProfile(it); editProfile = null },
+            onSave    = { if (vm.updateProfile(it)) editProfile = null },
             onDismiss = { editProfile = null },
+        )
+    }
+
+    deleteProfile?.let { profile ->
+        AlertDialog(
+            onDismissRequest = { deleteProfile = null },
+            title = { Text("Delete Profile") },
+            icon = { Icon(Icons.Rounded.Delete, null) },
+            text = { Text("Delete \"${profile.name}\"?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        vm.removeProfile(profile.id)
+                        deleteProfile = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) { Text("Delete") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteProfile = null }) { Text("Cancel") }
+            },
         )
     }
 
@@ -254,9 +281,12 @@ private fun GroupedProfilesList(
     profiles: List<VpnProfile>,
     subscriptions: List<Subscription>,
     onSelect: (String) -> Unit,
-    onDelete: (String) -> Unit,
+    onDelete: (VpnProfile) -> Unit,
     onPing: (VpnProfile) -> Unit,
     onEdit: (VpnProfile) -> Unit,
+    onDuplicate: (VpnProfile) -> Unit,
+    onExportNative: (VpnProfile) -> Unit,
+    onExportJson: (VpnProfile) -> Unit,
     onRefreshSub: (Subscription) -> Unit,
 ) {
     val expandedGroups = remember { mutableStateMapOf("manual" to true) }
@@ -319,9 +349,12 @@ private fun GroupedProfilesList(
                         subName  = null,
                         isActive = item.profile.isActive,
                         onSelect = { onSelect(item.profile.id) },
-                        onDelete = { onDelete(item.profile.id) },
+                        onDelete = { onDelete(item.profile) },
                         onPing   = { onPing(item.profile) },
                         onEdit   = { onEdit(item.profile) },
+                        onDuplicate = { onDuplicate(item.profile) },
+                        onExportNative = { onExportNative(item.profile) },
+                        onExportJson = { onExportJson(item.profile) },
                     )
                 }
             }
@@ -405,6 +438,9 @@ private fun ProfileCard(
     onDelete: () -> Unit,
     onPing: () -> Unit,
     onEdit: () -> Unit,
+    onDuplicate: () -> Unit,
+    onExportNative: () -> Unit,
+    onExportJson: () -> Unit,
 ) {
     val containerColor by animateColorAsState(
         targetValue   = if (isActive) MaterialTheme.colorScheme.primaryContainer
@@ -523,11 +559,30 @@ private fun ProfileCard(
             Spacer(Modifier.height(2.dp))
 
             // ── Action row ─────────────────────────────────────────────────────
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
                 TextButton(onClick = onPing, contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Icon(Icons.Rounded.NetworkCheck, null, Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Ping", style = MaterialTheme.typography.labelMedium)
+                }
+                TextButton(onClick = onDuplicate, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Icon(Icons.Rounded.ContentCopy, null, Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Duplicate", style = MaterialTheme.typography.labelMedium)
+                }
+                TextButton(onClick = onExportNative, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Icon(Icons.Rounded.Link, null, Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Native", style = MaterialTheme.typography.labelMedium)
+                }
+                TextButton(onClick = onExportJson, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Icon(Icons.Rounded.DataObject, null, Modifier.size(15.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("JSON", style = MaterialTheme.typography.labelMedium)
                 }
                 TextButton(onClick = onEdit, contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Icon(Icons.Rounded.Edit, null, Modifier.size(15.dp))
@@ -580,6 +635,7 @@ private fun ManualProfileDialog(
     var wgPrivKey   by remember { mutableStateOf(initial?.wgPrivateKey    ?: "") }
     var wgPubKey    by remember { mutableStateOf(initial?.wgPeerPublicKey  ?: "") }
     var wgPsk       by remember { mutableStateOf(initial?.wgPreSharedKey  ?: "") }
+    var wgEndpoint  by remember { mutableStateOf(initial?.wgEndpoint ?: "") }
     var wgDns       by remember { mutableStateOf(initial?.wgDns       ?: "1.1.1.1") }
     var wgMtu       by remember { mutableStateOf(initial?.wgMtu?.toString() ?: "1280") }
 
@@ -623,28 +679,33 @@ private fun ManualProfileDialog(
                 // Protocol-specific fields
                 when (protocol) {
                     Protocol.VMESS, Protocol.VLESS, Protocol.TROJAN, Protocol.SOCKS5, Protocol.TUIC -> {
-                        OutlinedTextField(
-                            value = uuid, onValueChange = { uuid = it },
-                            label = { Text(if (protocol == Protocol.TROJAN) "Password" else "UUID") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true,
-                            trailingIcon = {
-                                IconButton(onClick = { uuid = UUID.randomUUID().toString() }) {
-                                    Icon(Icons.Rounded.Refresh, "Generate", Modifier.size(18.dp))
-                                }
-                            },
-                        )
+                        if (protocol == Protocol.TROJAN) {
+                            SecretTextField(value = uuid, onValueChange = { uuid = it }, label = "Password")
+                        } else {
+                            OutlinedTextField(
+                                value = uuid, onValueChange = { uuid = it },
+                                label = { Text("UUID") },
+                                modifier = Modifier.fillMaxWidth(), singleLine = true,
+                                trailingIcon = {
+                                    IconButton(onClick = { uuid = UUID.randomUUID().toString() }) {
+                                        Icon(Icons.Rounded.Refresh, "Generate", Modifier.size(18.dp))
+                                    }
+                                },
+                            )
+                        }
                     }
                     Protocol.SHADOWSOCKS -> {
                         OutlinedTextField(value = ssMethod,   onValueChange = { ssMethod   = it }, label = { Text("Cipher")   }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                        OutlinedTextField(value = ssPassword, onValueChange = { ssPassword = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        SecretTextField(value = ssPassword, onValueChange = { ssPassword = it }, label = "Password")
                     }
                     Protocol.HYSTERIA2 -> {
-                        OutlinedTextField(value = hystPwd, onValueChange = { hystPwd = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        SecretTextField(value = hystPwd, onValueChange = { hystPwd = it }, label = "Password")
                     }
                     Protocol.WIREGUARD -> {
-                        OutlinedTextField(value = wgPrivKey, onValueChange = { wgPrivKey = it }, label = { Text("Private Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        SecretTextField(value = wgPrivKey, onValueChange = { wgPrivKey = it }, label = "Private Key")
                         OutlinedTextField(value = wgPubKey,  onValueChange = { wgPubKey  = it }, label = { Text("Peer Public Key") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                        OutlinedTextField(value = wgPsk,     onValueChange = { wgPsk     = it }, label = { Text("Pre-Shared Key (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        SecretTextField(value = wgPsk, onValueChange = { wgPsk = it }, label = "Pre-Shared Key (optional)")
+                        OutlinedTextField(value = wgEndpoint, onValueChange = { wgEndpoint = it }, label = { Text("Endpoint") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(value = wgDns, onValueChange = { wgDns = it }, label = { Text("DNS") }, modifier = Modifier.weight(1f), singleLine = true)
                             OutlinedTextField(value = wgMtu, onValueChange = { wgMtu = it }, label = { Text("MTU") }, modifier = Modifier.width(88.dp), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
@@ -733,6 +794,7 @@ private fun ManualProfileDialog(
                         wgPrivateKey    = wgPrivKey.trim(),
                         wgPeerPublicKey = wgPubKey.trim(),
                         wgPreSharedKey  = wgPsk.trim(),
+                        wgEndpoint      = wgEndpoint.trim(),
                         wgDns           = wgDns.trim(),
                         wgMtu           = wgMtu.toIntOrNull() ?: 1280,
                     ))
@@ -741,5 +803,32 @@ private fun ManualProfileDialog(
             ) { Text(if (isEdit) "Save" else "Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun SecretTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+) {
+    var visible by remember { mutableStateOf(false) }
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        trailingIcon = {
+            IconButton(onClick = { visible = !visible }) {
+                Icon(
+                    if (visible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                    contentDescription = if (visible) "Hide" else "Show",
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        },
     )
 }

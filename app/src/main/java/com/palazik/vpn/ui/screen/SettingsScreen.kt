@@ -7,9 +7,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -25,6 +23,7 @@ fun SettingsScreen(vm: MainViewModel) {
     Column(
         Modifier
             .fillMaxSize()
+            .statusBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -103,6 +102,112 @@ fun SettingsScreen(vm: MainViewModel) {
                         },
                     )
                 }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsSection(title = "DNS") {
+            var tunDns by remember(ui.settings.dnsServers) {
+                mutableStateOf(ui.settings.dnsServers.joinToString(", "))
+            }
+            var remoteDns by remember(ui.settings.remoteDns) { mutableStateOf(ui.settings.remoteDns) }
+            var directDns by remember(ui.settings.directDns) { mutableStateOf(ui.settings.directDns) }
+
+            OutlinedTextField(
+                value = tunDns,
+                onValueChange = { tunDns = it },
+                label = { Text("VPN DNS servers") },
+                supportingText = { Text("Comma separated") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = remoteDns,
+                onValueChange = { remoteDns = it },
+                label = { Text("Remote DNS") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = directDns,
+                onValueChange = { directDns = it },
+                label = { Text("Direct DNS") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = {
+                    vm.updateAppSettings(
+                        ui.settings.copy(
+                            dnsServers = tunDns.split(",", "\n").map { it.trim() }.filter { it.isNotBlank() },
+                            remoteDns = remoteDns,
+                            directDns = directDns,
+                        )
+                    )
+                }) {
+                    Icon(Icons.Rounded.Save, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Save DNS")
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsSection(title = "Split Tunneling") {
+            var packages by remember(ui.settings.bypassPackages) {
+                mutableStateOf(ui.settings.bypassPackages.joinToString("\n"))
+            }
+            OutlinedTextField(
+                value = packages,
+                onValueChange = { packages = it },
+                label = { Text("Bypass package names") },
+                supportingText = { Text("One package per line; app itself is always bypassed") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = {
+                    vm.updateAppSettings(
+                        ui.settings.copy(
+                            bypassPackages = packages.split("\n", ",").map { it.trim() }.filter { it.isNotBlank() },
+                        )
+                    )
+                }) {
+                    Icon(Icons.Rounded.Save, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Save Apps")
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsSection(title = "Startup") {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Auto-connect on boot", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Starts the selected profile after reboot when VPN permission is already granted.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = ui.settings.startOnBoot,
+                    onCheckedChange = { enabled ->
+                        vm.updateAppSettings(ui.settings.copy(startOnBoot = enabled))
+                    },
+                )
             }
         }
 
