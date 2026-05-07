@@ -7,11 +7,14 @@ palazikVPN is a modern Android VPN client built with Kotlin, Jetpack Compose, Ma
 - Full-device VPN mode powered by libv2ray/Xray
 - Material 3 UI with light, dark, dynamic, and custom color themes
 - Profile import from share links and subscriptions
+- QR import from image files and QR export for profile sharing
+- Import preview with parsed protocol, server, transport, security, and validation warnings
 - Manual profile editor with validation and masked secret fields
 - Profile duplicate, export as native link, export as palazikVPN link, and export generated JSON
 - Subscription refresh with progress and partial-failure messages
 - TCP / HTTP GET / HTTP HEAD latency tests
 - Live connection state, connected duration, and traffic counters
+- Clear connection error panel with retry action
 - Diagnostics log with copy-to-clipboard support
 - Custom DNS settings
 - Split tunneling by choosing installed apps to bypass the VPN
@@ -35,8 +38,8 @@ Import support currently includes:
 
 ## Screens
 
-- **Home**: connect/disconnect, active profile, connection status, duration, traffic, and quick ping
-- **Profiles**: import, manual add/edit, duplicate, ping, export, delete with confirmation/undo
+- **Home**: connect/disconnect, active profile, connection status, duration, traffic, error retry, and quick ping
+- **Profiles**: link import, QR import, import preview, manual add/edit, duplicate, ping, export, QR share, delete with confirmation/undo
 - **Subscriptions**: add, refresh, update all, delete with confirmation
 - **Settings**: theme, ping mode, DNS, split tunneling, startup, diagnostics, app info
 
@@ -48,6 +51,7 @@ Import support currently includes:
 - Navigation Compose
 - Hilt
 - OkHttp
+- ZXing QR encoder/decoder
 - Android `VpnService`
 - libv2ray / Xray via `libv2ray.aar`
 
@@ -133,6 +137,7 @@ The app uses:
 - Auto-connect on boot only works when Android has already granted VPN permission.
 - Subscription and profile compatibility depends on the fields present in imported links.
 - Some advanced Xray options are not exposed in the UI yet.
+- QR import reads QR codes from selected image files; live camera scanning is not implemented yet.
 - Unsigned release APKs from CI must be signed before distribution outside debug/testing use.
 
 ## Project Structure

@@ -35,6 +35,7 @@ data class UiState(
     val bytesOut: Long                    = 0L,
     val connectedSince: Long              = 0L,
     val diagnostics: List<String>         = emptyList(),
+    val lastError: String?                = null,
     val snackMessage: String?             = null,
     val snackActionLabel: String?         = null,
     val shareLink: String?                = null,
@@ -107,6 +108,7 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch { palazikVpnService.bytesOut.collect { b -> _ui.update { it.copy(bytesOut = b) } } }
         viewModelScope.launch { palazikVpnService.connectedSince.collect { t -> _ui.update { it.copy(connectedSince = t) } } }
         viewModelScope.launch { palazikVpnService.diagnostics.collect { logs -> _ui.update { it.copy(diagnostics = logs) } } }
+        viewModelScope.launch { palazikVpnService.lastError.collect { error -> _ui.update { it.copy(lastError = error) } } }
         loadInstalledApps()
     }
 

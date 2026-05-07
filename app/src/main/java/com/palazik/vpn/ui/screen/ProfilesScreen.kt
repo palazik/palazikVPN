@@ -1,7 +1,11 @@
 package com.palazik.vpn.ui.screen
 
+import android.graphics.Bitmap
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,7 +21,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
@@ -28,6 +34,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.palazik.vpn.data.codec.ProfileCodec
+import com.palazik.vpn.data.codec.QrCodec
 import com.palazik.vpn.data.model.*
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 import java.util.UUID
@@ -36,6 +44,7 @@ import java.util.UUID
 @Composable
 fun ProfilesScreen(vm: MainViewModel) {
     val ui        by vm.ui.collectAsState()
+    val context   = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val keyboard  = LocalSoftwareKeyboardController.current
 
@@ -44,7 +53,33 @@ fun ProfilesScreen(vm: MainViewModel) {
     var editProfile   by remember { mutableStateOf<VpnProfile?>(null) }
     var deleteProfile by remember { mutableStateOf<VpnProfile?>(null) }
     var showShareLink by remember { mutableStateOf(false) }
+    var showQr        by remember { mutableStateOf(false) }
+    var qrBitmap      by remember { mutableStateOf<Bitmap?>(null) }
     var importText    by remember { mutableStateOf("") }
+    var previewProfile by remember { mutableStateOf<VpnProfile?>(null) }
+    var previewErrors by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    fun previewImport(raw: String) {
+        val profile = ProfileCodec.decode(raw)
+        if (profile == null) {
+            vm.importProfileFromLink(raw)
+            return
+        }
+        previewProfile = profile
+        previewErrors = ProfileValidator.validate(profile)
+    }
+
+    val qrImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val decoded = QrCodec.decodeFromUri(context, uri)
+            if (decoded != null) {
+                importText = decoded
+                previewImport(decoded)
+            } else {
+                vm.importProfileFromLink("")
+            }
+        }
+    }
 
     Column(
         Modifier
@@ -84,6 +119,9 @@ fun ProfilesScreen(vm: MainViewModel) {
                 // Bug fix #1: use IconButton + icon-only buttons to prevent text wrapping
                 IconButton(onClick = { showImport = true }) {
                     Icon(Icons.Rounded.Link, "Import via link")
+                }
+                IconButton(onClick = { qrImportLauncher.launch("image/*") }) {
+                    Icon(Icons.Rounded.QrCodeScanner, "Import QR")
                 }
                 FilledTonalButton(
                     onClick = { showManual = true },
@@ -170,12 +208,26 @@ fun ProfilesScreen(vm: MainViewModel) {
             },
             confirmButton = {
                 Button(
-                    onClick  = { vm.importProfileFromLink(importText.trim()); showImport = false; importText = "" },
+                    onClick  = { previewImport(importText.trim()); showImport = false },
                     enabled  = importText.isNotBlank(),
                 ) { Text("Import") }
             },
             dismissButton = {
                 TextButton(onClick = { showImport = false; importText = "" }) { Text("Cancel") }
+            },
+        )
+    }
+
+    previewProfile?.let { profile ->
+        ImportPreviewDialog(
+            profile = profile,
+            errors = previewErrors,
+            onDismiss = { previewProfile = null },
+            onImport = {
+                if (vm.addManualProfile(profile)) {
+                    previewProfile = null
+                    importText = ""
+                }
             },
         )
     }
@@ -260,9 +312,78 @@ fun ProfilesScreen(vm: MainViewModel) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showShareLink = false; vm.clearShareLink() }) { Text("Close") }
+                Row {
+                    TextButton(onClick = {
+                        qrBitmap = QrCodec.encode(ui.shareLink!!)
+                        showShareLink = false
+                        showQr = true
+                    }) { Text("QR") }
+                    TextButton(onClick = { showShareLink = false; vm.clearShareLink() }) { Text("Close") }
+                }
             },
         )
+    }
+
+    if (showQr && qrBitmap != null) {
+        AlertDialog(
+            onDismissRequest = { showQr = false; vm.clearShareLink() },
+            title = { Text("Profile QR") },
+            icon = { Icon(Icons.Rounded.QrCode, null) },
+            text = {
+                Image(
+                    bitmap = qrBitmap!!.asImageBitmap(),
+                    contentDescription = "Profile QR",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                Button(onClick = { showQr = false; vm.clearShareLink() }) { Text("Done") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun ImportPreviewDialog(
+    profile: VpnProfile,
+    errors: List<String>,
+    onDismiss: () -> Unit,
+    onImport: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Import Preview") },
+        icon = { Icon(if (errors.isEmpty()) Icons.Rounded.Preview else Icons.Rounded.Warning, null) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                PreviewRow("Name", profile.name)
+                PreviewRow("Protocol", profile.protocol.name)
+                PreviewRow("Server", "${profile.address}:${profile.port}")
+                PreviewRow("Transport", profile.transport.name)
+                PreviewRow("Security", profile.security.name)
+                if (profile.sni.isNotBlank()) PreviewRow("SNI", profile.sni)
+                if (errors.isNotEmpty()) {
+                    HorizontalDivider()
+                    errors.forEach { error ->
+                        Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onImport, enabled = errors.isEmpty()) { Text("Import") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun PreviewRow(label: String, value: String) {
+    Column {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value.ifBlank { "-" }, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

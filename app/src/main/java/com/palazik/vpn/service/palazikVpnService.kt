@@ -54,10 +54,12 @@ class palazikVpnService : VpnService() {
         private val _bytesOut = MutableStateFlow(0L)
         private val _connectedSince = MutableStateFlow(0L)
         private val _diagnostics = MutableStateFlow<List<String>>(emptyList())
+        private val _lastError = MutableStateFlow<String?>(null)
         val bytesIn:  StateFlow<Long> = _bytesIn
         val bytesOut: StateFlow<Long> = _bytesOut
         val connectedSince: StateFlow<Long> = _connectedSince
         val diagnostics: StateFlow<List<String>> = _diagnostics
+        val lastError: StateFlow<String?> = _lastError
 
         @Volatile var activeProfile: VpnProfile? = null
     }
@@ -133,6 +135,7 @@ class palazikVpnService : VpnService() {
         }
         val profile = activeProfile ?: run {
             Log.e(TAG, "activeProfile is null")
+            _lastError.value = "No active profile selected"
             addDiagnostic("Start failed: no active profile")
             _connectionState.value = ServiceState.ERROR
             stopSelf()
@@ -140,6 +143,7 @@ class palazikVpnService : VpnService() {
         }
 
         _connectionState.value = ServiceState.STARTING
+        _lastError.value = null
         addDiagnostic("Starting ${profile.name}")
         startForeground(NOTIFICATION_ID, buildNotification("Connecting…"))
 
@@ -187,6 +191,7 @@ class palazikVpnService : VpnService() {
 
             } catch (e: Exception) {
                 Log.e(TAG, "VPN start failed: ${e.message}", e)
+                _lastError.value = e.message ?: e.javaClass.simpleName
                 addDiagnostic("Start failed: ${e.message ?: e.javaClass.simpleName}")
                 withContext(Dispatchers.Main) { failVpn() }
             }
@@ -337,6 +342,7 @@ class palazikVpnService : VpnService() {
         vpnInterface = null
 
         _connectionState.value = ServiceState.STOPPED
+        _lastError.value = null
         _connectedSince.value = 0L
         addDiagnostic("Stopped")
         _bytesIn.value  = 0L

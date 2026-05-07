@@ -11,6 +11,7 @@ hilt                   = "2.52"
 hiltNavigationCompose  = "1.2.0"
 lifecycleViewmodelCompose = "2.8.6"
 okhttp                 = "4.12.0"
+zxing                  = "3.5.3"
 junit                  = "4.13.2"
 junitAndroid           = "1.2.1"
 espresso               = "3.6.1"
@@ -35,6 +36,7 @@ androidx-hilt-navigation-compose   = { group = "androidx.hilt",             name
 androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle",      name = "lifecycle-viewmodel-compose",   version.ref = "lifecycleViewmodelCompose" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle",        name = "lifecycle-runtime-compose",     version.ref = "lifecycleRuntimeKtx" }
 okhttp                             = { group = "com.squareup.okhttp3",      name = "okhttp",                        version.ref = "okhttp" }
+zxing-core                         = { group = "com.google.zxing",          name = "core",                          version.ref = "zxing" }
 junit                              = { group = "junit",                     name = "junit",                         version.ref = "junit" }
 androidx-junit                     = { group = "androidx.test.ext",         name = "junit",                         version.ref = "junitAndroid" }
 androidx-espresso-core             = { group = "androidx.test.espresso",    name = "espresso-core",                 version.ref = "espresso" }

@@ -298,6 +298,17 @@ fun HomeScreen(
             }
         }
 
+        AnimatedVisibility(
+            visible = vpnState == VpnState.ERROR,
+            enter = fadeIn(tween(200)) + expandVertically(),
+            exit = fadeOut(tween(150)) + shrinkVertically(),
+        ) {
+            ErrorCard(
+                message = ui.lastError ?: "Connection failed",
+                onRetry = { vm.toggleVpn(permLauncher) },
+            )
+        }
+
         // ── Traffic stats ─────────────────────────────────────────────────────
         AnimatedVisibility(
             visible = isConnected,
@@ -357,6 +368,48 @@ fun HomeScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorCard(message: String, onRetry: () -> Unit) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+        ),
+        shape = MaterialTheme.shapes.large,
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Rounded.ErrorOutline,
+                    null,
+                    Modifier.size(22.dp),
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Connection Error",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onRetry) {
+                    Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Retry")
                 }
             }
         }
