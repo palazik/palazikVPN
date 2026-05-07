@@ -11,9 +11,9 @@ import java.util.UUID
  *
  * Supported import schemes:
  *   vmess://  vless://  ss://  trojan://  hysteria2://  wireguard://  socks5://
- *   tuic://   xhttp://  palazikVPN://  (palazikVPN proprietary share)
+ *   tuic://   xhttp://  palazikvpn://  (palazikVPN proprietary share)
  *
- * Export always produces a palazikVPN:// URI plus the native URI.
+ * Export always produces a palazikvpn:// URI plus the native URI.
  *
  * NOTE: xhttp:// is treated as VLESS + Transport.XHTTP on import.
  *       XHTTP is a transport layer, not a standalone protocol.
@@ -26,8 +26,9 @@ object ProfileCodec {
 
     fun decode(raw: String): VpnProfile? = runCatching {
         val trimmed = raw.trim()
+        val scheme = trimmed.substringBefore("://", "").lowercase()
         when {
-            trimmed.startsWith("palazikVPN://") -> decodePalazik(trimmed)
+            scheme == "palazikvpn"             -> decodePalazik(trimmed)
             trimmed.startsWith("vmess://")      -> decodeVmess(trimmed)
             trimmed.startsWith("vless://")      -> decodeVless(trimmed)
             trimmed.startsWith("ss://")         -> decodeShadowsocks(trimmed)
@@ -53,7 +54,7 @@ object ProfileCodec {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // EXPORT — native + palazikVPN:// wrapper
+    // EXPORT — native + palazikvpn:// wrapper
     // ─────────────────────────────────────────────────────────────────────────
 
     fun encodeNative(p: VpnProfile): String = when (p.protocol) {
@@ -68,7 +69,7 @@ object ProfileCodec {
         else                 -> encodeVless(p)
     }
 
-    /** Returns palazikVPN://<base64(json)>#name */
+    /** Returns palazikvpn://<base64(json)>#name */
     fun encodePalazik(p: VpnProfile): String {
         val json = JSONObject().apply {
             put("v", 1)
@@ -95,7 +96,7 @@ object ProfileCodec {
             put("name", p.name)
         }.toString()
         val b64 = Base64.encodeToString(json.toByteArray(), Base64.URL_SAFE or Base64.NO_WRAP)
-        return "palazikVPN://$b64#${Uri.encode(p.name)}"
+        return "palazikvpn://$b64#${Uri.encode(p.name)}"
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -103,7 +104,7 @@ object ProfileCodec {
     // ─────────────────────────────────────────────────────────────────────────
 
     private fun decodePalazik(raw: String): VpnProfile {
-        val b64 = raw.removePrefix("palazikVPN://").substringBefore("#")
+        val b64 = raw.substringAfter("://").substringBefore("#")
         val json = JSONObject(String(Base64.decode(b64, Base64.URL_SAFE)))
         // Guard: old profiles saved with "XHTTP" or "REALITY" as protocol — migrate them
         val protoStr = json.optString("proto", "VLESS")

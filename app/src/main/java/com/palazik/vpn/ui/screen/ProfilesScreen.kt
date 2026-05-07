@@ -9,6 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -21,6 +22,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -28,7 +30,7 @@ import com.palazik.vpn.data.model.*
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 import java.util.UUID
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ProfilesScreen(vm: MainViewModel) {
     val ui        by vm.ui.collectAsState()
@@ -49,22 +51,23 @@ fun ProfilesScreen(vm: MainViewModel) {
     ) {
 
         // ── Top bar ──────────────────────────────────────────────────────────
-        Row(
+        Column(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment     = Alignment.CenterVertically,
         ) {
-            Column {
-                Text("Profiles", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                AnimatedVisibility(visible = ui.profiles.isNotEmpty()) {
-                    Text(
-                        "${ui.profiles.size} profiles",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    )
-                }
+            Text("Profiles", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            AnimatedVisibility(visible = ui.profiles.isNotEmpty()) {
+                Text(
+                    "${ui.profiles.size} profiles",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Spacer(Modifier.height(8.dp))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 AnimatedVisibility(visible = ui.profiles.isNotEmpty()) {
                     IconButton(onClick = { vm.pingAll() }) {
                         Icon(Icons.Rounded.NetworkCheck, "Ping all")
@@ -207,11 +210,15 @@ fun ProfilesScreen(vm: MainViewModel) {
                         color = MaterialTheme.colorScheme.surfaceVariant,
                         shape = MaterialTheme.shapes.medium,
                     ) {
-                        Text(
-                            ui.shareLink!!,
-                            modifier = Modifier.padding(12.dp),
-                            style    = MaterialTheme.typography.bodySmall,
-                        )
+                        SelectionContainer {
+                            Text(
+                                ui.shareLink!!,
+                                modifier = Modifier.padding(12.dp),
+                                style    = MaterialTheme.typography.bodySmall,
+                                overflow = TextOverflow.Ellipsis,
+                                maxLines = 6,
+                            )
+                        }
                     }
                 }
             },
@@ -388,6 +395,7 @@ private fun GroupHeader(
 // Profile card
 // ─────────────────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ProfileCard(
     profile: VpnProfile,
@@ -419,7 +427,11 @@ private fun ProfileCard(
     ) {
         Column(Modifier.padding(14.dp)) {
             // ── Badge row ──────────────────────────────────────────────────────
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 Badge(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)) {
                     Text(
                         profile.protocol.name,
@@ -430,33 +442,26 @@ private fun ProfileCard(
                     )
                 }
                 AnimatedVisibility(visible = profile.transport != Transport.TCP) {
-                    Row {
-                        Spacer(Modifier.width(6.dp))
-                        Badge(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)) {
-                            Text(
-                                profile.transport.name,
-                                color  = MaterialTheme.colorScheme.secondary,
-                                style  = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
-                        }
+                    Badge(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)) {
+                        Text(
+                            profile.transport.name,
+                            color  = MaterialTheme.colorScheme.secondary,
+                            style  = MaterialTheme.typography.labelSmall,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
                     }
                 }
                 AnimatedVisibility(visible = isActive) {
-                    Row {
-                        Spacer(Modifier.width(6.dp))
-                        Badge(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)) {
-                            Text(
-                                "ACTIVE",
-                                color      = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold,
-                                style      = MaterialTheme.typography.labelSmall,
-                                modifier   = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
-                        }
+                    Badge(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)) {
+                        Text(
+                            "ACTIVE",
+                            color      = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            style      = MaterialTheme.typography.labelSmall,
+                            modifier   = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
                     }
                 }
-                Spacer(Modifier.weight(1f))
                 // Latency chip — animates in/out
                 AnimatedVisibility(
                     visible = profile.latencyMs >= 0,
@@ -481,11 +486,19 @@ private fun ProfileCard(
             }
 
             Spacer(Modifier.height(8.dp))
-            Text(profile.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
+            Text(
+                profile.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
             Text(
                 "${profile.address}:${profile.port}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
 
             // Subscription source

@@ -19,6 +19,7 @@ import com.palazik.vpn.ui.viewmodel.MainViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SubscriptionsScreen(vm: MainViewModel) {
     val ui by vm.ui.collectAsState()
@@ -34,22 +35,23 @@ fun SubscriptionsScreen(vm: MainViewModel) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
 
-        Row(
+        Column(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment     = Alignment.CenterVertically,
         ) {
-            Column {
-                Text("Subscriptions", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                AnimatedVisibility(visible = ui.subscriptions.isNotEmpty()) {
-                    Text(
-                        "${ui.subscriptions.size} active",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                    )
-                }
+            Text("Subscriptions", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            AnimatedVisibility(visible = ui.subscriptions.isNotEmpty()) {
+                Text(
+                    "${ui.subscriptions.size} active",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Spacer(Modifier.height(8.dp))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 AnimatedVisibility(visible = ui.subscriptions.isNotEmpty()) {
                     OutlinedButton(onClick = { vm.updateAllSubscriptions() }) {
                         Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))

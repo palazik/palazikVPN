@@ -180,7 +180,10 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             repo.updateSubscription(sub).fold(
                 onSuccess = { count -> snack("Loaded $count profiles from \"$name\"") },
-                onFailure = { snack("Failed to fetch subscription") },
+                onFailure = {
+                    repo.removeSubscription(sub.id)
+                    snack("Failed to fetch subscription")
+                },
             )
         }
     }

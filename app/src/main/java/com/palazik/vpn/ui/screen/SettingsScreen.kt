@@ -1,5 +1,6 @@
 package com.palazik.vpn.ui.screen
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -44,7 +45,13 @@ fun SettingsScreen(vm: MainViewModel) {
                         shape    = SegmentedButtonDefaults.itemShape(idx, DarkModePreference.values().size),
                         selected = ui.darkMode == pref,
                         onClick  = { vm.setDarkMode(pref) },
-                        label    = { Text(pref.name.replace('_', ' ')) },
+                        label    = {
+                            Text(when (pref) {
+                                DarkModePreference.SYSTEM       -> "System"
+                                DarkModePreference.ALWAYS_LIGHT -> "Light"
+                                DarkModePreference.ALWAYS_DARK  -> "Dark"
+                            })
+                        },
                     )
                 }
             }
@@ -137,7 +144,10 @@ private fun ThemeRow(theme: AppTheme, isSelected: Boolean, onClick: () -> Unit) 
         AppTheme.DYNAMIC -> "🎨 Dynamic (Android 12+)"
     }
     Row(
-        Modifier.fillMaxWidth(),
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {

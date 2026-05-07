@@ -125,9 +125,14 @@ class ProfileRepository @Inject constructor(
                         p
                     }
                 }
+                val retainedProfiles = if (merged.any { it.isActive }) {
+                    retained.map { it.copy(isActive = false) }
+                } else {
+                    retained
+                }
 
                 // Single atomic write — old sub profiles deleted, new ones added
-                _profiles.value = retained + merged
+                _profiles.value = retainedProfiles + merged
                 saveProfiles()
 
                 val updated = sub.copy(

@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity() {
     private fun handleIntent(intent: Intent?) {
         val data = intent?.data ?: return
         if (data.scheme == "palazikvpn") {
-            vm.importProfileFromLink(data.toString())
+            vm.importProfileFromLink(data.getQueryParameter("config") ?: data.toString())
         }
     }
 }
