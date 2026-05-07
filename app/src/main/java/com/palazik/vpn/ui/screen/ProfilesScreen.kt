@@ -258,9 +258,10 @@ private fun GroupedProfilesList(
         subscriptions.forEach { if (!expandedGroups.containsKey(it.id)) expandedGroups[it.id] = true }
     }
 
-    val manualProfiles = profiles.filter { it.subscriptionId == null }
-    val subProfileMap  = subscriptions.associateWith { sub ->
-        profiles.filter { it.subscriptionId == sub.id }
+    val manualProfiles = remember(profiles) { profiles.filter { it.subscriptionId == null } }
+    // Build stable list of (sub, profiles) pairs — avoids Map forEach in LazyColumn
+    val subGroups = remember(profiles, subscriptions) {
+        subscriptions.map { sub -> Pair(sub, profiles.filter { it.subscriptionId == sub.id }) }
     }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -269,10 +270,10 @@ private fun GroupedProfilesList(
         if (manualProfiles.isNotEmpty()) {
             item(key = "header_manual") {
                 GroupHeader(
-                    title    = "Manual",
-                    count    = manualProfiles.size,
-                    expanded = expandedGroups["manual"] ?: true,
-                    onToggle = { expandedGroups["manual"] = !(expandedGroups["manual"] ?: true) },
+                    title     = "Manual",
+                    count     = manualProfiles.size,
+                    expanded  = expandedGroups["manual"] ?: true,
+                    onToggle  = { expandedGroups["manual"] = !(expandedGroups["manual"] ?: true) },
                     onRefresh = null,
                 )
             }
@@ -292,21 +293,21 @@ private fun GroupedProfilesList(
         }
 
         // ── Per-subscription groups ────────────────────────────────────────────
-        subProfileMap.forEach { (sub, subProfiles) ->
+        subGroups.forEach { (sub, subProfiles) ->
             item(key = "header_${sub.id}") {
                 GroupHeader(
-                    title    = sub.name,
-                    count    = subProfiles.size,
-                    expanded = expandedGroups[sub.id] ?: true,
-                    onToggle = { expandedGroups[sub.id] = !(expandedGroups[sub.id] ?: true) },
+                    title     = sub.name,
+                    count     = subProfiles.size,
+                    expanded  = expandedGroups[sub.id] ?: true,
+                    onToggle  = { expandedGroups[sub.id] = !(expandedGroups[sub.id] ?: true) },
                     onRefresh = { onRefreshSub(sub) },
                 )
             }
-            if (expandedGroups[sub.id] != false) {
+            if (expandedGroups[sub.id] != false && subProfiles.isNotEmpty()) {
                 items(subProfiles, key = { it.id }) { profile ->
                     ProfileCard(
                         profile  = profile,
-                        subName  = null, // name already shown in group header
+                        subName  = null,
                         isActive = profile.isActive,
                         onSelect = { onSelect(profile.id) },
                         onDelete = { onDelete(profile.id) },
