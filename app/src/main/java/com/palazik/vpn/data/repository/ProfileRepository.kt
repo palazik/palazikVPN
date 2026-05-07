@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -35,6 +37,9 @@ class ProfileRepository @Inject constructor(
 
     private val _pingMode      = MutableStateFlow(PingMode.TCP)
     val pingMode: StateFlow<PingMode> = _pingMode.asStateFlow()
+
+    // Serializes concurrent subscription updates to prevent profile duplication
+    private val updateMutex = Mutex()
 
     init { loadFromPrefs() }
 
@@ -80,6 +85,7 @@ class ProfileRepository @Inject constructor(
     }
 
     suspend fun updateSubscription(sub: Subscription): Result<Int> = withContext(Dispatchers.IO) {
+        updateMutex.withLock {
         runCatching {
             val req    = Request.Builder().url(sub.url).build()
             val body   = httpClient.newCall(req).execute().use { it.body?.string() ?: "" }
@@ -120,6 +126,7 @@ class ProfileRepository @Inject constructor(
 
             merged.size
         }
+        }
     }
 
     suspend fun updateAllSubscriptions(): List<Result<Int>> =
@@ -143,8 +150,9 @@ class ProfileRepository @Inject constructor(
                     System.currentTimeMillis() - start
                 }
                 PingMode.HTTP_GET -> {
+                    // Use HTTPS — Android 9+ blocks cleartext HTTP by default
                     val req = Request.Builder()
-                        .url("http://cp.cloudflare.com/")
+                        .url("https://cp.cloudflare.com/")
                         .get()
                         .build()
                     val start = System.currentTimeMillis()
@@ -153,7 +161,7 @@ class ProfileRepository @Inject constructor(
                 }
                 PingMode.HTTP_HEAD -> {
                     val req = Request.Builder()
-                        .url("http://cp.cloudflare.com/")
+                        .url("https://cp.cloudflare.com/")
                         .head()
                         .build()
                     val start = System.currentTimeMillis()
