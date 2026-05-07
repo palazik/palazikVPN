@@ -5,12 +5,17 @@ import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
+import android.util.Log
 import com.palazik.vpn.data.codec.ProfileCodec
 import com.palazik.vpn.service.palazikVpnService
 import org.json.JSONArray
 import org.json.JSONObject
 
 class BootReceiver : BroadcastReceiver() {
+    private companion object {
+        const val TAG = "palazikVPN.BootReceiver"
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         val prefs = context.getSharedPreferences("palazik_profiles", Context.MODE_PRIVATE)
@@ -40,10 +45,14 @@ class BootReceiver : BroadcastReceiver() {
             action = palazikVpnService.ACTION_START
             putExtra(palazikVpnService.EXTRA_PROFILE, activeProfile.id)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent)
-        } else {
-            context.startService(serviceIntent)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+        }.onFailure { e ->
+            Log.w(TAG, "Auto-connect on boot failed: ${e.message}", e)
         }
     }
 }

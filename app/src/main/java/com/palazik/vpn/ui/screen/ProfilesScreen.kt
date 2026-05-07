@@ -38,6 +38,9 @@ import com.palazik.vpn.data.codec.ProfileCodec
 import com.palazik.vpn.data.codec.QrCodec
 import com.palazik.vpn.data.model.*
 import com.palazik.vpn.ui.viewmodel.MainViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -47,6 +50,7 @@ fun ProfilesScreen(vm: MainViewModel) {
     val context   = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val keyboard  = LocalSoftwareKeyboardController.current
+    val scope     = rememberCoroutineScope()
 
     var showImport    by remember { mutableStateOf(false) }
     var showManual    by remember { mutableStateOf(false) }
@@ -71,12 +75,16 @@ fun ProfilesScreen(vm: MainViewModel) {
 
     val qrImportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
-            val decoded = QrCodec.decodeFromUri(context, uri)
-            if (decoded != null) {
-                importText = decoded
-                previewImport(decoded)
-            } else {
-                vm.importProfileFromLink("")
+            scope.launch {
+                val decoded = withContext(Dispatchers.IO) {
+                    QrCodec.decodeFromUri(context.applicationContext, uri)
+                }
+                if (decoded != null) {
+                    importText = decoded
+                    previewImport(decoded)
+                } else {
+                    vm.showSnack("No QR code found in image")
+                }
             }
         }
     }

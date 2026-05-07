@@ -319,7 +319,7 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             val pm = context.packageManager
             val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-            val apps = pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+            val launcherApps = pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
                 .mapNotNull { info ->
                     val pkg = info.activityInfo?.packageName ?: return@mapNotNull null
                     if (pkg == context.packageName) return@mapNotNull null
@@ -328,6 +328,19 @@ class MainViewModel @Inject constructor(
                         packageName = pkg,
                     )
                 }
+            val installedApps = runCatching {
+                pm.getInstalledApplications(PackageManager.MATCH_DISABLED_COMPONENTS)
+                    .mapNotNull { app ->
+                        val pkg = app.packageName ?: return@mapNotNull null
+                        if (!app.enabled) return@mapNotNull null
+                        if (pkg == context.packageName) return@mapNotNull null
+                        InstalledApp(
+                            label = app.loadLabel(pm)?.toString()?.ifBlank { pkg } ?: pkg,
+                            packageName = pkg,
+                        )
+                    }
+            }.getOrDefault(emptyList())
+            val apps = (launcherApps + installedApps)
                 .distinctBy { it.packageName }
                 .sortedBy { it.label.lowercase() }
             _ui.update { it.copy(installedApps = apps) }
@@ -338,6 +351,8 @@ class MainViewModel @Inject constructor(
 
     private fun snack(msg: String, action: String? = null) =
         _ui.update { it.copy(snackMessage = msg, snackActionLabel = action) }
+
+    fun showSnack(message: String) = snack(message)
 
     fun clearSnack() = _ui.update { it.copy(snackMessage = null, snackActionLabel = null) }
 }

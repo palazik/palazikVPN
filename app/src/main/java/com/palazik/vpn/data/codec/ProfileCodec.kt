@@ -92,7 +92,11 @@ object ProfileCodec {
             put("wgPub", p.wgPeerPublicKey)
             put("wgPsk", p.wgPreSharedKey)
             put("wgEndp", p.wgEndpoint)
+            put("wgDns", p.wgDns)
+            put("wgMtu", p.wgMtu)
             put("hystPwd", p.hystPassword)
+            put("hystObfs", p.hystObfs)
+            put("hystObfsPwd", p.hystObfsPassword)
             put("name", p.name)
         }.toString()
         val b64 = Base64.encodeToString(json.toByteArray(), Base64.URL_SAFE or Base64.NO_WRAP)
@@ -132,7 +136,11 @@ object ProfileCodec {
             wgPeerPublicKey = json.optString("wgPub"),
             wgPreSharedKey  = json.optString("wgPsk"),
             wgEndpoint      = json.optString("wgEndp"),
+            wgDns           = json.optString("wgDns", "1.1.1.1"),
+            wgMtu           = json.optInt("wgMtu", 1280),
             hystPassword    = json.optString("hystPwd"),
+            hystObfs        = json.optString("hystObfs"),
+            hystObfsPassword = json.optString("hystObfsPwd"),
             name        = json.optString("name", "Imported"),
         )
     }
@@ -203,13 +211,14 @@ object ProfileCodec {
         val fragment = raw.substringAfter("#", "Shadowsocks")
         val body     = raw.removePrefix("ss://").substringBefore("#")
         return try {
-            val uri = Uri.parse("ss://$body")
-            val userInfo = uri.userInfo ?: run {
-                val decoded = String(Base64.decode(body.substringBefore("@"), Base64.DEFAULT))
-                decoded
+            val decodedWhole = if ("@" !in body) {
+                decodeBase64OrNull(body.substringBefore("?"))
+            } else {
+                null
             }
-            val methodPwd = if (userInfo.contains(":")) userInfo else
-                String(Base64.decode(userInfo, Base64.DEFAULT))
+            val uri = Uri.parse("ss://${decodedWhole ?: body}")
+            val userInfo = uri.userInfo ?: decodedWhole?.substringBeforeLast("@").orEmpty()
+            val methodPwd = if (userInfo.contains(":")) userInfo else decodeBase64(userInfo)
             val method  = methodPwd.substringBefore(":")
             val pwd     = methodPwd.substringAfter(":")
             VpnProfile(
@@ -226,6 +235,17 @@ object ProfileCodec {
             )
         } catch (_: Exception) {
             VpnProfile(name = Uri.decode(fragment), protocol = Protocol.SHADOWSOCKS)
+        }
+    }
+
+    private fun decodeBase64(value: String): String =
+        decodeBase64OrNull(value) ?: String(Base64.decode(value, Base64.DEFAULT))
+
+    private fun decodeBase64OrNull(value: String): String? {
+        val trimmed = value.trim()
+        val normalized = trimmed.padEnd(trimmed.length + (4 - trimmed.length % 4) % 4, '=')
+        return listOf(Base64.DEFAULT, Base64.URL_SAFE).firstNotNullOfOrNull { flags ->
+            runCatching { String(Base64.decode(normalized, flags)) }.getOrNull()
         }
     }
 
