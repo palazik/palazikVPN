@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.palazik.vpn.data.model.VpnState
 import com.palazik.vpn.ui.viewmodel.MainViewModel
@@ -35,6 +36,14 @@ fun HomeScreen(
     val vpnState     = ui.vpnState
     val isConnected  = vpnState == VpnState.CONNECTED
     val isTransition = vpnState == VpnState.CONNECTING || vpnState == VpnState.DISCONNECTING
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(isConnected) {
+        while (isConnected) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1000)
+        }
+    }
 
     // ── Animations ────────────────────────────────────────────────────────────
 
@@ -296,12 +305,19 @@ fun HomeScreen(
                       fadeIn(tween(300)),
             exit    = shrinkVertically(tween(250)) + fadeOut(tween(200)),
         ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                TrafficCard(Modifier.weight(1f), "↓  Download", ui.bytesIn)
-                TrafficCard(Modifier.weight(1f), "↑  Upload",   ui.bytesOut)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                ConnectionHealthCard(
+                    profileName = ui.activeProfile?.name ?: "",
+                    connectedFor = formatDuration((now - ui.connectedSince).coerceAtLeast(0L)),
+                    total = ui.bytesIn + ui.bytesOut,
+                )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    TrafficCard(Modifier.weight(1f), "↓  Download", ui.bytesIn)
+                    TrafficCard(Modifier.weight(1f), "↑  Upload",   ui.bytesOut)
+                }
             }
         }
 
@@ -319,7 +335,7 @@ fun HomeScreen(
                 ) {
                     Icon(Icons.Rounded.NetworkCheck, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Ping  ${profile.name}", maxLines = 1)
+                    Text("Ping  ${profile.name}", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     AnimatedVisibility(
                         visible = profile.latencyMs >= 0,
                         enter   = fadeIn() + scaleIn(EaseOutBack.toAnimationSpec(300)),
@@ -342,6 +358,39 @@ fun HomeScreen(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConnectionHealthCard(profileName: String, connectedFor: String, total: Long) {
+    ElevatedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large) {
+        Row(
+            Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Rounded.VerifiedUser,
+                null,
+                Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    profileName,
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    "Connected $connectedFor • ${formatBytes(total)} total",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -389,6 +438,14 @@ private fun formatBytes(b: Long): String {
         b >= 1_024         -> "${df.format(b / 1_024.0)} KB"
         else               -> "$b B"
     }
+}
+
+private fun formatDuration(ms: Long): String {
+    val seconds = ms / 1000
+    val h = seconds / 3600
+    val m = (seconds % 3600) / 60
+    val s = seconds % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
 private fun CubicBezierEasing.toAnimationSpec(durationMs: Int) =

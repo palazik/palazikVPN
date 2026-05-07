@@ -2,6 +2,7 @@ package com.palazik.vpn.ui.viewmodel
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.VpnService
 import androidx.activity.result.ActivityResultLauncher
 import androidx.lifecycle.ViewModel
@@ -15,6 +16,7 @@ import com.palazik.vpn.ui.theme.AppTheme
 import com.palazik.vpn.ui.theme.DarkModePreference
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -28,8 +30,11 @@ data class UiState(
     val darkMode: DarkModePreference      = DarkModePreference.SYSTEM,
     val pingMode: PingMode                = PingMode.TCP,
     val settings: AppSettings             = AppSettings(),
+    val installedApps: List<InstalledApp>  = emptyList(),
     val bytesIn: Long                     = 0L,
     val bytesOut: Long                    = 0L,
+    val connectedSince: Long              = 0L,
+    val diagnostics: List<String>         = emptyList(),
     val snackMessage: String?             = null,
     val snackActionLabel: String?         = null,
     val shareLink: String?                = null,
@@ -100,6 +105,9 @@ class MainViewModel @Inject constructor(
         }
         viewModelScope.launch { palazikVpnService.bytesIn.collect  { b -> _ui.update { it.copy(bytesIn  = b) } } }
         viewModelScope.launch { palazikVpnService.bytesOut.collect { b -> _ui.update { it.copy(bytesOut = b) } } }
+        viewModelScope.launch { palazikVpnService.connectedSince.collect { t -> _ui.update { it.copy(connectedSince = t) } } }
+        viewModelScope.launch { palazikVpnService.diagnostics.collect { logs -> _ui.update { it.copy(diagnostics = logs) } } }
+        loadInstalledApps()
     }
 
     // ── VPN toggle ────────────────────────────────────────────────────────────
@@ -304,6 +312,25 @@ class MainViewModel @Inject constructor(
     fun setPingMode(mode: PingMode) = repo.setPingMode(mode)
 
     fun updateAppSettings(settings: AppSettings) = repo.updateSettings(settings)
+
+    private fun loadInstalledApps() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val pm = context.packageManager
+            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val apps = pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
+                .mapNotNull { info ->
+                    val pkg = info.activityInfo?.packageName ?: return@mapNotNull null
+                    if (pkg == context.packageName) return@mapNotNull null
+                    InstalledApp(
+                        label = info.loadLabel(pm)?.toString()?.ifBlank { pkg } ?: pkg,
+                        packageName = pkg,
+                    )
+                }
+                .distinctBy { it.packageName }
+                .sortedBy { it.label.lowercase() }
+            _ui.update { it.copy(installedApps = apps) }
+        }
+    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 

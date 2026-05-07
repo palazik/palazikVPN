@@ -2,6 +2,8 @@ package com.palazik.vpn.ui.screen
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -10,6 +12,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.palazik.vpn.data.model.PingMode
 import com.palazik.vpn.ui.theme.AppTheme
@@ -19,6 +24,8 @@ import com.palazik.vpn.ui.viewmodel.MainViewModel
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
     val ui by vm.ui.collectAsState()
+    val clipboard = LocalClipboardManager.current
+    var showAppPicker by remember { mutableStateOf(false) }
 
     Column(
         Modifier
@@ -159,29 +166,57 @@ fun SettingsScreen(vm: MainViewModel) {
         Spacer(Modifier.height(8.dp))
 
         SettingsSection(title = "Split Tunneling") {
-            var packages by remember(ui.settings.bypassPackages) {
-                mutableStateOf(ui.settings.bypassPackages.joinToString("\n"))
-            }
-            OutlinedTextField(
-                value = packages,
-                onValueChange = { packages = it },
-                label = { Text("Bypass package names") },
-                supportingText = { Text("One package per line; app itself is always bypassed") },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
+            Text(
+                "${ui.settings.bypassPackages.size} apps bypass VPN",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Button(onClick = {
-                    vm.updateAppSettings(
-                        ui.settings.copy(
-                            bypassPackages = packages.split("\n", ",").map { it.trim() }.filter { it.isNotBlank() },
+            Spacer(Modifier.height(8.dp))
+            if (ui.settings.bypassPackages.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ui.settings.bypassPackages.take(4).forEach { pkg ->
+                        AssistChip(
+                            onClick = {},
+                            label = {
+                                Text(pkg, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            },
+                            trailingIcon = {
+                                IconButton(
+                                    onClick = {
+                                        vm.updateAppSettings(
+                                            ui.settings.copy(
+                                                bypassPackages = ui.settings.bypassPackages - pkg,
+                                            )
+                                        )
+                                    },
+                                    modifier = Modifier.size(24.dp),
+                                ) {
+                                    Icon(Icons.Rounded.Close, null, Modifier.size(16.dp))
+                                }
+                            },
                         )
-                    )
-                }) {
-                    Icon(Icons.Rounded.Save, null, Modifier.size(16.dp))
+                    }
+                    if (ui.settings.bypassPackages.size > 4) {
+                        Text(
+                            "+${ui.settings.bypassPackages.size - 4} more",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                OutlinedButton(onClick = { vm.updateAppSettings(ui.settings.copy(bypassPackages = emptyList())) }) {
+                    Icon(Icons.Rounded.Clear, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Save Apps")
+                    Text("Clear")
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = { showAppPicker = true }) {
+                    Icon(Icons.Rounded.Apps, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Choose Apps")
                 }
             }
         }
@@ -213,6 +248,39 @@ fun SettingsScreen(vm: MainViewModel) {
 
         Spacer(Modifier.height(8.dp))
 
+        SettingsSection(title = "Diagnostics") {
+            if (ui.diagnostics.isEmpty()) {
+                Text(
+                    "No connection events yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    ui.diagnostics.takeLast(6).forEach { line ->
+                        Text(
+                            line,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(
+                    onClick = { clipboard.setText(AnnotatedString(ui.diagnostics.joinToString("\n"))) },
+                    enabled = ui.diagnostics.isNotEmpty(),
+                ) {
+                    Icon(Icons.Rounded.ContentCopy, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Copy Logs")
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
         // ── About ─────────────────────────────────────────────────────────────
         SettingsSection(title = "About") {
             ListItem(
@@ -222,6 +290,99 @@ fun SettingsScreen(vm: MainViewModel) {
             )
         }
     }
+
+    if (showAppPicker) {
+        AppPickerDialog(
+            apps = ui.installedApps,
+            selected = ui.settings.bypassPackages.toSet(),
+            onDismiss = { showAppPicker = false },
+            onSave = { selected ->
+                vm.updateAppSettings(ui.settings.copy(bypassPackages = selected.sorted()))
+                showAppPicker = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun AppPickerDialog(
+    apps: List<com.palazik.vpn.data.model.InstalledApp>,
+    selected: Set<String>,
+    onDismiss: () -> Unit,
+    onSave: (List<String>) -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    var picked by remember(selected) { mutableStateOf(selected) }
+    val filtered = remember(apps, query) {
+        if (query.isBlank()) apps else apps.filter {
+            it.label.contains(query, ignoreCase = true) ||
+                it.packageName.contains(query, ignoreCase = true)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Bypass Apps") },
+        icon = { Icon(Icons.Rounded.Apps, null) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    label = { Text("Search apps") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                )
+                Spacer(Modifier.height(10.dp))
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    items(filtered, key = { it.packageName }) { app ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    picked = if (app.packageName in picked) {
+                                        picked - app.packageName
+                                    } else {
+                                        picked + app.packageName
+                                    }
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = app.packageName in picked,
+                                onCheckedChange = { checked ->
+                                    picked = if (checked) picked + app.packageName else picked - app.packageName
+                                },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    app.packageName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSave(picked.toList()) }) { Text("Save") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable

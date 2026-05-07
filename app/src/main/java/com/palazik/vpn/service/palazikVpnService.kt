@@ -52,8 +52,12 @@ class palazikVpnService : VpnService() {
 
         private val _bytesIn  = MutableStateFlow(0L)
         private val _bytesOut = MutableStateFlow(0L)
+        private val _connectedSince = MutableStateFlow(0L)
+        private val _diagnostics = MutableStateFlow<List<String>>(emptyList())
         val bytesIn:  StateFlow<Long> = _bytesIn
         val bytesOut: StateFlow<Long> = _bytesOut
+        val connectedSince: StateFlow<Long> = _connectedSince
+        val diagnostics: StateFlow<List<String>> = _diagnostics
 
         @Volatile var activeProfile: VpnProfile? = null
     }
@@ -124,16 +128,19 @@ class palazikVpnService : VpnService() {
     private fun startVpn() {
         if (_connectionState.value == ServiceState.STARTING || _connectionState.value == ServiceState.RUNNING) {
             Log.d(TAG, "VPN already starting/running")
+            addDiagnostic("Start ignored: VPN already starting/running")
             return
         }
         val profile = activeProfile ?: run {
             Log.e(TAG, "activeProfile is null")
+            addDiagnostic("Start failed: no active profile")
             _connectionState.value = ServiceState.ERROR
             stopSelf()
             return
         }
 
         _connectionState.value = ServiceState.STARTING
+        addDiagnostic("Starting ${profile.name}")
         startForeground(NOTIFICATION_ID, buildNotification("Connecting…"))
 
         scope.launch {
@@ -173,11 +180,14 @@ class palazikVpnService : VpnService() {
                 controller.startLoop(config, iface.fd)
 
                 _connectionState.value = ServiceState.RUNNING
+                _connectedSince.value = System.currentTimeMillis()
+                addDiagnostic("Connected: ${profile.name}")
                 updateNotification("Connected — ${profile.name}")
                 startStatsPolling()
 
             } catch (e: Exception) {
                 Log.e(TAG, "VPN start failed: ${e.message}", e)
+                addDiagnostic("Start failed: ${e.message ?: e.javaClass.simpleName}")
                 withContext(Dispatchers.Main) { failVpn() }
             }
         }
@@ -304,6 +314,7 @@ class palazikVpnService : VpnService() {
     private fun stopVpn() {
         if (_connectionState.value == ServiceState.STOPPED) return
         _connectionState.value = ServiceState.STOPPING
+        addDiagnostic("Stopping VPN")
         statsJob?.cancel()
         statsJob = null
 
@@ -326,6 +337,8 @@ class palazikVpnService : VpnService() {
         vpnInterface = null
 
         _connectionState.value = ServiceState.STOPPED
+        _connectedSince.value = 0L
+        addDiagnostic("Stopped")
         _bytesIn.value  = 0L
         _bytesOut.value = 0L
     }
@@ -349,7 +362,9 @@ class palazikVpnService : VpnService() {
         vpnInterface = null
         _bytesIn.value = 0L
         _bytesOut.value = 0L
+        _connectedSince.value = 0L
         _connectionState.value = ServiceState.ERROR
+        addDiagnostic("Service entered error state")
         stopSelf()
     }
 
@@ -358,10 +373,12 @@ class palazikVpnService : VpnService() {
     private inner class V2RayCallback : CoreCallbackHandler {
         override fun onEmitStatus(level: Long, msg: String): Long {
             Log.d(TAG, "xray[$level]: $msg")
+            addDiagnostic("xray[$level]: $msg")
             return 0L
         }
         override fun shutdown(): Long {
             Log.d(TAG, "xray: shutdown")
+            addDiagnostic("xray requested shutdown")
             scope.launch(Dispatchers.Main) { stopVpn() }
             return 0L
         }
@@ -404,5 +421,11 @@ class palazikVpnService : VpnService() {
     private fun updateNotification(status: String) {
         (getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager)
             .notify(NOTIFICATION_ID, buildNotification(status))
+    }
+
+    private fun addDiagnostic(message: String) {
+        val stamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+            .format(java.util.Date())
+        _diagnostics.value = (_diagnostics.value + "$stamp  $message").takeLast(80)
     }
 }
