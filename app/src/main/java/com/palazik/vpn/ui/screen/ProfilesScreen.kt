@@ -236,6 +236,12 @@ fun ProfilesScreen(vm: MainViewModel) {
 // Grouped profiles list (collapsible per subscription + manual group)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Sealed list item types for the flat LazyColumn
+private sealed class ProfileListItem {
+    data class Header(val key: String, val title: String, val count: Int, val subId: String?) : ProfileListItem()
+    data class Card(val profile: VpnProfile) : ProfileListItem()
+}
+
 @Composable
 private fun GroupedProfilesList(
     profiles: List<VpnProfile>,
@@ -246,78 +252,73 @@ private fun GroupedProfilesList(
     onEdit: (VpnProfile) -> Unit,
     onRefreshSub: (Subscription) -> Unit,
 ) {
-    // Track expanded state per group key ("manual" or sub.id)
-    val expandedGroups = remember {
-        mutableStateMapOf<String, Boolean>().apply {
-            put("manual", true)
-            subscriptions.forEach { put(it.id, true) }
-        }
-    }
-    // Ensure new subs get an initial expanded state
+    val expandedGroups = remember { mutableStateMapOf("manual" to true) }
     LaunchedEffect(subscriptions) {
         subscriptions.forEach { if (!expandedGroups.containsKey(it.id)) expandedGroups[it.id] = true }
     }
 
     val manualProfiles = remember(profiles) { profiles.filter { it.subscriptionId == null } }
-    // Build stable list of (sub, profiles) pairs — avoids Map forEach in LazyColumn
     val subGroups = remember(profiles, subscriptions) {
-        subscriptions.map { sub -> Pair(sub, profiles.filter { it.subscriptionId == sub.id }) }
+        subscriptions.map { sub -> sub to profiles.filter { it.subscriptionId == sub.id } }
+    }
+
+    // Build a flat list of items — this is the ONLY correct way to have dynamic
+    // groups in LazyColumn without DuplicateKeyException during state transitions
+    val flatItems = remember(manualProfiles, subGroups, expandedGroups.toMap()) {
+        buildList {
+            if (manualProfiles.isNotEmpty()) {
+                add(ProfileListItem.Header("header_manual", "Manual", manualProfiles.size, null))
+                if (expandedGroups["manual"] != false) {
+                    manualProfiles.forEach { add(ProfileListItem.Card(it)) }
+                }
+            }
+            subGroups.forEach { (sub, subProfiles) ->
+                add(ProfileListItem.Header("header_${sub.id}", sub.name, subProfiles.size, sub.id))
+                if (expandedGroups[sub.id] != false) {
+                    subProfiles.forEach { add(ProfileListItem.Card(it)) }
+                }
+            }
+        }
     }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-
-        // ── Manual profiles group ──────────────────────────────────────────────
-        if (manualProfiles.isNotEmpty()) {
-            item(key = "header_manual") {
-                GroupHeader(
-                    title     = "Manual",
-                    count     = manualProfiles.size,
-                    expanded  = expandedGroups["manual"] ?: true,
-                    onToggle  = { expandedGroups["manual"] = !(expandedGroups["manual"] ?: true) },
-                    onRefresh = null,
-                )
-            }
-            if (expandedGroups["manual"] != false) {
-                items(manualProfiles, key = { it.id }) { profile ->
+        items(
+            items = flatItems,
+            key   = { item ->
+                when (item) {
+                    is ProfileListItem.Header -> item.key
+                    is ProfileListItem.Card   -> item.profile.id
+                }
+            },
+        ) { item ->
+            when (item) {
+                is ProfileListItem.Header -> {
+                    val subId = item.subId
+                    val sub   = subGroups.firstOrNull { it.first.id == subId }?.first
+                    GroupHeader(
+                        title     = item.title,
+                        count     = item.count,
+                        expanded  = expandedGroups[item.subId ?: "manual"] ?: true,
+                        onToggle  = {
+                            val k = item.subId ?: "manual"
+                            expandedGroups[k] = !(expandedGroups[k] ?: true)
+                        },
+                        onRefresh = if (sub != null) ({ onRefreshSub(sub) }) else null,
+                    )
+                }
+                is ProfileListItem.Card -> {
                     ProfileCard(
-                        profile  = profile,
+                        profile  = item.profile,
                         subName  = null,
-                        isActive = profile.isActive,
-                        onSelect = { onSelect(profile.id) },
-                        onDelete = { onDelete(profile.id) },
-                        onPing   = { onPing(profile) },
-                        onEdit   = { onEdit(profile) },
+                        isActive = item.profile.isActive,
+                        onSelect = { onSelect(item.profile.id) },
+                        onDelete = { onDelete(item.profile.id) },
+                        onPing   = { onPing(item.profile) },
+                        onEdit   = { onEdit(item.profile) },
                     )
                 }
             }
         }
-
-        // ── Per-subscription groups ────────────────────────────────────────────
-        subGroups.forEach { (sub, subProfiles) ->
-            item(key = "header_${sub.id}") {
-                GroupHeader(
-                    title     = sub.name,
-                    count     = subProfiles.size,
-                    expanded  = expandedGroups[sub.id] ?: true,
-                    onToggle  = { expandedGroups[sub.id] = !(expandedGroups[sub.id] ?: true) },
-                    onRefresh = { onRefreshSub(sub) },
-                )
-            }
-            if (expandedGroups[sub.id] != false && subProfiles.isNotEmpty()) {
-                items(subProfiles, key = { it.id }) { profile ->
-                    ProfileCard(
-                        profile  = profile,
-                        subName  = null,
-                        isActive = profile.isActive,
-                        onSelect = { onSelect(profile.id) },
-                        onDelete = { onDelete(profile.id) },
-                        onPing   = { onPing(profile) },
-                        onEdit   = { onEdit(profile) },
-                    )
-                }
-            }
-        }
-
         item { Spacer(Modifier.height(8.dp)) }
     }
 }
