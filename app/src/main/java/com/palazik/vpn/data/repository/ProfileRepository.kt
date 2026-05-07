@@ -86,21 +86,19 @@ class ProfileRepository @Inject constructor(
             val fresh  = ProfileCodec.decodeSubscriptionBody(body)
                 .map { it.copy(subscriptionId = sub.id) }
 
-            // FIX #1: deduplicate by (address, port, uuid, protocol) fingerprint.
-            // When the same server appears in both the existing list and the fresh fetch,
-            // keep the existing entry's id/isActive/latency so state is preserved,
-            // but update its name and other fields from the fresh data.
-            val nonSubProfiles = _profiles.value.filter { it.subscriptionId != sub.id }
-
+            // Deduplicate by (address, port, uuid, protocol) fingerprint.
+            // Snapshot current profiles atomically before mutating.
             fun VpnProfile.fingerprint() = "$address:$port:$uuid:${protocol.name}"
-            val existingByFingerprint = _profiles.value
+
+            val snapshot = _profiles.value                          // single atomic read
+            val nonSubProfiles = snapshot.filter { it.subscriptionId != sub.id }
+            val existingByFingerprint = snapshot
                 .filter { it.subscriptionId == sub.id }
                 .associateBy { it.fingerprint() }
 
             val merged = fresh.map { newProfile ->
                 val existing = existingByFingerprint[newProfile.fingerprint()]
                 if (existing != null) {
-                    // Preserve id, active state, latency — update everything else
                     newProfile.copy(
                         id             = existing.id,
                         isActive       = existing.isActive,
@@ -112,6 +110,7 @@ class ProfileRepository @Inject constructor(
                 }
             }
 
+            // Single atomic write — prevents duplication from concurrent updates
             _profiles.value = nonSubProfiles + merged
             saveProfiles()
 
@@ -143,38 +142,22 @@ class ProfileRepository @Inject constructor(
                     }
                     System.currentTimeMillis() - start
                 }
-                PingMode.PROXY_GET -> {
-                    // FIX #3: GET/HEAD must go through the local SOCKS5 proxy that Xray exposes
-                    // on 127.0.0.1:10808, not directly to the server address.
-                    // Direct HTTPS to a proxy server address returns TLS errors / timeouts
-                    // because the server is a proxy endpoint, not an HTTPS web server.
-                    val proxyClient = httpClient.newBuilder()
-                        .proxy(java.net.Proxy(
-                            java.net.Proxy.Type.SOCKS,
-                            InetSocketAddress("127.0.0.1", 10808)
-                        ))
-                        .build()
+                PingMode.HTTP_GET -> {
                     val req = Request.Builder()
                         .url("http://cp.cloudflare.com/")
                         .get()
                         .build()
                     val start = System.currentTimeMillis()
-                    proxyClient.newCall(req).execute().use { }
+                    httpClient.newCall(req).execute().use { }
                     System.currentTimeMillis() - start
                 }
-                PingMode.PROXY_HEAD -> {
-                    val proxyClient = httpClient.newBuilder()
-                        .proxy(java.net.Proxy(
-                            java.net.Proxy.Type.SOCKS,
-                            InetSocketAddress("127.0.0.1", 10808)
-                        ))
-                        .build()
+                PingMode.HTTP_HEAD -> {
                     val req = Request.Builder()
                         .url("http://cp.cloudflare.com/")
                         .head()
                         .build()
                     val start = System.currentTimeMillis()
-                    proxyClient.newCall(req).execute().use { }
+                    httpClient.newCall(req).execute().use { }
                     System.currentTimeMillis() - start
                 }
             }
@@ -270,6 +253,12 @@ class ProfileRepository @Inject constructor(
         }
 
         val saved = prefs.getString("ping_mode", PingMode.TCP.name)
-        _pingMode.value = runCatching { PingMode.valueOf(saved ?: "") }.getOrDefault(PingMode.TCP)
+        _pingMode.value = runCatching { PingMode.valueOf(saved ?: "") }.getOrElse {
+            when (saved) {
+                "PROXY_GET"  -> PingMode.HTTP_GET
+                "PROXY_HEAD" -> PingMode.HTTP_HEAD
+                else         -> PingMode.TCP
+            }
+        }
     }
 }
