@@ -76,7 +76,7 @@ fun SettingsScreen(vm: MainViewModel) {
             )
             Text(
                 "TCP — raw socket connect (fastest, most accurate, default).\n" +
-                "GET / HEAD — HTTP request through the proxy (measures full proxy round-trip).",
+                "GET / HEAD — HTTP request to Cloudflare to measure internet latency.",
                 style    = MaterialTheme.typography.bodySmall,
                 color    = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 12.dp),
@@ -89,9 +89,9 @@ fun SettingsScreen(vm: MainViewModel) {
                         onClick  = { vm.setPingMode(mode) },
                         label    = {
                             Text(when (mode) {
-                                PingMode.TCP        -> "TCP"
-                                PingMode.PROXY_GET  -> "GET"
-                                PingMode.PROXY_HEAD -> "HEAD"
+                                PingMode.TCP       -> "TCP"
+                                PingMode.HTTP_GET  -> "GET"
+                                PingMode.HTTP_HEAD -> "HEAD"
                             })
                         },
                     )
