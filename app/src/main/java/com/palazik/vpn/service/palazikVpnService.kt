@@ -316,13 +316,13 @@ class palazikVpnService : VpnService() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        return NotificationCompat.Builder(this, palazikVPNApp.CHANNEL_VPN)
+        val builder = NotificationCompat.Builder(this, palazikVPNApp.CHANNEL_VPN)
             .setContentTitle("palazikVPN")
             .setContentText(status)
-            .setSmallIcon(R.drawable.ic_vpn_key)
-            .setContentIntent(pi)
+            .setSmallIcon(R.drawable.ic_launcher_logo)
             .setOngoing(true)
-            .build()
+        builder.setContentIntent(pi)
+        return builder.build()
     }
 
     private fun updateNotification(status: String) {
