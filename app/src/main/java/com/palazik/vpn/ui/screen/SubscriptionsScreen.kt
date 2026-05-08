@@ -1,7 +1,8 @@
 package com.palazik.vpn.ui.screen
 
 import androidx.compose.animation.*
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.layout.animateContentSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.palazik.vpn.data.model.Subscription
@@ -203,10 +205,34 @@ private fun SubscriptionCard(
     onUpdate: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val sdf = SimpleDateFormat("MMM d, HH:mm", Locale.getDefault())
+    val sdf = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
+    val cardColor by animateColorAsState(
+        targetValue = if (isUpdating) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+            else MaterialTheme.colorScheme.surface,
+        animationSpec = tween(220),
+        label = "subscription_card_color_${sub.id}",
+    )
+    val refreshRotation = if (isUpdating) {
+        val rotation by rememberInfiniteTransition(label = "subscription_refresh_${sub.id}")
+            .animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(900, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "subscription_refresh_rotation_${sub.id}",
+        )
+        rotation
+    } else {
+        0f
+    }
 
     ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(tween(240)),
+        colors = CardDefaults.elevatedCardColors(containerColor = cardColor),
         shape    = MaterialTheme.shapes.large,
     ) {
         Column(Modifier.padding(16.dp)) {
@@ -245,13 +271,19 @@ private fun SubscriptionCard(
                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                     shape = CircleShape,
                 ) {
-                    Text(
-                        "${sub.profileCount} profiles",
-                        modifier   = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        style      = MaterialTheme.typography.labelSmall,
-                        color      = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium,
-                    )
+                    AnimatedContent(
+                        targetState = sub.profileCount,
+                        transitionSpec = { fadeIn(tween(140)) + scaleIn() togetherWith fadeOut(tween(90)) + scaleOut() },
+                        label = "sub_profile_count_${sub.id}",
+                    ) { count ->
+                        Text(
+                            "$count profiles",
+                            modifier   = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style      = MaterialTheme.typography.labelSmall,
+                            color      = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
                 }
                 if (sub.lastUpdated > 0) {
                     Surface(
@@ -306,13 +338,31 @@ private fun SubscriptionCard(
                     enabled = !isUpdating,
                     contentPadding = PaddingValues(horizontal = 8.dp),
                 ) {
-                    if (isUpdating) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
+                    AnimatedContent(
+                        targetState = isUpdating,
+                        transitionSpec = { fadeIn(tween(120)) + scaleIn() togetherWith fadeOut(tween(90)) + scaleOut() },
+                        label = "sub_update_icon_${sub.id}",
+                    ) { updating ->
+                        if (updating) {
+                            Icon(
+                                Icons.Rounded.Refresh,
+                                null,
+                                Modifier
+                                    .size(16.dp)
+                                    .graphicsLayer { rotationZ = refreshRotation },
+                            )
+                        } else {
+                            Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
+                        }
                     }
                     Spacer(Modifier.width(4.dp))
-                    Text("Update", style = MaterialTheme.typography.labelMedium)
+                    AnimatedContent(
+                        targetState = isUpdating,
+                        transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(90)) },
+                        label = "sub_update_label_${sub.id}",
+                    ) { updating ->
+                        Text(if (updating) "Updating" else "Update", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
                 TextButton(
                     onClick        = onDelete,

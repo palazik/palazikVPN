@@ -1,12 +1,5 @@
 package com.palazik.vpn.ui.screen
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,17 +12,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.palazik.vpn.data.model.PingMode
 import com.palazik.vpn.ui.theme.AppTheme
 import com.palazik.vpn.ui.theme.DarkModePreference
 import com.palazik.vpn.ui.viewmodel.MainViewModel
+
+private val DarkModeOptions = DarkModePreference.values().toList()
+private val AppThemeOptions = AppTheme.values().toList()
+private val PingModeOptions = PingMode.values().toList()
 
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
@@ -45,30 +39,20 @@ fun SettingsScreen(vm: MainViewModel) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        SettingsSummaryCard(
-            darkMode = when (ui.darkMode) {
-                DarkModePreference.SYSTEM -> "System"
-                DarkModePreference.ALWAYS_LIGHT -> "Light"
-                DarkModePreference.ALWAYS_DARK -> "Dark"
-            },
-            theme = ui.appTheme.name.lowercase().replaceFirstChar { it.uppercase() },
-            bypassCount = ui.settings.bypassPackages.size,
-            autoUpdate = ui.settings.autoUpdateSubscriptions,
-        )
+        Text("Settings", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
 
         // ── Appearance ────────────────────────────────────────────────────────
-        SettingsSection(title = "Appearance", icon = Icons.Rounded.Palette, delayMillis = 0) {
+        SettingsSection(title = "Appearance") {
             Text(
                 "Dark Mode",
                 style    = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(bottom = 8.dp),
             )
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                DarkModePreference.values().forEachIndexed { idx, pref ->
+                DarkModeOptions.forEachIndexed { idx, pref ->
                     SegmentedButton(
-                        shape    = SegmentedButtonDefaults.itemShape(idx, DarkModePreference.values().size),
+                        shape    = SegmentedButtonDefaults.itemShape(idx, DarkModeOptions.size),
                         selected = ui.darkMode == pref,
                         onClick  = { vm.setDarkMode(pref) },
                         label    = {
@@ -90,7 +74,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 modifier = Modifier.padding(bottom = 8.dp),
             )
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                AppTheme.values().forEach { theme ->
+                AppThemeOptions.forEach { theme ->
                     ThemeRow(theme, isSelected = ui.appTheme == theme) {
                         vm.setAppTheme(theme)
                     }
@@ -101,7 +85,7 @@ fun SettingsScreen(vm: MainViewModel) {
         Spacer(Modifier.height(8.dp))
 
         // ── Connection ────────────────────────────────────────────────────────
-        SettingsSection(title = "Connection", icon = Icons.Rounded.Tune, delayMillis = 40) {
+        SettingsSection(title = "Connection") {
             Text(
                 "Ping Test Mode",
                 style    = MaterialTheme.typography.titleSmall,
@@ -115,9 +99,9 @@ fun SettingsScreen(vm: MainViewModel) {
                 modifier = Modifier.padding(bottom = 12.dp),
             )
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                PingMode.values().forEachIndexed { idx, mode ->
+                PingModeOptions.forEachIndexed { idx, mode ->
                     SegmentedButton(
-                        shape    = SegmentedButtonDefaults.itemShape(idx, PingMode.values().size),
+                        shape    = SegmentedButtonDefaults.itemShape(idx, PingModeOptions.size),
                         selected = ui.pingMode == mode,
                         onClick  = { vm.setPingMode(mode) },
                         label    = {
@@ -134,7 +118,7 @@ fun SettingsScreen(vm: MainViewModel) {
 
         Spacer(Modifier.height(8.dp))
 
-        SettingsSection(title = "DNS", icon = Icons.Rounded.Dns, delayMillis = 80) {
+        SettingsSection(title = "DNS") {
             var tunDns by remember(ui.settings.dnsServers) {
                 mutableStateOf(ui.settings.dnsServers.joinToString(", "))
             }
@@ -185,7 +169,7 @@ fun SettingsScreen(vm: MainViewModel) {
 
         Spacer(Modifier.height(8.dp))
 
-        SettingsSection(title = "Split Tunneling", icon = Icons.Rounded.Route, delayMillis = 120) {
+        SettingsSection(title = "Split Tunneling") {
             Text(
                 "${ui.settings.bypassPackages.size} apps bypass VPN",
                 style = MaterialTheme.typography.bodyMedium,
@@ -243,7 +227,7 @@ fun SettingsScreen(vm: MainViewModel) {
 
         Spacer(Modifier.height(8.dp))
 
-        SettingsSection(title = "Startup", icon = Icons.Rounded.PowerSettingsNew, delayMillis = 160) {
+        SettingsSection(title = "Startup") {
             Row(
                 Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -289,7 +273,7 @@ fun SettingsScreen(vm: MainViewModel) {
 
         Spacer(Modifier.height(8.dp))
 
-        SettingsSection(title = "Diagnostics", icon = Icons.Rounded.Terminal, delayMillis = 200) {
+        SettingsSection(title = "Diagnostics") {
             if (ui.diagnostics.isEmpty()) {
                 Text(
                     "No connection events yet.",
@@ -323,7 +307,7 @@ fun SettingsScreen(vm: MainViewModel) {
         Spacer(Modifier.height(8.dp))
 
         // ── About ─────────────────────────────────────────────────────────────
-        SettingsSection(title = "About", icon = Icons.Rounded.Info, delayMillis = 240) {
+        SettingsSection(title = "About") {
             ListItem(
                 headlineContent   = { Text("palazikVPN") },
                 supportingContent = { Text("V1.0.0 • by palaziks") },
@@ -427,174 +411,22 @@ private fun AppPickerDialog(
 }
 
 @Composable
-private fun SettingsSummaryCard(
-    darkMode: String,
-    theme: String,
-    bypassCount: Int,
-    autoUpdate: Boolean,
-) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(260)) + expandVertically(tween(260)),
-    ) {
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.elevatedCardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
-            ),
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = 1.dp),
-        ) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
-                        shape = MaterialTheme.shapes.medium,
-                    ) {
-                        Icon(
-                            Icons.Rounded.DashboardCustomize,
-                            null,
-                            Modifier.padding(8.dp).size(20.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Column {
-                        Text("Settings Overview", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    SummaryPill(Modifier.weight(1f), Icons.Rounded.DarkMode, darkMode)
-                    SummaryPill(Modifier.weight(1f), Icons.Rounded.Palette, theme)
-                }
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    SummaryPill(Modifier.weight(1f), Icons.Rounded.Route, "$bypassCount bypass")
-                    SummaryPill(
-                        Modifier.weight(1f),
-                        Icons.Rounded.Schedule,
-                        if (autoUpdate) "Auto update" else "Manual update",
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SummaryPill(
-    modifier: Modifier = Modifier,
-    icon: ImageVector,
-    text: String,
-) {
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Row(
-            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(icon, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.width(6.dp))
+private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
             Text(
-                text,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                title,
+                style    = MaterialTheme.typography.labelLarge,
+                color    = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(bottom = 12.dp),
             )
-        }
-    }
-}
-
-@Composable
-private fun SettingsSection(
-    title: String,
-    icon: ImageVector,
-    delayMillis: Int,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(delayMillis.toLong())
-        visible = true
-    }
-    val elevation by animateDpAsState(
-        targetValue = if (visible) 1.dp else 0.dp,
-        animationSpec = tween(240),
-        label = "settings_elevation_$title",
-    )
-    val scale by animateFloatAsState(
-        targetValue = if (visible) 1f else 0.98f,
-        animationSpec = tween(260),
-        label = "settings_scale_$title",
-    )
-    val container by animateColorAsState(
-        targetValue = if (visible) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant,
-        animationSpec = tween(260),
-        label = "settings_color_$title",
-    )
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(240)) + expandVertically(tween(260)),
-    ) {
-        ElevatedCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .scale(scale),
-            colors = CardDefaults.elevatedCardColors(containerColor = container),
-            elevation = CardDefaults.elevatedCardElevation(defaultElevation = elevation),
-        ) {
-            Column(Modifier.padding(16.dp)) {
-                Row(
-                    modifier = Modifier.padding(bottom = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                        shape = MaterialTheme.shapes.medium,
-                    ) {
-                        Icon(
-                            icon,
-                            null,
-                            Modifier.padding(7.dp).size(18.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        title,
-                        style    = MaterialTheme.typography.titleSmall,
-                        color    = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                content()
-            }
+            content()
         }
     }
 }
 
 @Composable
 private fun ThemeRow(theme: AppTheme, isSelected: Boolean, onClick: () -> Unit) {
-    val rowScale by animateFloatAsState(
-        targetValue = if (isSelected) 1.015f else 1f,
-        animationSpec = tween(180),
-        label = "theme_row_scale_${theme.name}",
-    )
-    val textColor by animateColorAsState(
-        targetValue = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-        animationSpec = tween(180),
-        label = "theme_row_color_${theme.name}",
-    )
     val label = when (theme) {
         AppTheme.CYBER   -> "⚡ Cyber (Dark-first)"
         AppTheme.OCEAN   -> "🌊 Ocean"
@@ -605,13 +437,12 @@ private fun ThemeRow(theme: AppTheme, isSelected: Boolean, onClick: () -> Unit) 
     Row(
         Modifier
             .fillMaxWidth()
-            .scale(rowScale)
             .clickable(onClick = onClick)
             .padding(vertical = 4.dp),
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = textColor)
+        Text(label, style = MaterialTheme.typography.bodyMedium)
         RadioButton(selected = isSelected, onClick = onClick)
     }
 }

@@ -6,6 +6,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.animateContentSize
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,6 +22,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -593,13 +595,20 @@ private fun GroupHeader(
         animationSpec = tween(200),
         label         = "arrow_$title",
     )
+    val containerColor by animateColorAsState(
+        targetValue = if (expanded) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        animationSpec = tween(220),
+        label = "group_header_bg_$title",
+    )
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        color = containerColor,
         shape = MaterialTheme.shapes.medium,
     ) {
         Row(
             Modifier
                 .fillMaxWidth()
+                .animateContentSize(tween(220))
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -622,13 +631,19 @@ private fun GroupHeader(
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                 shape = CircleShape,
             ) {
-                Text(
-                    "$count",
-                    modifier   = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                    style      = MaterialTheme.typography.labelSmall,
-                    color      = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold,
-                )
+                AnimatedContent(
+                    targetState = count,
+                    transitionSpec = { fadeIn(tween(150)) + scaleIn() togetherWith fadeOut(tween(100)) + scaleOut() },
+                    label = "group_count_$title",
+                ) { value ->
+                    Text(
+                        "$value",
+                        modifier   = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        style      = MaterialTheme.typography.labelSmall,
+                        color      = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
             if (onRefresh != null) {
                 Spacer(Modifier.width(8.dp))
@@ -670,11 +685,19 @@ private fun ProfileCard(
         animationSpec = tween(300),
         label         = "card_elev",
     )
+    val cardScale by animateFloatAsState(
+        targetValue = if (isActive) 1.01f else 1f,
+        animationSpec = tween(260),
+        label = "card_scale",
+    )
 
     ElevatedCard(
         onClick  = onSelect,
         colors   = CardDefaults.elevatedCardColors(containerColor = containerColor),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(cardScale)
+            .animateContentSize(tween(240)),
         shape    = MaterialTheme.shapes.large,
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = elevation),
     ) {
@@ -726,14 +749,23 @@ private fun ProfileCard(
                         profile.latencyMs < 400 -> MaterialTheme.colorScheme.secondary
                         else                    -> MaterialTheme.colorScheme.error
                     }
-                    Surface(color = latColor.copy(alpha = 0.15f), shape = CircleShape) {
-                        Text(
-                            "${profile.latencyMs}ms",
-                            modifier   = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            style      = MaterialTheme.typography.labelSmall,
-                            color      = latColor,
-                            fontWeight = FontWeight.SemiBold,
-                        )
+                    Surface(
+                        color = latColor.copy(alpha = 0.15f),
+                        shape = CircleShape,
+                    ) {
+                        AnimatedContent(
+                            targetState = profile.latencyMs,
+                            transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(90)) },
+                            label = "latency_${profile.id}",
+                        ) { latency ->
+                            Text(
+                                "${latency}ms",
+                                modifier   = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                style      = MaterialTheme.typography.labelSmall,
+                                color      = latColor,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                 }
             }
