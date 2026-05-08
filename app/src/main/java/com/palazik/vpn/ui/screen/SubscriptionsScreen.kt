@@ -117,6 +117,7 @@ fun SubscriptionsScreen(vm: MainViewModel) {
                             SubscriptionCard(
                                 sub      = sub,
                                 isUpdating = ui.isUpdatingSubscriptions,
+                                autoUpdateEnabled = ui.settings.autoUpdateSubscriptions,
                                 onUpdate = { vm.updateSubscription(sub) },
                                 onDelete = { deleteSub = sub },
                             )
@@ -198,6 +199,7 @@ fun SubscriptionsScreen(vm: MainViewModel) {
 private fun SubscriptionCard(
     sub: Subscription,
     isUpdating: Boolean,
+    autoUpdateEnabled: Boolean,
     onUpdate: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -209,6 +211,18 @@ private fun SubscriptionCard(
     ) {
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.Top) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    shape = CircleShape,
+                ) {
+                    Icon(
+                        Icons.Rounded.Subscriptions,
+                        null,
+                        Modifier.padding(8.dp).size(20.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text(sub.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(2.dp))
@@ -249,6 +263,31 @@ private fun SubscriptionCard(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                             style    = MaterialTheme.typography.labelSmall,
                             color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                Surface(
+                    color = if (autoUpdateEnabled) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.13f)
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = CircleShape,
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Schedule,
+                            null,
+                            Modifier.size(13.dp),
+                            tint = if (autoUpdateEnabled) MaterialTheme.colorScheme.tertiary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            if (autoUpdateEnabled) "Auto 2h" else "Manual",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (autoUpdateEnabled) MaterialTheme.colorScheme.tertiary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

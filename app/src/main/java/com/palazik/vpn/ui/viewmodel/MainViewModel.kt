@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import com.palazik.vpn.data.model.*
 import com.palazik.vpn.data.codec.ProfileCodec
 import com.palazik.vpn.data.repository.ProfileRepository
+import com.palazik.vpn.data.repository.SubscriptionUpdateScheduler
 import com.palazik.vpn.service.XrayConfigBuilder
 import com.palazik.vpn.service.palazikVpnService
 import com.palazik.vpn.ui.theme.AppTheme
@@ -238,6 +239,10 @@ class MainViewModel @Inject constructor(
 
     fun pingProfile(profile: VpnProfile) {
         viewModelScope.launch {
+            if (_ui.value.pingMode != PingMode.TCP && _ui.value.vpnState != VpnState.CONNECTED) {
+                snack("Connect VPN first for HTTP ping")
+                return@launch
+            }
             snack("Pinging ${profile.name}…")
             val ms = repo.pingProfile(profile)
             snack(if (ms >= 0) "${profile.name}: ${ms}ms" else "${profile.name}: timeout")
@@ -245,7 +250,13 @@ class MainViewModel @Inject constructor(
     }
 
     fun pingAll() {
-        viewModelScope.launch { _ui.value.profiles.forEach { repo.pingProfile(it) } }
+        viewModelScope.launch {
+            if (_ui.value.pingMode != PingMode.TCP && _ui.value.vpnState != VpnState.CONNECTED) {
+                snack("Connect VPN first for HTTP ping")
+                return@launch
+            }
+            _ui.value.profiles.forEach { repo.pingProfile(it) }
+        }
     }
 
     // ── Subscriptions ─────────────────────────────────────────────────────────
@@ -262,6 +273,8 @@ class MainViewModel @Inject constructor(
                     snack("Failed to fetch subscription")
                 },
             )
+            syncServiceActiveProfile()
+            SubscriptionUpdateScheduler.sync(context, _ui.value.settings)
             _ui.update { it.copy(isUpdatingSubscriptions = false) }
         }
     }
@@ -278,7 +291,10 @@ class MainViewModel @Inject constructor(
             _ui.update { it.copy(isUpdatingSubscriptions = true) }
             snack("Updating \"${sub.name}\"…")
             repo.updateSubscription(sub).fold(
-                onSuccess = { count -> snack("Updated: $count profiles") },
+                onSuccess = { count ->
+                    syncServiceActiveProfile()
+                    snack("Updated: $count profiles")
+                },
                 onFailure = { snack("Update failed") },
             )
             _ui.update { it.copy(isUpdatingSubscriptions = false) }
@@ -290,6 +306,7 @@ class MainViewModel @Inject constructor(
             _ui.update { it.copy(isUpdatingSubscriptions = true) }
             snack("Updating all subscriptions…")
             val results = repo.updateAllSubscriptions()
+            syncServiceActiveProfile()
             val failed = results.count { it.isFailure }
             val updated = results.sumOf { it.getOrDefault(0) }
             snack(if (failed == 0) "Updated $updated profiles" else "Updated $updated profiles, $failed failed")
@@ -313,7 +330,17 @@ class MainViewModel @Inject constructor(
 
     fun setPingMode(mode: PingMode) = repo.setPingMode(mode)
 
-    fun updateAppSettings(settings: AppSettings) = repo.updateSettings(settings)
+    fun updateAppSettings(settings: AppSettings) {
+        repo.updateSettings(settings)
+        SubscriptionUpdateScheduler.sync(context, repo.settings.value)
+    }
+
+    private fun syncServiceActiveProfile() {
+        palazikVpnService.activeProfile?.let { active ->
+            palazikVpnService.activeProfile = repo.profiles.value.firstOrNull { it.id == active.id }
+                ?: repo.getActiveProfile()
+        }
+    }
 
     private fun loadInstalledApps() {
         viewModelScope.launch(Dispatchers.IO) {

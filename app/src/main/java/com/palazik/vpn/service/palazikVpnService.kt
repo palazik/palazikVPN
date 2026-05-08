@@ -109,7 +109,7 @@ class palazikVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> startVpn()
+            ACTION_START -> startVpn(intent.getStringExtra(EXTRA_PROFILE))
             ACTION_STOP  -> stopVpn()
         }
         return START_STICKY
@@ -127,13 +127,16 @@ class palazikVpnService : VpnService() {
 
     // ── Start ─────────────────────────────────────────────────────────────────
 
-    private fun startVpn() {
+    private fun startVpn(profileId: String?) {
         if (_connectionState.value == ServiceState.STARTING || _connectionState.value == ServiceState.RUNNING) {
             Log.d(TAG, "VPN already starting/running")
             addDiagnostic("Start ignored: VPN already starting/running")
             return
         }
-        val profile = activeProfile ?: run {
+        val profile = activeProfile
+            ?: profileId?.let { loadProfileById(it) }
+            ?: loadActiveProfile()
+            ?: run {
             Log.e(TAG, "activeProfile is null")
             _lastError.value = "No active profile selected"
             addDiagnostic("Start failed: no active profile")
@@ -141,6 +144,7 @@ class palazikVpnService : VpnService() {
             stopSelf()
             return
         }
+        activeProfile = profile
 
         _connectionState.value = ServiceState.STARTING
         _lastError.value = null
@@ -303,6 +307,8 @@ class palazikVpnService : VpnService() {
                     ?.filter { it.isNotBlank() }
                     ?: emptyList(),
                 startOnBoot = o.optBoolean("startOnBoot", false),
+                autoUpdateSubscriptions = o.optBoolean("autoUpdateSubscriptions", true),
+                subscriptionUpdateIntervalHours = o.optLong("subscriptionUpdateIntervalHours", 2L).coerceAtLeast(2L),
             )
         }.getOrDefault(AppSettings())
     }
@@ -313,6 +319,33 @@ class palazikVpnService : VpnService() {
                 add(optString(i))
             }
         }
+
+    private fun loadActiveProfile(): VpnProfile? {
+        val prefs = applicationContext.getSharedPreferences("palazik_profiles", Context.MODE_PRIVATE)
+        val links = runCatching { JSONArray(prefs.getString("profiles_links", "[]")) }.getOrNull() ?: return null
+        val meta = runCatching { JSONArray(prefs.getString("profiles_meta", "[]")) }.getOrNull() ?: return null
+        for (i in 0 until meta.length()) {
+            val item = meta.optJSONObject(i) ?: continue
+            if (item.optBoolean("isActive", false)) {
+                loadProfileById(item.optString("id"), links)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun loadProfileById(id: String): VpnProfile? {
+        val prefs = applicationContext.getSharedPreferences("palazik_profiles", Context.MODE_PRIVATE)
+        val links = runCatching { JSONArray(prefs.getString("profiles_links", "[]")) }.getOrNull() ?: return null
+        return loadProfileById(id, links)
+    }
+
+    private fun loadProfileById(id: String, links: JSONArray): VpnProfile? {
+        for (i in 0 until links.length()) {
+            val profile = com.palazik.vpn.data.codec.ProfileCodec.decode(links.optString(i))
+            if (profile?.id == id) return profile
+        }
+        return null
+    }
 
     // ── Stop ──────────────────────────────────────────────────────────────────
 

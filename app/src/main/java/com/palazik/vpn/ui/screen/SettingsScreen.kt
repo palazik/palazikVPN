@@ -89,7 +89,7 @@ fun SettingsScreen(vm: MainViewModel) {
             )
             Text(
                 "TCP — raw socket connect (fastest, most accurate, default).\n" +
-                "GET / HEAD — HTTP request to Cloudflare to measure internet latency.",
+                "GET / HEAD — Cloudflare request through the running VPN.",
                 style    = MaterialTheme.typography.bodySmall,
                 color    = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 12.dp),
@@ -241,6 +241,27 @@ fun SettingsScreen(vm: MainViewModel) {
                     checked = ui.settings.startOnBoot,
                     onCheckedChange = { enabled ->
                         vm.updateAppSettings(ui.settings.copy(startOnBoot = enabled))
+                    },
+                )
+            }
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Auto-update subscriptions", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Refreshes subscriptions every 2 hours when network is available.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = ui.settings.autoUpdateSubscriptions,
+                    onCheckedChange = { enabled ->
+                        vm.updateAppSettings(ui.settings.copy(autoUpdateSubscriptions = enabled))
                     },
                 )
             }

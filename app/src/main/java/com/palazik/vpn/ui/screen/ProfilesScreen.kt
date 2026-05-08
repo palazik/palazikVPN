@@ -62,6 +62,9 @@ fun ProfilesScreen(vm: MainViewModel) {
     var importText    by remember { mutableStateOf("") }
     var previewProfile by remember { mutableStateOf<VpnProfile?>(null) }
     var previewErrors by remember { mutableStateOf<List<String>>(emptyList()) }
+    var searchQuery by remember { mutableStateOf("") }
+    var sortMode by remember { mutableStateOf(ProfileSort.ACTIVE_FIRST) }
+    var sortExpanded by remember { mutableStateOf(false) }
 
     fun previewImport(raw: String) {
         val profile = ProfileCodec.decode(raw)
@@ -89,6 +92,57 @@ fun ProfilesScreen(vm: MainViewModel) {
         }
     }
 
+    val cameraQrLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+        if (bitmap != null) {
+            scope.launch {
+                val decoded = withContext(Dispatchers.Default) {
+                    QrCodec.decodeFromBitmap(bitmap)
+                }
+                if (decoded != null) {
+                    importText = decoded
+                    previewImport(decoded)
+                } else {
+                    vm.showSnack("No QR code found in photo")
+                }
+            }
+        }
+    }
+
+    fun importFromClipboard() {
+        val text = clipboard.getText()?.text?.trim().orEmpty()
+        if (text.isBlank()) {
+            vm.showSnack("Clipboard is empty")
+            return
+        }
+        importText = text
+        previewImport(text)
+    }
+
+    val visibleProfiles = remember(ui.profiles, searchQuery, sortMode) {
+        val filtered = if (searchQuery.isBlank()) {
+            ui.profiles
+        } else {
+            val q = searchQuery.trim()
+            ui.profiles.filter {
+                it.name.contains(q, ignoreCase = true) ||
+                    it.address.contains(q, ignoreCase = true) ||
+                    it.protocol.name.contains(q, ignoreCase = true) ||
+                    it.transport.name.contains(q, ignoreCase = true)
+            }
+        }
+        when (sortMode) {
+            ProfileSort.ACTIVE_FIRST -> filtered.sortedWith(
+                compareByDescending<VpnProfile> { it.isActive }.thenBy { it.name.lowercase() }
+            )
+            ProfileSort.LATENCY -> filtered.sortedWith(
+                compareBy<VpnProfile> { if (it.latencyMs >= 0) it.latencyMs else Long.MAX_VALUE }
+                    .thenBy { it.name.lowercase() }
+            )
+            ProfileSort.NAME -> filtered.sortedBy { it.name.lowercase() }
+            ProfileSort.NEWEST -> filtered.sortedByDescending { it.addedAt }
+        }
+    }
+
     Column(
         Modifier
             .fillMaxSize()
@@ -103,7 +157,7 @@ fun ProfilesScreen(vm: MainViewModel) {
             Text("Profiles", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             AnimatedVisibility(visible = ui.profiles.isNotEmpty()) {
                 Text(
-                    "${ui.profiles.size} profiles",
+                    if (searchQuery.isBlank()) "${ui.profiles.size} profiles" else "${visibleProfiles.size} of ${ui.profiles.size}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                 )
@@ -128,8 +182,14 @@ fun ProfilesScreen(vm: MainViewModel) {
                 IconButton(onClick = { showImport = true }) {
                     Icon(Icons.Rounded.Link, "Import via link")
                 }
+                IconButton(onClick = { importFromClipboard() }) {
+                    Icon(Icons.Rounded.ContentPaste, "Import from clipboard")
+                }
+                IconButton(onClick = { cameraQrLauncher.launch(null) }) {
+                    Icon(Icons.Rounded.PhotoCamera, "Scan QR with camera")
+                }
                 IconButton(onClick = { qrImportLauncher.launch("image/*") }) {
-                    Icon(Icons.Rounded.QrCodeScanner, "Import QR")
+                    Icon(Icons.Rounded.ImageSearch, "Import QR image")
                 }
                 FilledTonalButton(
                     onClick = { showManual = true },
@@ -139,6 +199,54 @@ fun ProfilesScreen(vm: MainViewModel) {
                     Spacer(Modifier.width(4.dp))
                     // Bug fix #2: explicit color so text stays visible on any background
                     Text("Manual", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                }
+            }
+            AnimatedVisibility(visible = ui.profiles.isNotEmpty()) {
+                Column {
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            label = { Text("Search profiles") },
+                            leadingIcon = { Icon(Icons.Rounded.Search, null) },
+                            trailingIcon = {
+                                AnimatedVisibility(visible = searchQuery.isNotBlank()) {
+                                    IconButton(onClick = { searchQuery = "" }) {
+                                        Icon(Icons.Rounded.Close, "Clear search")
+                                    }
+                                }
+                            },
+                        )
+                        Box {
+                            FilledTonalIconButton(onClick = { sortExpanded = true }) {
+                                Icon(Icons.Rounded.Sort, "Sort profiles")
+                            }
+                            DropdownMenu(
+                                expanded = sortExpanded,
+                                onDismissRequest = { sortExpanded = false },
+                            ) {
+                                ProfileSort.values().forEach { mode ->
+                                    DropdownMenuItem(
+                                        text = { Text(mode.label) },
+                                        leadingIcon = {
+                                            if (mode == sortMode) Icon(Icons.Rounded.Check, null)
+                                        },
+                                        onClick = {
+                                            sortMode = mode
+                                            sortExpanded = false
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -178,10 +286,29 @@ fun ProfilesScreen(vm: MainViewModel) {
                         }
                     }
                 }
+            } else if (visibleProfiles.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Rounded.SearchOff,
+                            null,
+                            Modifier.size(56.dp),
+                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        Text("No matching profiles", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Try another name, server, protocol, or transport.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             } else {
                 // Bug fix #6: group profiles by subscription with collapsible sections
                 GroupedProfilesList(
-                    profiles      = ui.profiles,
+                    profiles      = visibleProfiles,
                     subscriptions = ui.subscriptions,
                     onSelect      = { vm.selectProfile(it) },
                     onDelete      = { profile -> deleteProfile = profile },
@@ -349,6 +476,13 @@ fun ProfilesScreen(vm: MainViewModel) {
             },
         )
     }
+}
+
+private enum class ProfileSort(val label: String) {
+    ACTIVE_FIRST("Active first"),
+    LATENCY("Latency"),
+    NAME("Name"),
+    NEWEST("Newest"),
 }
 
 @Composable
@@ -772,8 +906,12 @@ private fun ManualProfileDialog(
     var transportExpanded by remember { mutableStateOf(false) }
     var securityExpanded  by remember { mutableStateOf(false) }
 
-    val noTransportProtos = remember { listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.HYSTERIA2, Protocol.SOCKS5) }
-    val noSecurityProtos  = remember { listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.SOCKS5) }
+    val noTransportProtos = remember {
+        listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.HYSTERIA2, Protocol.SOCKS5, Protocol.HTTP)
+    }
+    val noSecurityProtos = remember {
+        listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.SOCKS5, Protocol.HTTP)
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -794,7 +932,7 @@ private fun ManualProfileDialog(
                     )
                     ExposedDropdownMenu(expanded = protoExpanded, onDismissRequest = { protoExpanded = false }) {
                         listOf(Protocol.VLESS, Protocol.VMESS, Protocol.SHADOWSOCKS, Protocol.TROJAN,
-                            Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.SOCKS5, Protocol.TUIC).forEach { p ->
+                            Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.SOCKS5, Protocol.HTTP, Protocol.TUIC).forEach { p ->
                             DropdownMenuItem(text = { Text(p.name) }, onClick = { protocol = p; protoExpanded = false })
                         }
                     }
@@ -807,9 +945,17 @@ private fun ManualProfileDialog(
 
                 // Protocol-specific fields
                 when (protocol) {
-                    Protocol.VMESS, Protocol.VLESS, Protocol.TROJAN, Protocol.SOCKS5, Protocol.TUIC -> {
+                    Protocol.VMESS, Protocol.VLESS, Protocol.TROJAN, Protocol.SOCKS5, Protocol.HTTP, Protocol.TUIC -> {
                         if (protocol == Protocol.TROJAN) {
                             SecretTextField(value = uuid, onValueChange = { uuid = it }, label = "Password")
+                        } else if (protocol == Protocol.SOCKS5 || protocol == Protocol.HTTP) {
+                            OutlinedTextField(
+                                value = uuid,
+                                onValueChange = { uuid = it },
+                                label = { Text("Username:password (optional)") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                            )
                         } else {
                             OutlinedTextField(
                                 value = uuid, onValueChange = { uuid = it },

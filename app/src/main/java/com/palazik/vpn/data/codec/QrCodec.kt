@@ -34,6 +34,8 @@ object QrCodec {
         return decodeBitmap(bitmap)
     }
 
+    fun decodeFromBitmap(bitmap: Bitmap): String? = decodeBitmap(bitmap)
+
     private fun loadBitmap(context: Context, uri: Uri): Bitmap? =
         runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

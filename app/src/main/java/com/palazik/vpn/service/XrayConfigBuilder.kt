@@ -100,19 +100,21 @@ object XrayConfigBuilder {
             Protocol.HYSTERIA2   -> buildHysteria2(this, profile)
             Protocol.WIREGUARD   -> buildWireguard(this, profile)
             Protocol.SOCKS5      -> buildSocksOut(this, profile)
+            Protocol.HTTP        -> buildHttpOut(this, profile)
             Protocol.TUIC        -> buildTuic(this, profile)
-            else                 -> buildVless(this, profile)
         }
 
         // SS handles its own framing; streamSettings causes TLS handshake against plain SS servers
-        val needsStream = profile.protocol !in listOf(Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.SHADOWSOCKS)
+        val needsStream = profile.protocol !in listOf(
+            Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.HTTP
+        )
         if (needsStream) put("streamSettings", buildStreamSettings(profile))
 
         // v2rayNG: mux disabled for SS, Trojan, WireGuard, Hysteria2, TUIC, SOCKS5
         // Shadowsocks + mux is broken — xray-core does not support it
         val useMux = profile.protocol !in listOf(
             Protocol.SHADOWSOCKS, Protocol.TROJAN,
-            Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.TUIC, Protocol.SOCKS5
+            Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.TUIC, Protocol.SOCKS5, Protocol.HTTP
         ) && profile.transport !in listOf(Transport.XHTTP, Transport.QUIC)
         put("mux", JSONObject().apply {
             put("enabled", useMux)
@@ -241,6 +243,26 @@ object XrayConfigBuilder {
                 put(JSONObject().apply {
                     put("address", p.address)
                     put("port",    p.port)
+                    if (p.uuid.isNotEmpty() && p.uuid.contains(":")) {
+                        put("users", JSONArray().apply {
+                            put(JSONObject().apply {
+                                put("user", p.uuid.substringBefore(":"))
+                                put("pass", p.uuid.substringAfter(":"))
+                            })
+                        })
+                    }
+                })
+            })
+        })
+    }
+
+    private fun buildHttpOut(obj: JSONObject, p: VpnProfile) {
+        obj.put("protocol", "http")
+        obj.put("settings", JSONObject().apply {
+            put("servers", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("address", p.address)
+                    put("port", p.port)
                     if (p.uuid.isNotEmpty() && p.uuid.contains(":")) {
                         put("users", JSONArray().apply {
                             put(JSONObject().apply {

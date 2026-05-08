@@ -125,18 +125,14 @@ fun HomeScreen(
             )
             Spacer(Modifier.height(6.dp))
             AnimatedContent(
-                targetState = ui.activeProfile?.name ?: "No profile selected",
+                targetState = ui.activeProfile,
                 transitionSpec = {
                     fadeIn(tween(250)) + slideInVertically(tween(250)) { -it / 3 } togetherWith
                         fadeOut(tween(150)) + slideOutVertically(tween(150)) { it / 3 }
                 },
                 label = "profile_name",
-            ) { name ->
-                Text(
-                    text  = name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                )
+            ) { profile ->
+                HomeProfilePill(profileName = profile?.name, endpoint = profile?.let { "${it.address}:${it.port}" })
             }
         }
 
@@ -368,6 +364,44 @@ fun HomeScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HomeProfilePill(profileName: String?, endpoint: String?) {
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                if (profileName == null) Icons.Rounded.ReportProblem else Icons.Rounded.Dns,
+                null,
+                Modifier.size(18.dp),
+                tint = if (profileName == null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.widthIn(max = 240.dp)) {
+                Text(
+                    profileName ?: "No profile selected",
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (endpoint != null) {
+                    Text(
+                        endpoint,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }

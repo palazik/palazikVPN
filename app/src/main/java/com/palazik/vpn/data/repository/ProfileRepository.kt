@@ -343,6 +343,8 @@ class ProfileRepository @Inject constructor(
                     ?.filter { it.isNotBlank() }
                     ?: emptyList(),
                 startOnBoot = o.optBoolean("startOnBoot", false),
+                autoUpdateSubscriptions = o.optBoolean("autoUpdateSubscriptions", true),
+                subscriptionUpdateIntervalHours = o.optLong("subscriptionUpdateIntervalHours", 2L).coerceAtLeast(2L),
             )
         }
     }
@@ -354,6 +356,7 @@ class ProfileRepository @Inject constructor(
             remoteDns = settings.remoteDns.trim().ifBlank { AppSettings().remoteDns },
             directDns = settings.directDns.trim().ifBlank { AppSettings().directDns },
             bypassPackages = settings.bypassPackages.map { it.trim() }.filter { it.isNotBlank() }.distinct(),
+            subscriptionUpdateIntervalHours = settings.subscriptionUpdateIntervalHours.coerceAtLeast(2L),
         )
         _settings.value = normalized
         saveSettings()
@@ -369,6 +372,8 @@ class ProfileRepository @Inject constructor(
                 put("directDns", settings.directDns)
                 put("bypassPackages", JSONArray().apply { settings.bypassPackages.forEach { put(it) } })
                 put("startOnBoot", settings.startOnBoot)
+                put("autoUpdateSubscriptions", settings.autoUpdateSubscriptions)
+                put("subscriptionUpdateIntervalHours", settings.subscriptionUpdateIntervalHours)
             }.toString(),
         ).apply()
     }

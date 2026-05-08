@@ -36,6 +36,7 @@ object ProfileCodec {
             trimmed.startsWith("hysteria2://")  -> decodeHysteria2(trimmed)
             trimmed.startsWith("wireguard://")  -> decodeWireguard(trimmed)
             trimmed.startsWith("socks5://")     -> decodeSocks5(trimmed)
+            trimmed.startsWith("http://")       -> decodeHttp(trimmed)
             trimmed.startsWith("tuic://")       -> decodeTuic(trimmed)
             // xhttp:// share links are VLESS profiles with Transport.XHTTP
             trimmed.startsWith("xhttp://")      -> decodeXhttp(trimmed)
@@ -65,8 +66,8 @@ object ProfileCodec {
         Protocol.HYSTERIA2   -> encodeHysteria2(p)
         Protocol.WIREGUARD   -> encodeWireguard(p)
         Protocol.SOCKS5      -> encodeSocks5(p)
+        Protocol.HTTP        -> encodeHttp(p)
         Protocol.TUIC        -> encodeTuic(p)
-        else                 -> encodeVless(p)
     }
 
     /** Returns palazikvpn://<base64(json)>#name */
@@ -125,7 +126,9 @@ object ProfileCodec {
             transport   = transport,
             path        = json.optString("path", "/"),
             host        = json.optString("host"),
-            security    = Security.valueOf(json.optString("security", "TLS")),
+            security    = runCatching {
+                Security.valueOf(json.optString("security", "TLS"))
+            }.getOrDefault(Security.TLS),
             sni         = json.optString("sni"),
             fingerprint = json.optString("fp", "chrome"),
             publicKey   = json.optString("pubkey"),
@@ -284,12 +287,18 @@ object ProfileCodec {
         return VpnProfile(
             name            = Uri.decode(uri.fragment ?: "WireGuard"),
             protocol        = Protocol.WIREGUARD,
-            address         = uri.host ?: "",
+            address         = params["address"]
+                ?: params["localaddress"]
+                ?: params["localAddress"]
+                ?: "10.0.0.2/32",
             port            = uri.port.takeIf { it > 0 } ?: 51820,
             wgPrivateKey    = params["privatekey"] ?: "",
             wgPeerPublicKey = params["publickey"] ?: "",
             wgPreSharedKey  = params["presharedkey"] ?: "",
-            wgEndpoint      = params["endpoint"] ?: params["peer"] ?: "",
+            wgEndpoint      = params["endpoint"]
+                ?: params["peer"]
+                ?: uri.host?.let { host -> "$host:${uri.port.takeIf { it > 0 } ?: 51820}" }
+                ?: "",
             wgDns           = params["dns"] ?: "1.1.1.1",
             wgMtu           = params["mtu"]?.toIntOrNull() ?: 1280,
         )
@@ -303,6 +312,19 @@ object ProfileCodec {
             address  = uri.host ?: "",
             port     = uri.port.takeIf { it > 0 } ?: 1080,
             uuid     = uri.userInfo ?: "",
+        )
+    }
+
+    private fun decodeHttp(raw: String): VpnProfile {
+        val uri = Uri.parse(raw)
+        return VpnProfile(
+            name      = Uri.decode(uri.fragment ?: "HTTP"),
+            protocol  = Protocol.HTTP,
+            address   = uri.host ?: "",
+            port      = uri.port.takeIf { it > 0 } ?: 8080,
+            uuid      = uri.userInfo ?: "",
+            security  = Security.NONE,
+            transport = Transport.TCP,
         )
     }
 
@@ -429,6 +451,11 @@ object ProfileCodec {
 
     private fun encodeSocks5(p: VpnProfile) =
         "socks5://${p.uuid}@${p.address}:${p.port}#${Uri.encode(p.name)}"
+
+    private fun encodeHttp(p: VpnProfile): String {
+        val auth = p.uuid.takeIf { it.isNotBlank() }?.let { "$it@" } ?: ""
+        return "http://$auth${p.address}:${p.port}#${Uri.encode(p.name)}"
+    }
 
     private fun encodeTuic(p: VpnProfile) =
         Uri.Builder().scheme("tuic")
