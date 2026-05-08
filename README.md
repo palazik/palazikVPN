@@ -137,7 +137,7 @@ The app uses:
 - Auto-connect on boot only works when Android has already granted VPN permission.
 - Subscription and profile compatibility depends on the fields present in imported links.
 - Some advanced Xray options are not exposed in the UI yet.
-- QR import reads QR codes from selected image files; live camera scanning is not implemented yet.
+- QR import reads QR codes from selected image files / live camera.
 - Unsigned release APKs from CI must be signed before distribution outside debug/testing use.
 
 ## Project Structure
