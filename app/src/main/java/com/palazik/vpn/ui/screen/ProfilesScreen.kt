@@ -62,9 +62,7 @@ fun ProfilesScreen(vm: MainViewModel) {
     var importText    by remember { mutableStateOf("") }
     var previewProfile by remember { mutableStateOf<VpnProfile?>(null) }
     var previewErrors by remember { mutableStateOf<List<String>>(emptyList()) }
-    var searchQuery by remember { mutableStateOf("") }
-    var sortMode by remember { mutableStateOf(ProfileSort.ACTIVE_FIRST) }
-    var sortExpanded by remember { mutableStateOf(false) }
+    var importMenuExpanded by remember { mutableStateOf(false) }
 
     fun previewImport(raw: String) {
         val profile = ProfileCodec.decode(raw)
@@ -118,31 +116,6 @@ fun ProfilesScreen(vm: MainViewModel) {
         previewImport(text)
     }
 
-    val visibleProfiles = remember(ui.profiles, searchQuery, sortMode) {
-        val filtered = if (searchQuery.isBlank()) {
-            ui.profiles
-        } else {
-            val q = searchQuery.trim()
-            ui.profiles.filter {
-                it.name.contains(q, ignoreCase = true) ||
-                    it.address.contains(q, ignoreCase = true) ||
-                    it.protocol.name.contains(q, ignoreCase = true) ||
-                    it.transport.name.contains(q, ignoreCase = true)
-            }
-        }
-        when (sortMode) {
-            ProfileSort.ACTIVE_FIRST -> filtered.sortedWith(
-                compareByDescending<VpnProfile> { it.isActive }.thenBy { it.name.lowercase() }
-            )
-            ProfileSort.LATENCY -> filtered.sortedWith(
-                compareBy<VpnProfile> { if (it.latencyMs >= 0) it.latencyMs else Long.MAX_VALUE }
-                    .thenBy { it.name.lowercase() }
-            )
-            ProfileSort.NAME -> filtered.sortedBy { it.name.lowercase() }
-            ProfileSort.NEWEST -> filtered.sortedByDescending { it.addedAt }
-        }
-    }
-
     Column(
         Modifier
             .fillMaxSize()
@@ -157,7 +130,7 @@ fun ProfilesScreen(vm: MainViewModel) {
             Text("Profiles", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             AnimatedVisibility(visible = ui.profiles.isNotEmpty()) {
                 Text(
-                    if (searchQuery.isBlank()) "${ui.profiles.size} profiles" else "${visibleProfiles.size} of ${ui.profiles.size}",
+                    "${ui.profiles.size} profiles",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
                 )
@@ -178,75 +151,39 @@ fun ProfilesScreen(vm: MainViewModel) {
                         Icon(Icons.Rounded.Share, "Share active")
                     }
                 }
-                // Bug fix #1: use IconButton + icon-only buttons to prevent text wrapping
-                IconButton(onClick = { showImport = true }) {
-                    Icon(Icons.Rounded.Link, "Import via link")
-                }
-                IconButton(onClick = { importFromClipboard() }) {
-                    Icon(Icons.Rounded.ContentPaste, "Import from clipboard")
-                }
-                IconButton(onClick = { cameraQrLauncher.launch(null) }) {
-                    Icon(Icons.Rounded.PhotoCamera, "Scan QR with camera")
-                }
-                IconButton(onClick = { qrImportLauncher.launch("image/*") }) {
-                    Icon(Icons.Rounded.ImageSearch, "Import QR image")
-                }
-                FilledTonalButton(
-                    onClick = { showManual = true },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    // Bug fix #2: explicit color so text stays visible on any background
-                    Text("Manual", color = MaterialTheme.colorScheme.onSecondaryContainer)
-                }
-            }
-            AnimatedVisibility(visible = ui.profiles.isNotEmpty()) {
-                Column {
-                    Spacer(Modifier.height(10.dp))
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                Box {
+                    FilledTonalButton(
+                        onClick = { importMenuExpanded = true },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                     ) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            label = { Text("Search profiles") },
-                            leadingIcon = { Icon(Icons.Rounded.Search, null) },
-                            trailingIcon = {
-                                AnimatedVisibility(visible = searchQuery.isNotBlank()) {
-                                    IconButton(onClick = { searchQuery = "" }) {
-                                        Icon(Icons.Rounded.Close, "Clear search")
-                                    }
-                                }
-                            },
-                        )
-                        Box {
-                            FilledTonalIconButton(onClick = { sortExpanded = true }) {
-                                Icon(Icons.Rounded.Sort, "Sort profiles")
-                            }
-                            DropdownMenu(
-                                expanded = sortExpanded,
-                                onDismissRequest = { sortExpanded = false },
-                            ) {
-                                ProfileSort.values().forEach { mode ->
-                                    DropdownMenuItem(
-                                        text = { Text(mode.label) },
-                                        leadingIcon = {
-                                            if (mode == sortMode) Icon(Icons.Rounded.Check, null)
-                                        },
-                                        onClick = {
-                                            sortMode = mode
-                                            sortExpanded = false
-                                        },
-                                    )
-                                }
-                            }
-                        }
+                        Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Import", color = MaterialTheme.colorScheme.onSecondaryContainer)
                     }
+                    ImportMenu(
+                        expanded = importMenuExpanded,
+                        onDismiss = { importMenuExpanded = false },
+                        onLink = {
+                            importMenuExpanded = false
+                            showImport = true
+                        },
+                        onClipboard = {
+                            importMenuExpanded = false
+                            importFromClipboard()
+                        },
+                        onCameraQr = {
+                            importMenuExpanded = false
+                            cameraQrLauncher.launch(null)
+                        },
+                        onImageQr = {
+                            importMenuExpanded = false
+                            qrImportLauncher.launch("image/*")
+                        },
+                        onManual = {
+                            importMenuExpanded = false
+                            showManual = true
+                        },
+                    )
                 }
             }
         }
@@ -279,36 +216,17 @@ fun ProfilesScreen(vm: MainViewModel) {
                             color = MaterialTheme.colorScheme.outline,
                         )
                         Spacer(Modifier.height(24.dp))
-                        FilledTonalButton(onClick = { showManual = true }) {
+                        FilledTonalButton(onClick = { importMenuExpanded = true }) {
                             Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Add Profile", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                            Text("Import Profile", color = MaterialTheme.colorScheme.onSecondaryContainer)
                         }
-                    }
-                }
-            } else if (visibleProfiles.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Rounded.SearchOff,
-                            null,
-                            Modifier.size(56.dp),
-                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Text("No matching profiles", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Try another name, server, protocol, or transport.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                 }
             } else {
                 // Bug fix #6: group profiles by subscription with collapsible sections
                 GroupedProfilesList(
-                    profiles      = visibleProfiles,
+                    profiles      = ui.profiles,
                     subscriptions = ui.subscriptions,
                     onSelect      = { vm.selectProfile(it) },
                     onDelete      = { profile -> deleteProfile = profile },
@@ -478,11 +396,47 @@ fun ProfilesScreen(vm: MainViewModel) {
     }
 }
 
-private enum class ProfileSort(val label: String) {
-    ACTIVE_FIRST("Active first"),
-    LATENCY("Latency"),
-    NAME("Name"),
-    NEWEST("Newest"),
+@Composable
+private fun ImportMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onLink: () -> Unit,
+    onClipboard: () -> Unit,
+    onCameraQr: () -> Unit,
+    onImageQr: () -> Unit,
+    onManual: () -> Unit,
+) {
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismiss,
+    ) {
+        DropdownMenuItem(
+            text = { Text("Paste link") },
+            leadingIcon = { Icon(Icons.Rounded.Link, null) },
+            onClick = onLink,
+        )
+        DropdownMenuItem(
+            text = { Text("Clipboard") },
+            leadingIcon = { Icon(Icons.Rounded.ContentPaste, null) },
+            onClick = onClipboard,
+        )
+        DropdownMenuItem(
+            text = { Text("Camera QR") },
+            leadingIcon = { Icon(Icons.Rounded.PhotoCamera, null) },
+            onClick = onCameraQr,
+        )
+        DropdownMenuItem(
+            text = { Text("QR image") },
+            leadingIcon = { Icon(Icons.Rounded.ImageSearch, null) },
+            onClick = onImageQr,
+        )
+        HorizontalDivider()
+        DropdownMenuItem(
+            text = { Text("Manual profile") },
+            leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+            onClick = onManual,
+        )
+    }
 }
 
 @Composable
