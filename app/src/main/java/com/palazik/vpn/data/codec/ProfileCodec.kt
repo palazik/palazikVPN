@@ -364,9 +364,16 @@ object ProfileCodec {
             // BUG FIX: always read path and host
             path      = params["path"] ?: "/",
             host      = params["host"] ?: "",
-            security  = if (params["tls"] == "tls") Security.TLS else Security.NONE,
+            security  = when {
+                params["security"].equals("tls", true) || params["tls"].equals("tls", true) -> Security.TLS
+                params["security"].equals("reality", true) -> Security.REALITY
+                params["security"].equals("xtls", true) -> Security.XTLS
+                else -> Security.NONE
+            },
             sni       = params["sni"] ?: "",
             fingerprint = params["fp"] ?: "chrome",
+            publicKey = params["pbk"] ?: "",
+            shortId = params["sid"] ?: "",
         )
     }
 
@@ -449,17 +456,30 @@ object ProfileCodec {
             .appendQueryParameter("mtu", p.wgMtu.toString())
             .fragment(p.name).build().toString()
 
-    private fun encodeSocks5(p: VpnProfile) =
-        "socks5://${p.uuid}@${p.address}:${p.port}#${Uri.encode(p.name)}"
+    private fun encodeSocks5(p: VpnProfile): String =
+        Uri.Builder().scheme("socks5")
+            .encodedAuthority(buildEncodedAuthority(p.address, p.port, p.uuid))
+            .fragment(p.name)
+            .build()
+            .toString()
 
     private fun encodeHttp(p: VpnProfile): String {
-        val auth = p.uuid.takeIf { it.isNotBlank() }?.let { "$it@" } ?: ""
-        return "http://$auth${p.address}:${p.port}#${Uri.encode(p.name)}"
+        return Uri.Builder().scheme("http")
+            .encodedAuthority(buildEncodedAuthority(p.address, p.port, p.uuid))
+            .fragment(p.name)
+            .build()
+            .toString()
     }
 
     private fun encodeTuic(p: VpnProfile) =
         Uri.Builder().scheme("tuic")
-            .encodedAuthority("${p.uuid}:${p.ssPassword}@${p.address}:${p.port}")
+            .encodedAuthority(buildEncodedAuthority(p.address, p.port, "${p.uuid}:${p.ssPassword}"))
             .appendQueryParameter("sni", p.sni)
             .fragment(p.name).build().toString()
+
+    private fun buildEncodedAuthority(address: String, port: Int, userInfo: String = ""): String {
+        val host = if (":" in address && !address.startsWith("[")) "[$address]" else address
+        val encodedUserInfo = userInfo.takeIf { it.isNotBlank() }?.let { "${Uri.encode(it, ":")}@" }.orEmpty()
+        return "$encodedUserInfo$host:$port"
+    }
 }

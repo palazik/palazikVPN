@@ -53,7 +53,12 @@ class ProfileRepository @Inject constructor(
     // ── Profiles ──────────────────────────────────────────────────────────────
 
     fun addProfile(profile: VpnProfile) {
-        _profiles.value = _profiles.value + profile
+        val shouldActivate = _profiles.value.none { it.isActive }
+        _profiles.value = if (shouldActivate) {
+            _profiles.value + profile.copy(isActive = true)
+        } else {
+            _profiles.value + profile.copy(isActive = false)
+        }
         saveProfiles()
     }
 
@@ -118,19 +123,37 @@ class ProfileRepository @Inject constructor(
                 // v2rayNG: remember which profile was selected before wiping
                 val snapshot      = _profiles.value
                 val prevActive    = snapshot.firstOrNull { it.subscriptionId == sub.id && it.isActive }
-                fun VpnProfile.fingerprint() = "$address:$port:$uuid:${protocol.name}"
+                fun VpnProfile.fingerprint() = listOf(
+                    address,
+                    port,
+                    uuid,
+                    protocol.name,
+                    transport.name,
+                    path,
+                    host,
+                    security.name,
+                    sni,
+                ).joinToString("|")
                 val prevFingerprint = prevActive?.fingerprint()
+                var restoredActive = false
 
                 // All profiles NOT belonging to this subscription are kept untouched
                 val retained = snapshot.filter { it.subscriptionId != sub.id }
+                val retainedHasActive = retained.any { it.isActive }
 
-                // Map new profiles; restore active flag if fingerprint matches previous active
-                val merged = freshProfiles.map { p ->
-                    if (prevFingerprint != null && p.fingerprint() == prevFingerprint) {
+                // Map new profiles; restore active flag if fingerprint matches previous active.
+                val restoredMerged = freshProfiles.map { p ->
+                    if (!restoredActive && prevFingerprint != null && p.fingerprint() == prevFingerprint) {
+                        restoredActive = true
                         p.copy(isActive = true)
                     } else {
-                        p
+                        p.copy(isActive = false)
                     }
+                }
+                val merged = if (!retainedHasActive && restoredMerged.none { it.isActive }) {
+                    restoredMerged.mapIndexed { index, p -> p.copy(isActive = index == 0) }
+                } else {
+                    restoredMerged
                 }
                 val retainedProfiles = if (merged.any { it.isActive }) {
                     retained.map { it.copy(isActive = false) }

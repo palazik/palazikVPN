@@ -206,7 +206,14 @@ class MainViewModel @Inject constructor(
         deletedProfile = null
     }
 
-    fun selectProfile(id: String) = repo.setActiveProfile(id)
+    fun selectProfile(id: String) {
+        if (_ui.value.vpnState != VpnState.DISCONNECTED && _ui.value.vpnState != VpnState.ERROR) {
+            snack("Disconnect before switching profiles")
+            return
+        }
+        repo.setActiveProfile(id)
+        palazikVpnService.activeProfile = repo.profiles.value.firstOrNull { it.id == id }
+    }
 
     fun duplicateProfile(profile: VpnProfile) {
         val copy = profile.copy(

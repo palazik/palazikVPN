@@ -111,6 +111,10 @@ class palazikVpnService : VpnService() {
         when (intent?.action) {
             ACTION_START -> startVpn(intent.getStringExtra(EXTRA_PROFILE))
             ACTION_STOP  -> stopVpn()
+            null -> {
+                addDiagnostic("Sticky restart ignored: missing start action")
+                return START_NOT_STICKY
+            }
         }
         return START_STICKY
     }
