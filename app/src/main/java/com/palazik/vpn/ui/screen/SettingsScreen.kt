@@ -1,5 +1,6 @@
 package com.palazik.vpn.ui.screen
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,9 +14,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.palazik.vpn.R
 import com.palazik.vpn.data.model.PingMode
 import com.palazik.vpn.ui.theme.AppTheme
 import com.palazik.vpn.ui.theme.DarkModePreference
@@ -24,7 +27,9 @@ import com.palazik.vpn.ui.viewmodel.MainViewModel
 private val DarkModeOptions = DarkModePreference.values().toList()
 private val AppThemeOptions = AppTheme.values().toList()
 private val PingModeOptions = PingMode.values().toList()
+private val SubscriptionIntervalOptions = listOf(2L, 6L, 12L, 24L)
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SettingsScreen(vm: MainViewModel) {
     val ui by vm.ui.collectAsState()
@@ -35,8 +40,11 @@ fun SettingsScreen(vm: MainViewModel) {
         Modifier
             .fillMaxSize()
             .statusBarsPadding()
+            .navigationBarsPadding()
+            .imePadding()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(16.dp)
+            .padding(bottom = 16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
@@ -210,7 +218,11 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
                 Spacer(Modifier.height(8.dp))
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedButton(onClick = { vm.updateAppSettings(ui.settings.copy(bypassPackages = emptyList())) }) {
                     Icon(Icons.Rounded.Clear, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
@@ -257,7 +269,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 Column(Modifier.weight(1f)) {
                     Text("Auto-update subscriptions", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Refreshes subscriptions every 2 hours when network is available.",
+                        "Refreshes subscriptions every ${ui.settings.subscriptionUpdateIntervalHours} hours when network is available.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -268,6 +280,37 @@ fun SettingsScreen(vm: MainViewModel) {
                         vm.updateAppSettings(ui.settings.copy(autoUpdateSubscriptions = enabled))
                     },
                 )
+            }
+            AnimatedVisibility(visible = ui.settings.autoUpdateSubscriptions) {
+                Column {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Update interval",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        SubscriptionIntervalOptions.forEach { hours ->
+                            FilterChip(
+                                selected = ui.settings.subscriptionUpdateIntervalHours == hours,
+                                onClick = {
+                                    vm.updateAppSettings(
+                                        ui.settings.copy(subscriptionUpdateIntervalHours = hours),
+                                    )
+                                },
+                                label = { Text("${hours}h") },
+                                leadingIcon = if (ui.settings.subscriptionUpdateIntervalHours == hours) {
+                                    { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
+                                } else {
+                                    null
+                                },
+                            )
+                        }
+                    }
+                }
             }
         }
 
@@ -310,7 +353,7 @@ fun SettingsScreen(vm: MainViewModel) {
         SettingsSection(title = "About") {
             ListItem(
                 headlineContent   = { Text("palazikVPN") },
-                supportingContent = { Text("V1.0.0 • by palaziks") },
+                supportingContent = { Text("V${stringResource(R.string.app_version)} • by palaziks") },
                 leadingContent    = { Icon(Icons.Rounded.Info, null) },
             )
         }

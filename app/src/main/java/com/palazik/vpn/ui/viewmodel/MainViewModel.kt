@@ -41,6 +41,7 @@ data class UiState(
     val snackActionLabel: String?         = null,
     val shareLink: String?                = null,
     val isUpdatingSubscriptions: Boolean  = false,
+    val updatingSubscriptionIds: Set<String> = emptySet(),
 )
 
 private const val THEME_PREFS  = "palazik_theme"
@@ -295,7 +296,7 @@ class MainViewModel @Inject constructor(
 
     fun updateSubscription(sub: Subscription) {
         viewModelScope.launch {
-            _ui.update { it.copy(isUpdatingSubscriptions = true) }
+            _ui.update { it.copy(updatingSubscriptionIds = it.updatingSubscriptionIds + sub.id) }
             snack("Updating \"${sub.name}\"…")
             repo.updateSubscription(sub).fold(
                 onSuccess = { count ->
@@ -304,7 +305,42 @@ class MainViewModel @Inject constructor(
                 },
                 onFailure = { snack("Update failed") },
             )
-            _ui.update { it.copy(isUpdatingSubscriptions = false) }
+            _ui.update { it.copy(updatingSubscriptionIds = it.updatingSubscriptionIds - sub.id) }
+        }
+    }
+
+    fun chooseBestProfileForSubscription(sub: Subscription) {
+        viewModelScope.launch {
+            if (_ui.value.vpnState != VpnState.DISCONNECTED && _ui.value.vpnState != VpnState.ERROR) {
+                snack("Disconnect before switching profiles")
+                return@launch
+            }
+            if (_ui.value.pingMode != PingMode.TCP && _ui.value.vpnState != VpnState.CONNECTED) {
+                snack("Connect VPN first for HTTP ping")
+                return@launch
+            }
+            val candidates = _ui.value.profiles.filter { it.subscriptionId == sub.id }
+            if (candidates.isEmpty()) {
+                snack("No profiles in \"${sub.name}\"")
+                return@launch
+            }
+            _ui.update { it.copy(updatingSubscriptionIds = it.updatingSubscriptionIds + sub.id) }
+            try {
+                snack("Testing \"${sub.name}\" profiles…")
+                val best = candidates.mapNotNull { profile ->
+                    val ms = repo.pingProfile(profile)
+                    if (ms >= 0) profile.id to ms else null
+                }.minByOrNull { it.second }
+                if (best != null) {
+                    repo.setActiveProfile(best.first)
+                    palazikVpnService.activeProfile = repo.profiles.value.firstOrNull { it.id == best.first }
+                    snack("Best profile selected: ${best.second}ms")
+                } else {
+                    snack("All profiles timed out")
+                }
+            } finally {
+                _ui.update { it.copy(updatingSubscriptionIds = it.updatingSubscriptionIds - sub.id) }
+            }
         }
     }
 

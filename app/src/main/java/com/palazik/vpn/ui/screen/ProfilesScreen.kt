@@ -346,10 +346,11 @@ fun ProfilesScreen(vm: MainViewModel) {
                         SelectionContainer {
                             Text(
                                 ui.shareLink!!,
-                                modifier = Modifier.padding(12.dp),
+                                modifier = Modifier
+                                    .heightIn(max = 220.dp)
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(12.dp),
                                 style    = MaterialTheme.typography.bodySmall,
-                                overflow = TextOverflow.Ellipsis,
-                                maxLines = 6,
                             )
                         }
                     }
@@ -387,7 +388,10 @@ fun ProfilesScreen(vm: MainViewModel) {
                 Image(
                     bitmap = qrBitmap!!.asImageBitmap(),
                     contentDescription = "Profile QR",
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .aspectRatio(1f),
                 )
             },
             confirmButton = {
@@ -673,6 +677,7 @@ private fun ProfileCard(
     onExportNative: () -> Unit,
     onExportJson: () -> Unit,
 ) {
+    var actionsExpanded by remember { mutableStateOf(false) }
     val containerColor by animateColorAsState(
         targetValue   = if (isActive) MaterialTheme.colorScheme.primaryContainer
                         else MaterialTheme.colorScheme.surfaceVariant,
@@ -807,44 +812,57 @@ private fun ProfileCard(
             Spacer(Modifier.height(2.dp))
 
             // ── Action row ─────────────────────────────────────────────────────
-            FlowRow(
+            Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(onClick = onPing, contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Icon(Icons.Rounded.NetworkCheck, null, Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Ping", style = MaterialTheme.typography.labelMedium)
                 }
-                TextButton(onClick = onDuplicate, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Icon(Icons.Rounded.ContentCopy, null, Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Duplicate", style = MaterialTheme.typography.labelMedium)
-                }
-                TextButton(onClick = onExportNative, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Icon(Icons.Rounded.Link, null, Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Native", style = MaterialTheme.typography.labelMedium)
-                }
-                TextButton(onClick = onExportJson, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Icon(Icons.Rounded.DataObject, null, Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("JSON", style = MaterialTheme.typography.labelMedium)
-                }
-                TextButton(onClick = onEdit, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Icon(Icons.Rounded.Edit, null, Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Edit", style = MaterialTheme.typography.labelMedium)
-                }
-                TextButton(
-                    onClick        = onDelete,
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    colors         = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                ) {
-                    Icon(Icons.Rounded.Delete, null, Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Delete", style = MaterialTheme.typography.labelMedium)
+                Box {
+                    IconButton(onClick = { actionsExpanded = true }) {
+                        Icon(Icons.Rounded.MoreVert, "More profile actions")
+                    }
+                    DropdownMenu(
+                        expanded = actionsExpanded,
+                        onDismissRequest = { actionsExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Duplicate") },
+                            leadingIcon = { Icon(Icons.Rounded.ContentCopy, null) },
+                            onClick = { actionsExpanded = false; onDuplicate() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Export native link") },
+                            leadingIcon = { Icon(Icons.Rounded.Link, null) },
+                            onClick = { actionsExpanded = false; onExportNative() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Export JSON") },
+                            leadingIcon = { Icon(Icons.Rounded.DataObject, null) },
+                            onClick = { actionsExpanded = false; onExportJson() },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Edit") },
+                            leadingIcon = { Icon(Icons.Rounded.Edit, null) },
+                            onClick = { actionsExpanded = false; onEdit() },
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Rounded.Delete,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                            },
+                            onClick = { actionsExpanded = false; onDelete() },
+                        )
+                    }
                 }
             }
         }
@@ -903,7 +921,10 @@ private fun ManualProfileDialog(
         title = { Text(if (isEdit) "Edit Profile" else "Add Profile") },
         text = {
             Column(
-                Modifier.verticalScroll(rememberScrollState()).fillMaxWidth(),
+                Modifier
+                    .heightIn(max = 540.dp)
+                    .verticalScroll(rememberScrollState())
+                    .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Profile Name") }, modifier = Modifier.fillMaxWidth(), singleLine = true)

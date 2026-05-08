@@ -6,7 +6,9 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -47,36 +49,49 @@ fun HomeScreen(
 
     // ── Animations ────────────────────────────────────────────────────────────
 
-    val infiniteTransition = rememberInfiniteTransition(label = "home_infinite")
+    val glowAlpha = if (isConnected) {
+        val transition = rememberInfiniteTransition(label = "home_glow")
+        val value by transition.animateFloat(
+            initialValue = 0.15f, targetValue = 0.40f,
+            animationSpec = infiniteRepeatable(
+                animation  = tween(2000, easing = EaseInOutSine),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "glow_alpha",
+        )
+        value
+    } else {
+        0f
+    }
 
-    // Breathing glow when connected
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.15f, targetValue = 0.40f,
-        animationSpec = infiniteRepeatable(
-            animation  = tween(2000, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "glow_alpha",
-    )
+    val pulseScale = if (isTransition) {
+        val transition = rememberInfiniteTransition(label = "home_pulse")
+        val value by transition.animateFloat(
+            initialValue = 0.85f, targetValue = 1.15f,
+            animationSpec = infiniteRepeatable(
+                animation  = tween(900, easing = EaseInOutSine),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "pulse_scale",
+        )
+        value
+    } else {
+        1f
+    }
 
-    // Pulse ring scale when connecting
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.85f, targetValue = 1.15f,
-        animationSpec = infiniteRepeatable(
-            animation  = tween(900, easing = EaseInOutSine),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "pulse_scale",
-    )
-
-    // Rotating halo when connecting
-    val haloRotation by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(3000, easing = LinearEasing),
-        ),
-        label = "halo_rotation",
-    )
+    val haloRotation = if (isTransition) {
+        val transition = rememberInfiniteTransition(label = "home_halo")
+        val value by transition.animateFloat(
+            initialValue = 0f, targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(3000, easing = LinearEasing),
+            ),
+            label = "halo_rotation",
+        )
+        value
+    } else {
+        0f
+    }
 
     // Button scale spring on state change
     val buttonScale by animateFloatAsState(
@@ -110,10 +125,11 @@ fun HomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp)
             .padding(top = 24.dp, bottom = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
     ) {
 
         // ── Header ────────────────────────────────────────────────────────────

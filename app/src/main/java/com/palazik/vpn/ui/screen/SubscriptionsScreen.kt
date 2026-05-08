@@ -117,9 +117,11 @@ fun SubscriptionsScreen(vm: MainViewModel) {
                         ) {
                             SubscriptionCard(
                                 sub      = sub,
-                                isUpdating = ui.isUpdatingSubscriptions,
+                                isUpdating = ui.isUpdatingSubscriptions || sub.id in ui.updatingSubscriptionIds,
                                 autoUpdateEnabled = ui.settings.autoUpdateSubscriptions,
+                                updateIntervalHours = ui.settings.subscriptionUpdateIntervalHours,
                                 onUpdate = { vm.updateSubscription(sub) },
+                                onChooseBest = { vm.chooseBestProfileForSubscription(sub) },
                                 onDelete = { deleteSub = sub },
                             )
                         }
@@ -201,7 +203,9 @@ private fun SubscriptionCard(
     sub: Subscription,
     isUpdating: Boolean,
     autoUpdateEnabled: Boolean,
+    updateIntervalHours: Long,
     onUpdate: () -> Unit,
+    onChooseBest: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val sdf = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
@@ -315,7 +319,7 @@ private fun SubscriptionCard(
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
-                            if (autoUpdateEnabled) "Auto 2h" else "Manual",
+                            if (autoUpdateEnabled) "Auto ${updateIntervalHours}h" else "Manual",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (autoUpdateEnabled) MaterialTheme.colorScheme.tertiary
                                 else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -331,7 +335,20 @@ private fun SubscriptionCard(
             )
             Spacer(Modifier.height(2.dp))
 
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                TextButton(
+                    onClick = onChooseBest,
+                    enabled = !isUpdating && sub.profileCount > 0,
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) {
+                    Icon(Icons.Rounded.Speed, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Best", style = MaterialTheme.typography.labelMedium)
+                }
                 TextButton(
                     onClick = onUpdate,
                     enabled = !isUpdating,
