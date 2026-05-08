@@ -1,6 +1,9 @@
 name: Build palazikVPN
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -66,8 +69,6 @@ jobs:
           curl -fL --retry 3 -o app/libs/libv2ray.aar \
             https://github.com/2dust/AndroidLibXrayLite/releases/download/v26.5.3/libv2ray.aar
 
-          # geoip.dat and geosite.dat are bundled into APK assets so the app
-          # never needs to download them at runtime (no network dependency on first launch)
           curl -fL --retry 3 -o app/src/main/assets/geoip.dat \
             https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
 
@@ -88,7 +89,6 @@ jobs:
           echo "=== Libs ===" && ls -lh app/libs/
 
       # ── Build ───────────────────────────────────────────────────────────────
-      # ABI splits produce: arm64-v8a APK, armeabi-v7a APK, universal APK
       - name: Build Debug APKs
         run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
@@ -122,58 +122,43 @@ jobs:
           retention-days: 30
 
       # ── Telegram ────────────────────────────────────────────────────────────
-      # Sends per-ABI APKs individually — each is ~40MB, under TG's 50MB limit.
-      # Universal APK is skipped for TG (too large); it's available in Actions artifacts.
-      - name: Send APKs to Telegram
+      - name: Send universal debug APK to Telegram
         run: |
           SHORT_SHA="${{ github.sha }}"
           SHORT_SHA="${SHORT_SHA:0:7}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
 
-          send_apk() {
-            local APK_PATH="$1"
-            local LABEL="$2"
-            local FILENAME
-            FILENAME=$(basename "$APK_PATH")
-            local SIZE
-            SIZE=$(du -h "$APK_PATH" | cut -f1)
+          # Find the universal debug APK
+          UNIVERSAL_APK=$(find app/build/outputs/apk/debug -name "*universal*.apk" | head -1)
 
-            CAPTION="*palazikVPN* — ${LABEL}
-            Branch: \`${{ github.ref_name }}\`
-            Commit: \`${SHORT_SHA}\`
-            File: \`${FILENAME}\` (${SIZE})
-            Run: [#${{ github.run_number }}](${RUN_URL})"
+          if [ -z "$UNIVERSAL_APK" ]; then
+            echo "❌ Universal APK not found"
+            exit 1
+          fi
 
-            RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
-              -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-              -F document=@"${APK_PATH}" \
-              -F caption="${CAPTION}" \
-              -F parse_mode="Markdown")
+          # Zip to get under Telegram's 50MB limit
+          ZIP_PATH="/tmp/palazikVPN-debug-universal.zip"
+          zip -j "$ZIP_PATH" "$UNIVERSAL_APK"
 
-            if echo "$RESPONSE" | grep -q '"ok":true'; then
-              echo "✓ Sent: ${FILENAME} (${SIZE})"
-            else
-              echo "❌ Failed: ${FILENAME} — $RESPONSE"
-            fi
-          }
+          APK_SIZE=$(du -h "$UNIVERSAL_APK" | cut -f1)
+          ZIP_SIZE=$(du -h "$ZIP_PATH" | cut -f1)
 
-          # Send per-ABI debug APKs (skip universal — too large for TG)
-          for APK in app/build/outputs/apk/debug/*.apk; do
-            FNAME=$(basename "$APK")
-            # Skip universal APK for Telegram
-            if [[ "$FNAME" == *"universal"* ]]; then
-              echo "⏭ Skipping universal APK for TG (available in Actions artifacts)"
-              continue
-            fi
-            send_apk "$APK" "Debug"
-          done
+          CAPTION="*palazikVPN* — Debug Universal
+          Branch: \`${{ github.ref_name }}\`
+          Commit: \`${SHORT_SHA}\` — ${COMMIT_MSG}
+          APK size: ${APK_SIZE} → zipped: ${ZIP_SIZE}
+          Run: [#${{ github.run_number }}](${RUN_URL})"
 
-          # Send per-ABI release APKs (skip universal)
-          for APK in app/build/outputs/apk/release/*.apk; do
-            FNAME=$(basename "$APK")
-            if [[ "$FNAME" == *"universal"* ]]; then
-              echo "⏭ Skipping universal APK for TG (available in Actions artifacts)"
-              continue
-            fi
-            send_apk "$APK" "Release (unsigned)"
-          done
+          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
+            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -F document=@"${ZIP_PATH}" \
+            -F caption="${CAPTION}" \
+            -F parse_mode="Markdown")
+
+          if echo "$RESPONSE" | grep -q '"ok":true'; then
+            echo "✓ Sent universal debug APK (zipped: ${ZIP_SIZE})"
+          else
+            echo "❌ Failed — $RESPONSE"
+            exit 1
+          fi
