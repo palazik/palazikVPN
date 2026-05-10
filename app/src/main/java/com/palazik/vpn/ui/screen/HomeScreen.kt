@@ -2,17 +2,70 @@ package com.palazik.vpn.ui.screen
 
 import android.content.Intent
 import androidx.activity.result.ActivityResultLauncher
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.rounded.ArrowDownward
+import androidx.compose.material.icons.rounded.ArrowUpward
+import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Lock
+import androidx.compose.material.icons.rounded.LockOpen
+import androidx.compose.material.icons.rounded.NetworkCheck
+import androidx.compose.material.icons.rounded.PowerSettingsNew
+import androidx.compose.material.icons.rounded.ReportProblem
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.VerifiedUser
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -26,17 +79,17 @@ import com.palazik.vpn.data.model.VpnState
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 import java.text.DecimalFormat
 
-private val EaseInOutSine = CubicBezierEasing(0.37f, 0f, 0.63f, 1f)
-private val EaseOutBack   = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
+private val EaseOut = CubicBezierEasing(0.16f, 1f, 0.3f, 1f)
+private val EaseInOut = CubicBezierEasing(0.65f, 0f, 0.35f, 1f)
 
 @Composable
 fun HomeScreen(
     vm: MainViewModel,
     permLauncher: ActivityResultLauncher<Intent>,
 ) {
-    val ui           by vm.ui.collectAsState()
-    val vpnState     = ui.vpnState
-    val isConnected  = vpnState == VpnState.CONNECTED
+    val ui by vm.ui.collectAsState()
+    val vpnState = ui.vpnState
+    val isConnected = vpnState == VpnState.CONNECTED
     val isTransition = vpnState == VpnState.CONNECTING || vpnState == VpnState.DISCONNECTING
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
@@ -47,376 +100,90 @@ fun HomeScreen(
         }
     }
 
-    // ── Animations ────────────────────────────────────────────────────────────
-
-    val glowAlpha = if (isConnected) {
-        val transition = rememberInfiniteTransition(label = "home_glow")
-        val value by transition.animateFloat(
-            initialValue = 0.15f, targetValue = 0.40f,
-            animationSpec = infiniteRepeatable(
-                animation  = tween(2000, easing = EaseInOutSine),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "glow_alpha",
-        )
-        value
-    } else {
-        0f
-    }
-
-    val pulseScale = if (isTransition) {
-        val transition = rememberInfiniteTransition(label = "home_pulse")
-        val value by transition.animateFloat(
-            initialValue = 0.85f, targetValue = 1.15f,
-            animationSpec = infiniteRepeatable(
-                animation  = tween(900, easing = EaseInOutSine),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "pulse_scale",
-        )
-        value
-    } else {
-        1f
-    }
-
-    val haloRotation = if (isTransition) {
-        val transition = rememberInfiniteTransition(label = "home_halo")
-        val value by transition.animateFloat(
-            initialValue = 0f, targetValue = 360f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(3000, easing = LinearEasing),
-            ),
-            label = "halo_rotation",
-        )
-        value
-    } else {
-        0f
-    }
-
-    // Button scale spring on state change
-    val buttonScale by animateFloatAsState(
-        targetValue   = when {
-            isTransition -> pulseScale
-            isConnected  -> 1.04f
-            else         -> 1f
-        },
-        animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMediumLow),
-        label         = "btn_scale",
-    )
-
-    val statusColor = when (vpnState) {
-        VpnState.CONNECTED                          -> MaterialTheme.colorScheme.primary
-        VpnState.CONNECTING, VpnState.DISCONNECTING -> MaterialTheme.colorScheme.tertiary
-        else                                        -> MaterialTheme.colorScheme.outline
-    }
-
-    val buttonContainerColor by animateColorAsState(
-        targetValue = when {
-            isConnected  -> MaterialTheme.colorScheme.primary
-            isTransition -> MaterialTheme.colorScheme.tertiary
-            else         -> MaterialTheme.colorScheme.surfaceVariant
-        },
-        animationSpec = tween(400),
-        label = "btn_color",
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .statusBarsPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp)
-            .padding(top = 24.dp, bottom = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
+    ScreenColumn(
+        modifier = Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-
-        // ── Header ────────────────────────────────────────────────────────────
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text  = "palazikVPN",
-                style = MaterialTheme.typography.headlineLarge.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.height(6.dp))
-            AnimatedContent(
-                targetState = ui.activeProfile,
-                transitionSpec = {
-                    fadeIn(tween(250)) + slideInVertically(tween(250)) { -it / 3 } togetherWith
-                        fadeOut(tween(150)) + slideOutVertically(tween(150)) { it / 3 }
-                },
-                label = "profile_name",
-            ) { profile ->
-                HomeProfilePill(profileName = profile?.name, endpoint = profile?.let { "${it.address}:${it.port}" })
-            }
-        }
-
-        // ── Connect button ────────────────────────────────────────────────────
-        Box(contentAlignment = Alignment.Center) {
-
-            // Outer breathing glow (connected only)
-            val outerGlowAlpha by animateFloatAsState(
-                targetValue   = if (isConnected) glowAlpha else 0f,
-                animationSpec = tween(600),
-                label         = "outer_glow",
-            )
-            Box(
-                Modifier
-                    .size(300.dp)
-                    .graphicsLayer { alpha = outerGlowAlpha }
-                    .background(
-                        Brush.radialGradient(listOf(statusColor.copy(alpha = 0.8f), Color.Transparent)),
-                        CircleShape,
-                    )
-            )
-
-            // Rotating dashed ring (connecting only)
-            val ringAlpha by animateFloatAsState(
-                targetValue   = if (isTransition) 0.6f else 0f,
-                animationSpec = tween(400),
-                label         = "ring_alpha",
-            )
-            Box(
-                Modifier
-                    .size(200.dp)
-                    .graphicsLayer {
-                        alpha          = ringAlpha
-                        rotationZ      = haloRotation
-                        scaleX         = pulseScale
-                        scaleY         = pulseScale
-                    }
-                    .background(
-                        Brush.sweepGradient(
-                            listOf(Color.Transparent, statusColor.copy(alpha = 0.5f), Color.Transparent)
-                        ),
-                        CircleShape,
-                    )
-            )
-
-            // Inner ring (always, fades in when connected)
-            val innerAlpha by animateFloatAsState(
-                targetValue   = if (isConnected) 1f else 0f,
-                animationSpec = tween(500),
-                label         = "inner_ring",
-            )
-            Box(
-                Modifier
-                    .size(195.dp)
-                    .graphicsLayer { alpha = innerAlpha }
-                    .background(
-                        Brush.radialGradient(
-                            listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = if (isConnected) glowAlpha * 0.5f else 0f),
-                                Color.Transparent,
-                            )
-                        ),
-                        CircleShape,
-                    )
-            )
-
-            // Main button
-            Button(
-                onClick  = { vm.toggleVpn(permLauncher) },
-                modifier = Modifier
-                    .size(164.dp)
-                    .scale(buttonScale),
-                shape  = CircleShape,
-                colors = ButtonDefaults.buttonColors(containerColor = buttonContainerColor),
-                elevation = ButtonDefaults.buttonElevation(
-                    defaultElevation = if (isConnected) 20.dp else 4.dp,
-                ),
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    AnimatedContent(
-                        targetState = isConnected,
-                        transitionSpec = {
-                            (scaleIn(EaseOutBack.toAnimationSpec(300)) + fadeIn(tween(200))) togetherWith
-                                (scaleOut(tween(150)) + fadeOut(tween(100)))
-                        },
-                        label = "lock_icon",
-                    ) { connected ->
-                        Icon(
-                            imageVector       = if (connected) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
-                            contentDescription = null,
-                            modifier          = Modifier.size(40.dp),
-                            tint              = if (connected || isTransition)
-                                MaterialTheme.colorScheme.onPrimary
-                            else
-                                MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    AnimatedContent(
-                        targetState = vpnState,
-                        transitionSpec = {
-                            fadeIn(tween(180)) togetherWith fadeOut(tween(100))
-                        },
-                        label = "btn_label",
-                    ) { state ->
-                        Text(
-                            text  = when (state) {
-                                VpnState.CONNECTED     -> "Disconnect"
-                                VpnState.CONNECTING    -> "Connecting"
-                                VpnState.DISCONNECTING -> "Stopping"
-                                else                   -> "Connect"
-                            },
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (isConnected || isTransition)
-                                MaterialTheme.colorScheme.onPrimary
-                            else
-                                MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
-            }
-        }
-
-        // ── Status pill ───────────────────────────────────────────────────────
-        AnimatedContent(
-            targetState = vpnState,
-            transitionSpec = {
-                fadeIn(tween(200)) + slideInVertically(tween(250, easing = EaseOutBack)) { it / 2 } togetherWith
-                    fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it / 2 }
+        PageHeader(
+            title = "palazikVPN",
+            subtitle = when (vpnState) {
+                VpnState.CONNECTED -> "Secure tunnel is running"
+                VpnState.CONNECTING -> "Preparing secure tunnel"
+                VpnState.DISCONNECTING -> "Stopping tunnel"
+                VpnState.ERROR -> "Connection needs attention"
+                else -> "Ready when you are"
             },
-            label = "status_badge",
-        ) { state ->
-            Surface(
-                shape = CircleShape,
-                color = statusColor.copy(alpha = 0.14f),
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    val dotScale by animateFloatAsState(
-                        targetValue   = if (isTransition) pulseScale else 1f,
-                        animationSpec = spring(),
-                        label         = "dot_scale",
-                    )
-                    Box(
-                        Modifier
-                            .size(8.dp)
-                            .scale(dotScale)
-                            .background(statusColor, CircleShape)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text  = state.name.replace('_', ' '),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = statusColor,
-                    )
-                }
-            }
+        ) {
+            StatusChip(
+                text = vpnState.name.lowercase().replace('_', ' '),
+                color = stateColor(vpnState),
+            )
         }
+
+        ActiveProfilePanel(
+            name = ui.activeProfile?.name,
+            endpoint = ui.activeProfile?.let { "${it.address}:${it.port}" },
+            latency = ui.activeProfile?.latencyMs ?: -1L,
+            onPing = { ui.activeProfile?.let(vm::pingProfile) },
+        )
+
+        ConnectionConsole(
+            state = vpnState,
+            onToggle = { vm.toggleVpn(permLauncher) },
+        )
 
         AnimatedVisibility(
             visible = vpnState == VpnState.ERROR,
-            enter = fadeIn(tween(200)) + expandVertically(),
-            exit = fadeOut(tween(150)) + shrinkVertically(),
+            enter = fadeIn(tween(180)) + expandVertically(),
+            exit = fadeOut(tween(120)) + shrinkVertically(),
         ) {
-            ErrorCard(
+            ErrorPanel(
                 message = ui.lastError ?: "Connection failed",
                 onRetry = { vm.toggleVpn(permLauncher) },
             )
         }
 
-        // ── Traffic stats ─────────────────────────────────────────────────────
         AnimatedVisibility(
             visible = isConnected,
-            enter   = expandVertically(spring(Spring.DampingRatioLowBouncy, Spring.StiffnessMediumLow)) +
-                      fadeIn(tween(300)),
-            exit    = shrinkVertically(tween(250)) + fadeOut(tween(200)),
+            enter = fadeIn(tween(220)) + expandVertically(spring(Spring.DampingRatioNoBouncy)),
+            exit = fadeOut(tween(140)) + shrinkVertically(tween(180)),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ConnectionHealthCard(
-                    profileName = ui.activeProfile?.name ?: "",
-                    connectedFor = formatDuration((now - ui.connectedSince).coerceAtLeast(0L)),
-                    total = ui.bytesIn + ui.bytesOut,
-                )
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    TrafficCard(Modifier.weight(1f), "↓  Download", ui.bytesIn)
-                    TrafficCard(Modifier.weight(1f), "↑  Upload",   ui.bytesOut)
-                }
-            }
-        }
-
-        // ── Quick ping ────────────────────────────────────────────────────────
-        AnimatedVisibility(
-            visible = ui.activeProfile != null,
-            enter   = fadeIn(tween(250)) + expandVertically(spring(Spring.DampingRatioMediumBouncy)),
-            exit    = fadeOut(tween(180)) + shrinkVertically(tween(200)),
-        ) {
-            ui.activeProfile?.let { profile ->
-                OutlinedButton(
-                    onClick  = { vm.pingProfile(profile) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape    = MaterialTheme.shapes.medium,
-                ) {
-                    Icon(Icons.Rounded.NetworkCheck, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Ping  ${profile.name}", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    AnimatedVisibility(
-                        visible = profile.latencyMs >= 0,
-                        enter   = fadeIn() + scaleIn(EaseOutBack.toAnimationSpec(300)),
-                        exit    = fadeOut() + scaleOut(),
-                    ) {
-                        Row {
-                            Spacer(Modifier.width(8.dp))
-                            Surface(
-                                color = latencyColor(profile.latencyMs).copy(alpha = 0.15f),
-                                shape = CircleShape,
-                            ) {
-                                Text(
-                                    "${profile.latencyMs}ms",
-                                    modifier   = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                    style      = MaterialTheme.typography.labelMedium,
-                                    color      = latencyColor(profile.latencyMs),
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
+                MinimalCard {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.VerifiedUser, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                ui.activeProfile?.name ?: "Active profile",
+                                style = MaterialTheme.typography.titleSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "Connected for ${formatDuration((now - ui.connectedSince).coerceAtLeast(0L))}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
+                        StatusChip(
+                            text = formatBytes(ui.bytesIn + ui.bytesOut),
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
                     }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-private fun HomeProfilePill(profileName: String?, endpoint: String?) {
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-    ) {
-        Row(
-            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                if (profileName == null) Icons.Rounded.ReportProblem else Icons.Rounded.Dns,
-                null,
-                Modifier.size(18.dp),
-                tint = if (profileName == null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.width(8.dp))
-            Column(Modifier.widthIn(max = 240.dp)) {
-                Text(
-                    profileName ?: "No profile selected",
-                    style = MaterialTheme.typography.labelLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (endpoint != null) {
-                    Text(
-                        endpoint,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    MetricTile(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Rounded.ArrowDownward,
+                        label = "Download",
+                        value = formatBytes(ui.bytesIn),
+                    )
+                    MetricTile(
+                        modifier = Modifier.weight(1f),
+                        icon = Icons.Rounded.ArrowUpward,
+                        label = "Upload",
+                        value = formatBytes(ui.bytesOut),
                     )
                 }
             }
@@ -425,121 +192,241 @@ private fun HomeProfilePill(profileName: String?, endpoint: String?) {
 }
 
 @Composable
-private fun ErrorCard(message: String, onRetry: () -> Unit) {
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-        ),
-        shape = MaterialTheme.shapes.large,
-    ) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+private fun ActiveProfilePanel(
+    name: String?,
+    endpoint: String?,
+    latency: Long,
+    onPing: () -> Unit,
+) {
+    MinimalCard(accent = name != null) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                color = if (name == null) MaterialTheme.colorScheme.tertiaryContainer
+                    else MaterialTheme.colorScheme.surface,
+                shape = CircleShape,
+            ) {
                 Icon(
-                    Icons.Rounded.ErrorOutline,
+                    if (name == null) Icons.Rounded.ReportProblem else Icons.Rounded.Dns,
                     null,
-                    Modifier.size(22.dp),
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "Connection Error",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    Modifier.padding(10.dp).size(20.dp),
+                    tint = if (name == null) MaterialTheme.colorScheme.tertiary
+                        else MaterialTheme.colorScheme.primary,
                 )
             }
-            Spacer(Modifier.height(6.dp))
-            Text(
-                message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer,
-            )
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onRetry) {
-                    Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Retry")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ConnectionHealthCard(profileName: String, connectedFor: String, total: Long) {
-    ElevatedCard(Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large) {
-        Row(
-            Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                Icons.Rounded.VerifiedUser,
-                null,
-                Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    profileName,
-                    style = MaterialTheme.typography.titleSmall,
+                    name ?: "No profile selected",
+                    style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "Connected $connectedFor • ${formatBytes(total)} total",
+                    endpoint ?: "Import or select a profile first",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun TrafficCard(modifier: Modifier, label: String, bytes: Long) {
-    ElevatedCard(modifier = modifier, shape = MaterialTheme.shapes.large) {
-        Column(
-            Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            )
-            Spacer(Modifier.height(6.dp))
-            AnimatedContent(
-                targetState  = formatBytes(bytes),
-                transitionSpec = {
-                    fadeIn(tween(100)) + slideInVertically(tween(150)) { -it / 2 } togetherWith
-                        fadeOut(tween(80)) + slideOutVertically(tween(100)) { it / 2 }
-                },
-                label = "traffic_$label",
-            ) { value ->
-                Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            AnimatedVisibility(visible = name != null) {
+                OutlinedButton(
+                    onClick = onPing,
+                    shape = CircleShape,
+                    contentPadding = compactButtonPadding(),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                ) {
+                    Icon(Icons.Rounded.NetworkCheck, null, Modifier.size(16.dp))
+                    if (latency >= 0) {
+                        Spacer(Modifier.width(6.dp))
+                        Text("${latency}ms", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun latencyColor(ms: Long): Color = when {
-    ms < 150 -> MaterialTheme.colorScheme.primary
-    ms < 400 -> Color(0xFFFFC107)
-    else     -> MaterialTheme.colorScheme.error
+private fun ConnectionConsole(
+    state: VpnState,
+    onToggle: () -> Unit,
+) {
+    val isConnected = state == VpnState.CONNECTED
+    val isTransition = state == VpnState.CONNECTING || state == VpnState.DISCONNECTING
+    val rotation = if (isTransition) {
+        val transition = rememberInfiniteTransition(label = "connection_rotation")
+        val value by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(2400, easing = LinearEasing)),
+            label = "ring_rotation",
+        )
+        value
+    } else {
+        0f
+    }
+    val breathe = if (isTransition) {
+        val transition = rememberInfiniteTransition(label = "connection_breathe")
+        val value by transition.animateFloat(
+            initialValue = 0.96f,
+            targetValue = 1.04f,
+            animationSpec = infiniteRepeatable(tween(1100, easing = EaseInOut), RepeatMode.Reverse),
+            label = "button_breathe",
+        )
+        value
+    } else {
+        1f
+    }
+    val buttonScale by animateFloatAsState(
+        targetValue = if (isTransition) breathe else if (isConnected) 1.02f else 1f,
+        animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMediumLow),
+        label = "connection_button_scale",
+    )
+    val color = stateColor(state)
+
+    MinimalCard {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(1.12f),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize(0.78f)
+                    .graphicsLayer {
+                        alpha = if (isTransition || isConnected) 1f else 0.35f
+                        rotationZ = if (isTransition) rotation else 0f
+                    }
+                    .background(
+                        Brush.sweepGradient(
+                            listOf(Color.Transparent, color.copy(alpha = 0.65f), Color.Transparent),
+                        ),
+                        CircleShape,
+                    ),
+            )
+            Surface(
+                color = MaterialTheme.colorScheme.background,
+                shape = CircleShape,
+                modifier = Modifier.fillMaxSize(0.68f),
+            ) {}
+            Button(
+                onClick = onToggle,
+                modifier = Modifier
+                    .fillMaxSize(0.52f)
+                    .scale(buttonScale),
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isConnected || isTransition) color
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (isConnected || isTransition) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurface,
+                ),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = if (isConnected) 8.dp else 2.dp),
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    AnimatedContent(
+                        targetState = state,
+                        transitionSpec = {
+                            scaleIn(tween(160, easing = EaseOut)) + fadeIn(tween(120)) togetherWith
+                                scaleOut(tween(90)) + fadeOut(tween(80))
+                        },
+                        label = "connection_icon",
+                    ) { current ->
+                        Icon(
+                            when (current) {
+                                VpnState.CONNECTED -> Icons.Rounded.Lock
+                                VpnState.CONNECTING, VpnState.DISCONNECTING -> Icons.Rounded.PowerSettingsNew
+                                else -> Icons.Rounded.LockOpen
+                            },
+                            null,
+                            Modifier.size(34.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    AnimatedContent(
+                        targetState = state,
+                        transitionSpec = {
+                            fadeIn(tween(120)) + slideInVertically(tween(160)) { it / 3 } togetherWith
+                                fadeOut(tween(80)) + slideOutVertically(tween(100)) { -it / 3 }
+                        },
+                        label = "connection_label",
+                    ) { current ->
+                        Text(
+                            when (current) {
+                                VpnState.CONNECTED -> "Disconnect"
+                                VpnState.CONNECTING -> "Connecting"
+                                VpnState.DISCONNECTING -> "Stopping"
+                                else -> "Connect"
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
-private fun formatBytes(b: Long): String {
+@Composable
+private fun ErrorPanel(message: String, onRetry: () -> Unit) {
+    MinimalCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.ErrorOutline, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Connection error", style = MaterialTheme.typography.titleSmall)
+                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            OutlinedButton(onClick = onRetry, contentPadding = compactButtonPadding()) {
+                Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Retry")
+            }
+        }
+    }
+}
+
+@Composable
+private fun MetricTile(
+    modifier: Modifier,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+) {
+    MinimalCard(modifier = modifier) {
+        Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.height(10.dp))
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AnimatedContent(
+            targetState = value,
+            transitionSpec = {
+                fadeIn(tween(110)) + slideInVertically(tween(140)) { -it / 2 } togetherWith
+                    fadeOut(tween(80)) + slideOutVertically(tween(100)) { it / 2 }
+            },
+            label = "metric_$label",
+        ) { nextValue ->
+            Text(nextValue, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun stateColor(state: VpnState): Color = when (state) {
+    VpnState.CONNECTED -> MaterialTheme.colorScheme.primary
+    VpnState.CONNECTING, VpnState.DISCONNECTING -> MaterialTheme.colorScheme.tertiary
+    VpnState.ERROR -> MaterialTheme.colorScheme.error
+    else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+private fun formatBytes(bytes: Long): String {
     val df = DecimalFormat("#.##")
     return when {
-        b >= 1_073_741_824 -> "${df.format(b / 1_073_741_824.0)} GB"
-        b >= 1_048_576     -> "${df.format(b / 1_048_576.0)} MB"
-        b >= 1_024         -> "${df.format(b / 1_024.0)} KB"
-        else               -> "$b B"
+        bytes >= 1_073_741_824 -> "${df.format(bytes / 1_073_741_824.0)} GB"
+        bytes >= 1_048_576 -> "${df.format(bytes / 1_048_576.0)} MB"
+        bytes >= 1_024 -> "${df.format(bytes / 1_024.0)} KB"
+        else -> "$bytes B"
     }
 }
 
@@ -550,6 +437,3 @@ private fun formatDuration(ms: Long): String {
     val s = seconds % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
-
-private fun CubicBezierEasing.toAnimationSpec(durationMs: Int) =
-    tween<Float>(durationMs, easing = this)

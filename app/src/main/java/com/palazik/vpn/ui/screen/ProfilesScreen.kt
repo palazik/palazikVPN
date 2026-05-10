@@ -22,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -117,31 +118,11 @@ fun ProfilesScreen(vm: MainViewModel) {
         previewImport(text)
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-
-        // ── Top bar ──────────────────────────────────────────────────────────
-        Column(
-            Modifier.fillMaxWidth(),
+    ScreenColumn {
+        PageHeader(
+            title = "Profiles",
+            subtitle = if (ui.profiles.isEmpty()) "No profiles loaded" else "${ui.profiles.size} profiles ready",
         ) {
-            Text("Profiles", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            AnimatedVisibility(visible = ui.profiles.isNotEmpty()) {
-                Text(
-                    "${ui.profiles.size} profiles",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
                 AnimatedVisibility(visible = ui.profiles.isNotEmpty()) {
                     IconButton(onClick = { vm.pingAll() }) {
                         Icon(Icons.Rounded.NetworkCheck, "Ping all")
@@ -187,9 +168,6 @@ fun ProfilesScreen(vm: MainViewModel) {
                     )
                 }
             }
-        }
-
-        Spacer(Modifier.height(12.dp))
 
         AnimatedContent(
             targetState = ui.profiles.isEmpty(),
@@ -197,35 +175,18 @@ fun ProfilesScreen(vm: MainViewModel) {
             label = "profiles_content",
         ) { isEmpty ->
             if (isEmpty) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Rounded.VpnKey, null,
-                            Modifier.size(72.dp),
-                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            "No profiles yet",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Import via link or add manually",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline,
-                        )
-                        Spacer(Modifier.height(24.dp))
-                        FilledTonalButton(onClick = { importMenuExpanded = true }) {
-                            Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Import Profile", color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        }
+                EmptyState(
+                    icon = Icons.Rounded.VpnKey,
+                    title = "No profiles yet",
+                    body = "Import a link, scan QR, or add a server manually.",
+                ) {
+                    FilledTonalButton(onClick = { importMenuExpanded = true }) {
+                        Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Import Profile")
                     }
                 }
             } else {
-                // Bug fix #6: group profiles by subscription with collapsible sections
                 GroupedProfilesList(
                     profiles      = ui.profiles,
                     subscriptions = ui.subscriptions,
@@ -253,7 +214,7 @@ fun ProfilesScreen(vm: MainViewModel) {
                     value         = importText,
                     onValueChange = { importText = it },
                     label         = { Text("Share link") },
-                    placeholder   = { Text("vmess://, vless://, ss://…", style = MaterialTheme.typography.bodySmall) },
+                    placeholder   = { Text("vmess://, vless://, ss://...", style = MaterialTheme.typography.bodySmall) },
                     modifier      = Modifier.fillMaxWidth(),
                     minLines      = 3,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -488,6 +449,13 @@ private fun PreviewRow(label: String, value: String) {
     }
 }
 
+@Composable
+private fun latencyColor(ms: Long): Color = when {
+    ms < 150 -> MaterialTheme.colorScheme.primary
+    ms < 400 -> MaterialTheme.colorScheme.tertiary
+    else -> MaterialTheme.colorScheme.error
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Grouped profiles list (collapsible per subscription + manual group)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -521,8 +489,7 @@ private fun GroupedProfilesList(
         subscriptions.map { sub -> sub to profiles.filter { it.subscriptionId == sub.id } }
     }
 
-    // Build a flat list of items — this is the ONLY correct way to have dynamic
-    // groups in LazyColumn without DuplicateKeyException during state transitions
+    // Build a flat list of items so dynamic groups do not duplicate LazyColumn keys.
     val flatItems = remember(manualProfiles, subGroups, expandedGroups.toMap()) {
         buildList {
             if (manualProfiles.isNotEmpty()) {
@@ -599,8 +566,8 @@ private fun GroupHeader(
         label         = "arrow_$title",
     )
     val containerColor by animateColorAsState(
-        targetValue = if (expanded) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        targetValue = if (expanded) MaterialTheme.colorScheme.surface
+            else MaterialTheme.colorScheme.surfaceVariant,
         animationSpec = tween(220),
         label = "group_header_bg_$title",
     )
@@ -631,7 +598,7 @@ private fun GroupHeader(
                 modifier   = Modifier.weight(1f),
             )
             Surface(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                color = MaterialTheme.colorScheme.primaryContainer,
                 shape = CircleShape,
             ) {
                 AnimatedContent(
@@ -679,145 +646,109 @@ private fun ProfileCard(
 ) {
     var actionsExpanded by remember { mutableStateOf(false) }
     val containerColor by animateColorAsState(
-        targetValue   = if (isActive) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceVariant,
-        animationSpec = tween(350),
-        label         = "card_bg",
-    )
-    val elevation by animateDpAsState(
-        targetValue   = if (isActive) 6.dp else 1.dp,
-        animationSpec = tween(300),
-        label         = "card_elev",
+        targetValue = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        animationSpec = tween(240),
+        label = "profile_card_bg",
     )
     val cardScale by animateFloatAsState(
-        targetValue = if (isActive) 1.01f else 1f,
-        animationSpec = tween(260),
-        label = "card_scale",
+        targetValue = if (isActive) 1.006f else 1f,
+        animationSpec = tween(180),
+        label = "profile_card_scale",
     )
 
     ElevatedCard(
-        onClick  = onSelect,
-        colors   = CardDefaults.elevatedCardColors(containerColor = containerColor),
+        onClick = onSelect,
+        colors = CardDefaults.elevatedCardColors(containerColor = containerColor),
         modifier = Modifier
             .fillMaxWidth()
             .scale(cardScale)
             .animateContentSize(tween(240)),
-        shape    = MaterialTheme.shapes.large,
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = elevation),
+        shape = MaterialTheme.shapes.large,
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = if (isActive) 3.dp else 1.dp),
     ) {
         Column(Modifier.padding(14.dp)) {
-            // ── Badge row ──────────────────────────────────────────────────────
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Badge(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)) {
-                    Text(
-                        profile.protocol.name,
-                        color      = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold,
-                        style      = MaterialTheme.typography.labelSmall,
-                        modifier   = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            Row(verticalAlignment = Alignment.Top) {
+                Surface(
+                    color = if (isActive) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = CircleShape,
+                ) {
+                    Icon(
+                        Icons.Rounded.Dns,
+                        null,
+                        Modifier.padding(9.dp).size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary,
                     )
                 }
-                AnimatedVisibility(visible = profile.transport != Transport.TCP) {
-                    Badge(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)) {
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            profile.transport.name,
-                            color  = MaterialTheme.colorScheme.secondary,
-                            style  = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            profile.name,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
                         )
-                    }
-                }
-                AnimatedVisibility(visible = isActive) {
-                    Badge(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)) {
-                        Text(
-                            "ACTIVE",
-                            color      = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold,
-                            style      = MaterialTheme.typography.labelSmall,
-                            modifier   = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
-                    }
-                }
-                // Latency chip — animates in/out
-                AnimatedVisibility(
-                    visible = profile.latencyMs >= 0,
-                    enter   = fadeIn() + scaleIn(),
-                    exit    = fadeOut() + scaleOut(),
-                ) {
-                    val latColor = when {
-                        profile.latencyMs < 150 -> MaterialTheme.colorScheme.primary
-                        profile.latencyMs < 400 -> MaterialTheme.colorScheme.secondary
-                        else                    -> MaterialTheme.colorScheme.error
-                    }
-                    Surface(
-                        color = latColor.copy(alpha = 0.15f),
-                        shape = CircleShape,
-                    ) {
-                        AnimatedContent(
-                            targetState = profile.latencyMs,
-                            transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(90)) },
-                            label = "latency_${profile.id}",
-                        ) { latency ->
-                            Text(
-                                "${latency}ms",
-                                modifier   = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                style      = MaterialTheme.typography.labelSmall,
-                                color      = latColor,
-                                fontWeight = FontWeight.SemiBold,
-                            )
+                        AnimatedVisibility(visible = isActive) {
+                            StatusChip("Active", MaterialTheme.colorScheme.primary)
                         }
                     }
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-            Text(
-                profile.name,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Medium,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                "${profile.address}:${profile.port}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            // Subscription source
-            AnimatedVisibility(visible = subName != null) {
-                Column {
-                    Spacer(Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Subscriptions, null, Modifier.size(12.dp),
-                            tint = MaterialTheme.colorScheme.tertiary)
-                        Spacer(Modifier.width(4.dp))
+                    Text(
+                        "${profile.address}:${profile.port}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    AnimatedVisibility(visible = subName != null) {
                         Text(
-                            subName ?: "",
+                            subName.orEmpty(),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.tertiary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), thickness = 0.5.dp)
-            Spacer(Modifier.height(2.dp))
+            Spacer(Modifier.height(12.dp))
 
-            // ── Action row ─────────────────────────────────────────────────────
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                StatusChip(profile.protocol.name, MaterialTheme.colorScheme.primary)
+                if (profile.transport != Transport.TCP) {
+                    StatusChip(profile.transport.name, MaterialTheme.colorScheme.secondary)
+                }
+                AnimatedVisibility(
+                    visible = profile.latencyMs >= 0,
+                    enter = fadeIn() + scaleIn(),
+                    exit = fadeOut() + scaleOut(),
+                ) {
+                    val color = latencyColor(profile.latencyMs)
+                    AnimatedContent(
+                        targetState = profile.latencyMs,
+                        transitionSpec = { fadeIn(tween(140)) togetherWith fadeOut(tween(90)) },
+                        label = "latency_${profile.id}",
+                    ) {
+                        StatusChip("${it}ms", color)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onPing, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                TextButton(onClick = onPing, contentPadding = compactButtonPadding()) {
                     Icon(Icons.Rounded.NetworkCheck, null, Modifier.size(15.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Ping", style = MaterialTheme.typography.labelMedium)

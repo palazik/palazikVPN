@@ -36,19 +36,17 @@ fun SettingsScreen(vm: MainViewModel) {
     val clipboard = LocalClipboardManager.current
     var showAppPicker by remember { mutableStateOf(false) }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
+    ScreenColumn(
+        modifier = Modifier
             .navigationBarsPadding()
             .imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-            .padding(bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(8.dp))
+        PageHeader(
+            title = "Settings",
+            subtitle = "Connection, appearance, and diagnostics",
+        )
 
         // ── Appearance ────────────────────────────────────────────────────────
         SettingsSection(title = "Appearance") {
@@ -90,8 +88,6 @@ fun SettingsScreen(vm: MainViewModel) {
             }
         }
 
-        Spacer(Modifier.height(8.dp))
-
         // ── Connection ────────────────────────────────────────────────────────
         SettingsSection(title = "Connection") {
             Text(
@@ -100,8 +96,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 modifier = Modifier.padding(bottom = 4.dp),
             )
             Text(
-                "TCP — raw socket connect (fastest, most accurate, default).\n" +
-                "GET / HEAD — Cloudflare request through the running VPN.",
+                "TCP for direct checks. GET and HEAD use the running VPN.",
                 style    = MaterialTheme.typography.bodySmall,
                 color    = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 12.dp),
@@ -123,8 +118,6 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
             }
         }
-
-        Spacer(Modifier.height(8.dp))
 
         SettingsSection(title = "DNS") {
             var tunDns by remember(ui.settings.dnsServers) {
@@ -174,8 +167,6 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
             }
         }
-
-        Spacer(Modifier.height(8.dp))
 
         SettingsSection(title = "Split Tunneling") {
             Text(
@@ -236,8 +227,6 @@ fun SettingsScreen(vm: MainViewModel) {
                 }
             }
         }
-
-        Spacer(Modifier.height(8.dp))
 
         SettingsSection(title = "Startup") {
             Row(
@@ -314,8 +303,6 @@ fun SettingsScreen(vm: MainViewModel) {
             }
         }
 
-        Spacer(Modifier.height(8.dp))
-
         SettingsSection(title = "Diagnostics") {
             if (ui.diagnostics.isEmpty()) {
                 Text(
@@ -347,13 +334,11 @@ fun SettingsScreen(vm: MainViewModel) {
             }
         }
 
-        Spacer(Modifier.height(8.dp))
-
         // ── About ─────────────────────────────────────────────────────────────
         SettingsSection(title = "About") {
             ListItem(
                 headlineContent   = { Text("palazikVPN") },
-                supportingContent = { Text("V${stringResource(R.string.app_version)} • by palaziks") },
+                supportingContent = { Text("V${stringResource(R.string.app_version)} / by palaziks") },
                 leadingContent    = { Icon(Icons.Rounded.Info, null) },
             )
         }
@@ -455,37 +440,49 @@ private fun AppPickerDialog(
 
 @Composable
 private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                title,
-                style    = MaterialTheme.typography.labelLarge,
-                color    = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 12.dp),
-            )
-            content()
-        }
+    MinimalCard {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
+        content()
     }
 }
 
 @Composable
 private fun ThemeRow(theme: AppTheme, isSelected: Boolean, onClick: () -> Unit) {
     val label = when (theme) {
-        AppTheme.CYBER   -> "⚡ Cyber (Dark-first)"
-        AppTheme.OCEAN   -> "🌊 Ocean"
-        AppTheme.FOREST  -> "🌿 Forest"
-        AppTheme.SUNSET  -> "🔥 Sunset"
-        AppTheme.DYNAMIC -> "🎨 Dynamic (Android 12+)"
+        AppTheme.CYBER   -> "Signal"
+        AppTheme.OCEAN   -> "Ocean"
+        AppTheme.FOREST  -> "Forest"
+        AppTheme.SUNSET  -> "Sunset"
+        AppTheme.DYNAMIC -> "Dynamic"
     }
     Row(
         Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
+            .padding(vertical = 6.dp),
         verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Surface(
+                color = when (theme) {
+                    AppTheme.CYBER -> MaterialTheme.colorScheme.primaryContainer
+                    AppTheme.OCEAN -> com.palazik.vpn.ui.theme.OceanSoft
+                    AppTheme.FOREST -> com.palazik.vpn.ui.theme.ForestSoft
+                    AppTheme.SUNSET -> com.palazik.vpn.ui.theme.SunsetSoft
+                    AppTheme.DYNAMIC -> MaterialTheme.colorScheme.surfaceVariant
+                },
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.size(28.dp),
+            ) {}
+            Spacer(Modifier.width(10.dp))
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+        }
         RadioButton(selected = isSelected, onClick = onClick)
     }
 }

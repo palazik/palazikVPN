@@ -30,49 +30,28 @@ fun SubscriptionsScreen(vm: MainViewModel) {
     var subUrl  by remember { mutableStateOf("") }
     var deleteSub by remember { mutableStateOf<Subscription?>(null) }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-    ) {
-
-        Column(
-            Modifier.fillMaxWidth(),
+    ScreenColumn {
+        PageHeader(
+            title = "Subscriptions",
+            subtitle = if (ui.subscriptions.isEmpty()) "No subscription sources" else "${ui.subscriptions.size} active sources",
         ) {
-            Text("Subscriptions", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            AnimatedVisibility(visible = ui.subscriptions.isNotEmpty()) {
-                Text(
-                    "${ui.subscriptions.size} active",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
                 AnimatedVisibility(visible = ui.subscriptions.isNotEmpty()) {
                     OutlinedButton(
                         onClick = { vm.updateAllSubscriptions() },
                         enabled = !ui.isUpdatingSubscriptions,
+                        contentPadding = compactButtonPadding(),
                     ) {
                         Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Update All")
+                        Text("Update")
                     }
                 }
-                FilledTonalButton(onClick = { showAdd = true }) {
+                FilledTonalButton(onClick = { showAdd = true }, contentPadding = compactButtonPadding()) {
                     Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Add", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    Text("Add")
                 }
-            }
         }
-
-        Spacer(Modifier.height(12.dp))
 
         AnimatedContent(
             targetState = ui.subscriptions.isEmpty(),
@@ -80,37 +59,21 @@ fun SubscriptionsScreen(vm: MainViewModel) {
             label = "subs_content",
         ) { isEmpty ->
             if (isEmpty) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Rounded.Subscriptions, null,
-                            Modifier.size(72.dp),
-                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            "No subscriptions yet",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "Add a subscription URL to import profiles automatically.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline,
-                        )
-                        Spacer(Modifier.height(24.dp))
-                        FilledTonalButton(onClick = { showAdd = true }) {
-                            Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Add Subscription", color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        }
+                EmptyState(
+                    icon = Icons.Rounded.Subscriptions,
+                    title = "No subscriptions yet",
+                    body = "Add a URL to sync profile lists automatically.",
+                ) {
+                    FilledTonalButton(onClick = { showAdd = true }) {
+                        Icon(Icons.Rounded.Add, null, Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Add Subscription")
                     }
                 }
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(ui.subscriptions, key = { it.id }) { sub ->
-                        // Fade only — no slide
+                        // Fade only, no slide.
                         AnimatedVisibility(
                             visible = true,
                             enter   = fadeIn(tween(200)),
@@ -152,7 +115,7 @@ fun SubscriptionsScreen(vm: MainViewModel) {
                         value         = subUrl,
                         onValueChange = { subUrl = it },
                         label         = { Text("Subscription URL") },
-                        placeholder   = { Text("https://…") },
+                        placeholder   = { Text("https://...") },
                         modifier      = Modifier.fillMaxWidth(),
                         singleLine    = true,
                     )
@@ -210,7 +173,7 @@ private fun SubscriptionCard(
 ) {
     val sdf = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
     val cardColor by animateColorAsState(
-        targetValue = if (isUpdating) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+        targetValue = if (isUpdating) MaterialTheme.colorScheme.secondaryContainer
             else MaterialTheme.colorScheme.surface,
         animationSpec = tween(220),
         label = "subscription_card_color_${sub.id}",
@@ -241,7 +204,7 @@ private fun SubscriptionCard(
         Column(Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Surface(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                    color = MaterialTheme.colorScheme.primaryContainer,
                     shape = CircleShape,
                 ) {
                     Icon(
@@ -270,62 +233,21 @@ private fun SubscriptionCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                    shape = CircleShape,
-                ) {
-                    AnimatedContent(
-                        targetState = sub.profileCount,
-                        transitionSpec = { fadeIn(tween(140)) + scaleIn() togetherWith fadeOut(tween(90)) + scaleOut() },
-                        label = "sub_profile_count_${sub.id}",
-                    ) { count ->
-                        Text(
-                            "$count profiles",
-                            modifier   = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            style      = MaterialTheme.typography.labelSmall,
-                            color      = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Medium,
-                        )
-                    }
+                AnimatedContent(
+                    targetState = sub.profileCount,
+                    transitionSpec = { fadeIn(tween(140)) + scaleIn() togetherWith fadeOut(tween(90)) + scaleOut() },
+                    label = "sub_profile_count_${sub.id}",
+                ) { count ->
+                    StatusChip("$count profiles", MaterialTheme.colorScheme.primary)
                 }
                 if (sub.lastUpdated > 0) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = CircleShape,
-                    ) {
-                        Text(
-                            "Updated ${sdf.format(Date(sub.lastUpdated))}",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                            style    = MaterialTheme.typography.labelSmall,
-                            color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    StatusChip("Updated ${sdf.format(Date(sub.lastUpdated))}", MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Surface(
-                    color = if (autoUpdateEnabled) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.13f)
-                        else MaterialTheme.colorScheme.surfaceVariant,
-                    shape = CircleShape,
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Rounded.Schedule,
-                            null,
-                            Modifier.size(13.dp),
-                            tint = if (autoUpdateEnabled) MaterialTheme.colorScheme.tertiary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            if (autoUpdateEnabled) "Auto ${updateIntervalHours}h" else "Manual",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (autoUpdateEnabled) MaterialTheme.colorScheme.tertiary
-                                else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                StatusChip(
+                    if (autoUpdateEnabled) "Auto ${updateIntervalHours}h" else "Manual",
+                    if (autoUpdateEnabled) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    Icons.Rounded.Schedule,
+                )
             }
 
             Spacer(Modifier.height(8.dp))
