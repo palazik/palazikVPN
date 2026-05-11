@@ -71,6 +71,7 @@ img { display: block; max-width: 100%; }
   background: currentColor; opacity: 0;
   border-radius: inherit;
   transition: opacity 0.3s;
+  pointer-events: none;
 }
 .ripple:hover::after { opacity: 0.08; }
 .ripple:active::after { opacity: 0.12; }
@@ -143,8 +144,9 @@ img { display: block; max-width: 100%; }
 .nav-mobile-menu a:hover { background: var(--md-surface-variant); }
 .nav-mobile-menu .nav-cta { justify-content: center; }
 @media (max-width: 768px) {
-  .nav-links, .nav-cta { display: none; }
+  .nav-links, .nav-inner > .nav-cta { display: none; }
   .nav-hamburger { display: flex; align-items: center; }
+  .nav-mobile-menu .nav-cta { display: flex; }
   .nav-mobile-menu.open { display: flex; }
 }
 
