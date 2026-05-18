@@ -112,10 +112,12 @@ object XrayConfigBuilder {
 
         // v2rayNG: mux disabled for SS, Trojan, WireGuard, Hysteria2, TUIC, SOCKS5
         // Shadowsocks + mux is broken — xray-core does not support it
+        // REALITY/XTLS use xtls-rprx-vision flow which is incompatible with mux
         val useMux = profile.protocol !in listOf(
             Protocol.SHADOWSOCKS, Protocol.TROJAN,
             Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.TUIC, Protocol.SOCKS5, Protocol.HTTP
         ) && profile.transport !in listOf(Transport.XHTTP, Transport.QUIC)
+          && profile.security !in listOf(Security.REALITY, Security.XTLS)
         put("mux", JSONObject().apply {
             put("enabled", useMux)
             if (useMux) put("concurrency", 8)
