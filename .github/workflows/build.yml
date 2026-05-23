@@ -10,6 +10,10 @@ jobs:
   build:
     name: Build APK
     runs-on: ubuntu-latest
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
 
     steps:
       - name: Checkout
@@ -123,6 +127,7 @@ jobs:
 
       # ── Telegram ────────────────────────────────────────────────────────────
       - name: Send universal debug APK to Telegram
+        if: ${{ env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
         run: |
           SHORT_SHA="${{ github.sha }}"
           SHORT_SHA="${SHORT_SHA:0:7}"
@@ -150,12 +155,20 @@ jobs:
           APK size: ${APK_SIZE} → zipped: ${ZIP_SIZE}
           Run: [#${{ github.run_number }}](${RUN_URL})"
 
-          RESPONSE=$(curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendDocument" \
-            -F chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -F message_thread_id="${{ secrets.TELEGRAM_TOPIC_ID }}" \
-            -F document=@"${ZIP_PATH}" \
-            -F caption="${CAPTION}" \
-            -F parse_mode="Markdown")
+          CURL_ARGS=(
+            -s
+            -X POST
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument"
+            -F "chat_id=${TELEGRAM_CHAT_ID}"
+            -F "document=@${ZIP_PATH}"
+            -F "caption=${CAPTION}"
+            -F "parse_mode=Markdown"
+          )
+          if [ -n "${TELEGRAM_TOPIC_ID}" ]; then
+            CURL_ARGS+=(-F "message_thread_id=${TELEGRAM_TOPIC_ID}")
+          fi
+
+          RESPONSE=$(curl "${CURL_ARGS[@]}")
 
           if echo "$RESPONSE" | grep -q '"ok":true'; then
             echo "✓ Sent universal debug APK (zipped: ${ZIP_SIZE})"

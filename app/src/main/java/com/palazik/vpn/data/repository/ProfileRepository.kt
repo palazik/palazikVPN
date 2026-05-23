@@ -63,7 +63,7 @@ class ProfileRepository @Inject constructor(
     }
 
     fun removeProfile(id: String) {
-        _profiles.value = _profiles.value.filter { it.id != id }
+        _profiles.value = ensureActiveProfile(_profiles.value.filter { it.id != id })
         saveProfiles()
     }
 
@@ -88,7 +88,7 @@ class ProfileRepository @Inject constructor(
 
     fun removeSubscription(id: String) {
         // Atomically remove both the subscription and all its profiles, then persist both
-        val newProfiles = _profiles.value.filter { it.subscriptionId != id }
+        val newProfiles = ensureActiveProfile(_profiles.value.filter { it.subscriptionId != id })
         val newSubs     = _subscriptions.value.filter { it.id != id }
         _profiles.value      = newProfiles
         _subscriptions.value = newSubs
@@ -275,6 +275,11 @@ class ProfileRepository @Inject constructor(
             .putString("profiles_links", links.toString())
             .putString("profiles_meta",  meta.toString())
             .apply()
+    }
+
+    private fun ensureActiveProfile(profiles: List<VpnProfile>): List<VpnProfile> {
+        if (profiles.isEmpty() || profiles.any { it.isActive }) return profiles
+        return profiles.mapIndexed { index, profile -> profile.copy(isActive = index == 0) }
     }
 
     private fun saveSubscriptions() {

@@ -137,9 +137,11 @@ class palazikVpnService : VpnService() {
             addDiagnostic("Start ignored: VPN already starting/running")
             return
         }
-        val profile = activeProfile
-            ?: profileId?.let { loadProfileById(it) }
-            ?: loadActiveProfile()
+        val profile = if (profileId != null) {
+            loadProfileById(profileId) ?: activeProfile?.takeIf { it.id == profileId }
+        } else {
+            activeProfile ?: loadActiveProfile()
+        }
             ?: run {
             Log.e(TAG, "activeProfile is null")
             _lastError.value = "No active profile selected"
@@ -270,7 +272,6 @@ class palazikVpnService : VpnService() {
             .setMtu(1500)
             .addAddress("10.10.14.1", 30)   // v2rayNG default: OPTION_1
             .addRoute("0.0.0.0", 0)
-            .addRoute("::", 0)
             .addDisallowedApplication(packageName)
 
         settings.dnsServers.forEach { dns ->

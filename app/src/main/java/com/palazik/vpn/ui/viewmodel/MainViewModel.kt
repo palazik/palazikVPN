@@ -194,7 +194,10 @@ class MainViewModel @Inject constructor(
     fun removeProfile(id: String) {
         val profile = _ui.value.profiles.firstOrNull { it.id == id }
         deletedProfile = profile
-        if (profile?.id == palazikVpnService.activeProfile?.id) disconnect()
+        if (profile?.id == palazikVpnService.activeProfile?.id) {
+            disconnect()
+            palazikVpnService.activeProfile = null
+        }
         repo.removeProfile(id)
         snack("Profile deleted", "Undo")
     }
@@ -290,6 +293,7 @@ class MainViewModel @Inject constructor(
     fun removeSubscription(id: String) {
         if (_ui.value.profiles.any { it.subscriptionId == id && it.id == palazikVpnService.activeProfile?.id }) {
             disconnect()
+            palazikVpnService.activeProfile = null
         }
         repo.removeSubscription(id)
     }
