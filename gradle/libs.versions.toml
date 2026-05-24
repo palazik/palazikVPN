@@ -1,18 +1,19 @@
 [versions]
-agp                    = "8.5.2"
-kotlin                 = "2.0.21"
-ksp                    = "2.0.21-1.0.27"
-coreKtx                = "1.13.1"
-lifecycleRuntimeKtx    = "2.8.6"
-activityCompose        = "1.9.2"
-composeBom             = "2024.09.03"
-navigationCompose      = "2.8.2"
-hilt                   = "2.52"
+agp                    = "8.10.1"
+kotlin                 = "2.1.21"
+ksp                    = "2.1.21-2.0.1"
+coreKtx                = "1.16.0"
+lifecycleRuntimeKtx    = "2.9.0"
+activityCompose        = "1.10.1"
+composeBom             = "2025.05.00"
+navigationCompose      = "2.9.0"
+hilt                   = "2.56.2"
 hiltNavigationCompose  = "1.2.0"
-lifecycleViewmodelCompose = "2.8.6"
+lifecycleViewmodelCompose = "2.9.0"
 okhttp                 = "4.12.0"
 zxing                  = "3.5.3"
-workManager            = "2.9.1"
+workManager            = "2.10.1"
+miuix                  = "0.9.1"
 junit                  = "4.13.2"
 junitAndroid           = "1.2.1"
 espresso               = "3.6.1"
@@ -39,6 +40,7 @@ androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle",        name
 okhttp                             = { group = "com.squareup.okhttp3",      name = "okhttp",                        version.ref = "okhttp" }
 zxing-core                         = { group = "com.google.zxing",          name = "core",                          version.ref = "zxing" }
 androidx-work-runtime-ktx          = { group = "androidx.work",             name = "work-runtime-ktx",              version.ref = "workManager" }
+miuix-ui                           = { group = "top.yukonga.miuix.kmp",     name = "miuix-ui-android",              version.ref = "miuix" }
 junit                              = { group = "junit",                     name = "junit",                         version.ref = "junit" }
 androidx-junit                     = { group = "androidx.test.ext",         name = "junit",                         version.ref = "junitAndroid" }
 androidx-espresso-core             = { group = "androidx.test.espresso",    name = "espresso-core",                 version.ref = "espresso" }

@@ -1,5 +1,7 @@
 package com.palazik.vpn.data.model
 
+enum class DesignSystem { MIUIX, MD3 }
+
 data class AppSettings(
     val dnsServers: List<String> = listOf("8.8.8.8", "1.1.1.1"),
     val remoteDns: String = "https://1.1.1.1/dns-query",
@@ -8,4 +10,5 @@ data class AppSettings(
     val startOnBoot: Boolean = false,
     val autoUpdateSubscriptions: Boolean = true,
     val subscriptionUpdateIntervalHours: Long = 2L,
+    val designSystem: DesignSystem = DesignSystem.MIUIX,
 )

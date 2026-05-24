@@ -58,10 +58,13 @@ sealed class Screen(
     val label: String,
     val icon: ImageVector,
 ) {
-    object Home : Screen("home", "Home", Icons.Rounded.Home)
-    object Profiles : Screen("profiles", "Profiles", Icons.AutoMirrored.Rounded.List)
-    object Subscriptions : Screen("subs", "Subs", Icons.Rounded.Subscriptions)
-    object Settings : Screen("settings", "Settings", Icons.Rounded.Settings)
+    object Home          : Screen("home",     "Home",     Icons.Rounded.Home)
+    object Profiles      : Screen("profiles", "Profiles", Icons.AutoMirrored.Rounded.List)
+    object Subscriptions : Screen("subs",     "Subs",     Icons.Rounded.Subscriptions)
+    object Settings      : Screen("settings", "Settings", Icons.Rounded.Settings)
+
+    // Sub-screen — not a tab, no icon needed for the nav bar
+    object Style : Screen("style", "Style", Icons.Rounded.Settings)
 }
 
 @Composable
@@ -86,43 +89,49 @@ fun AppNavHost(
         }
     }
 
+    // Hide the bottom bar when on the Style sub-screen
+    val navBackStack by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStack?.destination?.route
+    val showBottomBar = currentRoute != Screen.Style.route
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackState) },
         bottomBar = {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface,
-                    shadowElevation = 8.dp,
-                    shape = CircleShape,
+            if (showBottomBar) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Row(
-                        Modifier.padding(5.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
+                    Surface(
+                        color = MaterialTheme.colorScheme.surface,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        shadowElevation = 8.dp,
+                        shape = CircleShape,
                     ) {
-                        val navBackStack by navController.currentBackStackEntryAsState()
-                        val currentDest = navBackStack?.destination
-                        tabs.forEach { screen ->
-                            val selected = currentDest?.hierarchy?.any { it.route == screen.route } == true
-                            NavPill(
-                                screen = screen,
-                                selected = selected,
-                                onClick = {
-                                    navController.navigate(screen.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
-                            )
+                        Row(
+                            Modifier.padding(5.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            val currentDest = navBackStack?.destination
+                            tabs.forEach { screen ->
+                                val selected = currentDest?.hierarchy?.any { it.route == screen.route } == true
+                                NavPill(
+                                    screen = screen,
+                                    selected = selected,
+                                    onClick = {
+                                        navController.navigate(screen.route) {
+                                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -150,10 +159,11 @@ fun AppNavHost(
                     slideOutHorizontally(tween(140)) { it / 14 }
             },
         ) {
-            composable(Screen.Home.route) { HomeScreen(vm, permLauncher) }
-            composable(Screen.Profiles.route) { ProfilesScreen(vm) }
+            composable(Screen.Home.route)          { HomeScreen(vm, permLauncher) }
+            composable(Screen.Profiles.route)      { ProfilesScreen(vm) }
             composable(Screen.Subscriptions.route) { SubscriptionsScreen(vm) }
-            composable(Screen.Settings.route) { SettingsScreen(vm) }
+            composable(Screen.Settings.route)      { SettingsScreen(vm, onOpenStyle = { navController.navigate(Screen.Style.route) }) }
+            composable(Screen.Style.route)         { StyleScreen(vm, onBack = { navController.popBackStack() }) }
         }
     }
 }

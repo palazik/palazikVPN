@@ -13,6 +13,7 @@ import com.palazik.vpn.data.repository.ProfileRepository
 import com.palazik.vpn.data.repository.SubscriptionUpdateScheduler
 import com.palazik.vpn.service.XrayConfigBuilder
 import com.palazik.vpn.service.palazikVpnService
+import com.palazik.vpn.data.model.DesignSystem
 import com.palazik.vpn.ui.theme.AppTheme
 import com.palazik.vpn.ui.theme.DarkModePreference
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +30,7 @@ data class UiState(
     val subscriptions: List<Subscription> = emptyList(),
     val appTheme: AppTheme                = AppTheme.CYBER,
     val darkMode: DarkModePreference      = DarkModePreference.SYSTEM,
+    val designSystem: DesignSystem        = DesignSystem.MIUIX,
     val pingMode: PingMode                = PingMode.TCP,
     val settings: AppSettings             = AppSettings(),
     val installedApps: List<InstalledApp>  = emptyList(),
@@ -44,9 +46,10 @@ data class UiState(
     val updatingSubscriptionIds: Set<String> = emptySet(),
 )
 
-private const val THEME_PREFS  = "palazik_theme"
-private const val KEY_THEME    = "app_theme"
-private const val KEY_DARKMODE = "dark_mode"
+private const val THEME_PREFS       = "palazik_theme"
+private const val KEY_THEME         = "app_theme"
+private const val KEY_DARKMODE      = "dark_mode"
+private const val KEY_DESIGN_SYSTEM = "design_system"
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
@@ -62,11 +65,13 @@ class MainViewModel @Inject constructor(
 
     init {
         // Restore persisted theme on startup
-        val savedTheme = themePrefs.getString(KEY_THEME,    AppTheme.CYBER.name)
-        val savedDark  = themePrefs.getString(KEY_DARKMODE, DarkModePreference.SYSTEM.name)
+        val savedTheme  = themePrefs.getString(KEY_THEME,         AppTheme.CYBER.name)
+        val savedDark   = themePrefs.getString(KEY_DARKMODE,      DarkModePreference.SYSTEM.name)
+        val savedDesign = themePrefs.getString(KEY_DESIGN_SYSTEM, DesignSystem.MIUIX.name)
         _ui.update { it.copy(
-            appTheme = runCatching { AppTheme.valueOf(savedTheme ?: "") }.getOrDefault(AppTheme.CYBER),
-            darkMode = runCatching { DarkModePreference.valueOf(savedDark ?: "") }.getOrDefault(DarkModePreference.SYSTEM),
+            appTheme     = runCatching { AppTheme.valueOf(savedTheme ?: "") }.getOrDefault(AppTheme.CYBER),
+            darkMode     = runCatching { DarkModePreference.valueOf(savedDark ?: "") }.getOrDefault(DarkModePreference.SYSTEM),
+            designSystem = runCatching { DesignSystem.valueOf(savedDesign ?: "") }.getOrDefault(DesignSystem.MIUIX),
         ) }
 
         // Mirror repo flows into UI
@@ -371,6 +376,11 @@ class MainViewModel @Inject constructor(
     fun setDarkMode(pref: DarkModePreference) {
         _ui.update { it.copy(darkMode = pref) }
         themePrefs.edit().putString(KEY_DARKMODE, pref.name).apply()
+    }
+
+    fun setDesignSystem(design: DesignSystem) {
+        _ui.update { it.copy(designSystem = design) }
+        themePrefs.edit().putString(KEY_DESIGN_SYSTEM, design.name).apply()
     }
 
     // ── Ping mode ─────────────────────────────────────────────────────────────

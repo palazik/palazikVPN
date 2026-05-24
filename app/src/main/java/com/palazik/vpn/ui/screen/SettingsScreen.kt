@@ -19,21 +19,18 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.palazik.vpn.R
+import com.palazik.vpn.data.model.DesignSystem
 import com.palazik.vpn.data.model.PingMode
-import com.palazik.vpn.ui.theme.AppTheme
-import com.palazik.vpn.ui.theme.DarkModePreference
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 
-private val DarkModeOptions = DarkModePreference.values().toList()
-private val AppThemeOptions = AppTheme.values().toList()
-private val PingModeOptions = PingMode.values().toList()
+private val PingModeOptions             = PingMode.values().toList()
 private val SubscriptionIntervalOptions = listOf(2L, 6L, 12L, 24L)
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(vm: MainViewModel) {
-    val ui by vm.ui.collectAsState()
-    val clipboard = LocalClipboardManager.current
+fun SettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
+    val ui        by vm.ui.collectAsState()
+    val clipboard  = LocalClipboardManager.current
     var showAppPicker by remember { mutableStateOf(false) }
 
     Column(
@@ -50,43 +47,61 @@ fun SettingsScreen(vm: MainViewModel) {
         Text("Settings", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
 
-        // ── Appearance ────────────────────────────────────────────────────────
-        SettingsSection(title = "Appearance") {
-            Text(
-                "Dark Mode",
-                style    = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                DarkModeOptions.forEachIndexed { idx, pref ->
-                    SegmentedButton(
-                        shape    = SegmentedButtonDefaults.itemShape(idx, DarkModeOptions.size),
-                        selected = ui.darkMode == pref,
-                        onClick  = { vm.setDarkMode(pref) },
-                        label    = {
-                            Text(when (pref) {
-                                DarkModePreference.SYSTEM       -> "System"
-                                DarkModePreference.ALWAYS_LIGHT -> "Light"
-                                DarkModePreference.ALWAYS_DARK  -> "Dark"
-                            })
-                        },
+        // ── Style button ──────────────────────────────────────────────────────
+        ElevatedCard(
+            onClick = onOpenStyle,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.Palette,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
                     )
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            Text(
-                "Color Theme",
-                style    = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(bottom = 8.dp),
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                AppThemeOptions.forEach { theme ->
-                    ThemeRow(theme, isSelected = ui.appTheme == theme) {
-                        vm.setAppTheme(theme)
+                    Column {
+                        Text("Style", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Design system, dark mode, color theme",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            when (ui.designSystem) {
+                                DesignSystem.MIUIX -> "Miuix"
+                                DesignSystem.MD3   -> "MD3"
+                            } + " · " + when (ui.darkMode.name) {
+                                "SYSTEM"       -> "System dark"
+                                "ALWAYS_DARK"  -> "Dark"
+                                "ALWAYS_LIGHT" -> "Light"
+                                else           -> ""
+                            } + " · " + when (ui.appTheme.name) {
+                                "CYBER"   -> "⚡ Cyber"
+                                "OCEAN"   -> "🌊 Ocean"
+                                "FOREST"  -> "🌿 Forest"
+                                "SUNSET"  -> "🔥 Sunset"
+                                "DYNAMIC" -> "🎨 Dynamic"
+                                else      -> ""
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                     }
                 }
+                Icon(
+                    Icons.Rounded.ChevronRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -127,35 +142,33 @@ fun SettingsScreen(vm: MainViewModel) {
         Spacer(Modifier.height(8.dp))
 
         SettingsSection(title = "DNS") {
-            var tunDns by remember(ui.settings.dnsServers) {
-                mutableStateOf(ui.settings.dnsServers.joinToString(", "))
-            }
-            var remoteDns by remember(ui.settings.remoteDns) { mutableStateOf(ui.settings.remoteDns) }
-            var directDns by remember(ui.settings.directDns) { mutableStateOf(ui.settings.directDns) }
+            var tunDns    by remember(ui.settings.dnsServers) { mutableStateOf(ui.settings.dnsServers.joinToString(", ")) }
+            var remoteDns by remember(ui.settings.remoteDns)  { mutableStateOf(ui.settings.remoteDns) }
+            var directDns by remember(ui.settings.directDns)  { mutableStateOf(ui.settings.directDns) }
 
             OutlinedTextField(
-                value = tunDns,
-                onValueChange = { tunDns = it },
-                label = { Text("VPN DNS servers") },
+                value          = tunDns,
+                onValueChange  = { tunDns = it },
+                label          = { Text("VPN DNS servers") },
                 supportingText = { Text("Comma separated") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
+                modifier       = Modifier.fillMaxWidth(),
+                singleLine     = true,
             )
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
-                value = remoteDns,
+                value         = remoteDns,
                 onValueChange = { remoteDns = it },
-                label = { Text("Remote DNS") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
+                label         = { Text("Remote DNS") },
+                modifier      = Modifier.fillMaxWidth(),
+                singleLine    = true,
             )
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
-                value = directDns,
+                value         = directDns,
                 onValueChange = { directDns = it },
-                label = { Text("Direct DNS") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
+                label         = { Text("Direct DNS") },
+                modifier      = Modifier.fillMaxWidth(),
+                singleLine    = true,
             )
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -163,8 +176,8 @@ fun SettingsScreen(vm: MainViewModel) {
                     vm.updateAppSettings(
                         ui.settings.copy(
                             dnsServers = tunDns.split(",", "\n").map { it.trim() }.filter { it.isNotBlank() },
-                            remoteDns = remoteDns,
-                            directDns = directDns,
+                            remoteDns  = remoteDns,
+                            directDns  = directDns,
                         )
                     )
                 }) {
@@ -188,19 +201,11 @@ fun SettingsScreen(vm: MainViewModel) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     ui.settings.bypassPackages.take(4).forEach { pkg ->
                         AssistChip(
-                            onClick = {},
-                            label = {
-                                Text(pkg, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            },
+                            onClick      = {},
+                            label        = { Text(pkg, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             trailingIcon = {
                                 IconButton(
-                                    onClick = {
-                                        vm.updateAppSettings(
-                                            ui.settings.copy(
-                                                bypassPackages = ui.settings.bypassPackages - pkg,
-                                            )
-                                        )
-                                    },
+                                    onClick  = { vm.updateAppSettings(ui.settings.copy(bypassPackages = ui.settings.bypassPackages - pkg)) },
                                     modifier = Modifier.size(24.dp),
                                 ) {
                                     Icon(Icons.Rounded.Close, null, Modifier.size(16.dp))
@@ -221,7 +226,7 @@ fun SettingsScreen(vm: MainViewModel) {
             FlowRow(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement   = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedButton(onClick = { vm.updateAppSettings(ui.settings.copy(bypassPackages = emptyList())) }) {
                     Icon(Icons.Rounded.Clear, null, Modifier.size(16.dp))
@@ -242,7 +247,7 @@ fun SettingsScreen(vm: MainViewModel) {
         SettingsSection(title = "Startup") {
             Row(
                 Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(Modifier.weight(1f)) {
@@ -254,16 +259,14 @@ fun SettingsScreen(vm: MainViewModel) {
                     )
                 }
                 Switch(
-                    checked = ui.settings.startOnBoot,
-                    onCheckedChange = { enabled ->
-                        vm.updateAppSettings(ui.settings.copy(startOnBoot = enabled))
-                    },
+                    checked         = ui.settings.startOnBoot,
+                    onCheckedChange = { enabled -> vm.updateAppSettings(ui.settings.copy(startOnBoot = enabled)) },
                 )
             }
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
             Row(
                 Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(Modifier.weight(1f)) {
@@ -275,10 +278,8 @@ fun SettingsScreen(vm: MainViewModel) {
                     )
                 }
                 Switch(
-                    checked = ui.settings.autoUpdateSubscriptions,
-                    onCheckedChange = { enabled ->
-                        vm.updateAppSettings(ui.settings.copy(autoUpdateSubscriptions = enabled))
-                    },
+                    checked         = ui.settings.autoUpdateSubscriptions,
+                    onCheckedChange = { enabled -> vm.updateAppSettings(ui.settings.copy(autoUpdateSubscriptions = enabled)) },
                 )
             }
             AnimatedVisibility(visible = ui.settings.autoUpdateSubscriptions) {
@@ -286,27 +287,21 @@ fun SettingsScreen(vm: MainViewModel) {
                     Spacer(Modifier.height(12.dp))
                     Text(
                         "Update interval",
-                        style = MaterialTheme.typography.titleSmall,
+                        style    = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.padding(bottom = 8.dp),
                     )
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement   = Arrangement.spacedBy(8.dp),
                     ) {
                         SubscriptionIntervalOptions.forEach { hours ->
                             FilterChip(
-                                selected = ui.settings.subscriptionUpdateIntervalHours == hours,
-                                onClick = {
-                                    vm.updateAppSettings(
-                                        ui.settings.copy(subscriptionUpdateIntervalHours = hours),
-                                    )
-                                },
-                                label = { Text("${hours}h") },
+                                selected    = ui.settings.subscriptionUpdateIntervalHours == hours,
+                                onClick     = { vm.updateAppSettings(ui.settings.copy(subscriptionUpdateIntervalHours = hours)) },
+                                label       = { Text("${hours}h") },
                                 leadingIcon = if (ui.settings.subscriptionUpdateIntervalHours == hours) {
                                     { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
-                                } else {
-                                    null
-                                },
+                                } else null,
                             )
                         }
                     }
@@ -326,11 +321,7 @@ fun SettingsScreen(vm: MainViewModel) {
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     ui.diagnostics.takeLast(6).forEach { line ->
-                        Text(
-                            line,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -349,7 +340,6 @@ fun SettingsScreen(vm: MainViewModel) {
 
         Spacer(Modifier.height(8.dp))
 
-        // ── About ─────────────────────────────────────────────────────────────
         SettingsSection(title = "About") {
             ListItem(
                 headlineContent   = { Text("palazikVPN") },
@@ -361,10 +351,10 @@ fun SettingsScreen(vm: MainViewModel) {
 
     if (showAppPicker) {
         AppPickerDialog(
-            apps = ui.installedApps,
-            selected = ui.settings.bypassPackages.toSet(),
+            apps      = ui.installedApps,
+            selected  = ui.settings.bypassPackages.toSet(),
             onDismiss = { showAppPicker = false },
-            onSave = { selected ->
+            onSave    = { selected ->
                 vm.updateAppSettings(ui.settings.copy(bypassPackages = selected.sorted()))
                 showAppPicker = false
             },
@@ -379,33 +369,30 @@ private fun AppPickerDialog(
     onDismiss: () -> Unit,
     onSave: (List<String>) -> Unit,
 ) {
-    var query by remember { mutableStateOf("") }
+    var query  by remember { mutableStateOf("") }
     var picked by remember(selected) { mutableStateOf(selected) }
     val filtered = remember(apps, query) {
         if (query.isBlank()) apps else apps.filter {
-            it.label.contains(query, ignoreCase = true) ||
-                it.packageName.contains(query, ignoreCase = true)
+            it.label.contains(query, ignoreCase = true) || it.packageName.contains(query, ignoreCase = true)
         }
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Bypass Apps") },
-        icon = { Icon(Icons.Rounded.Apps, null) },
-        text = {
+        title  = { Text("Bypass Apps") },
+        icon   = { Icon(Icons.Rounded.Apps, null) },
+        text   = {
             Column {
                 OutlinedTextField(
-                    value = query,
+                    value         = query,
                     onValueChange = { query = it },
-                    label = { Text("Search apps") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
+                    label         = { Text("Search apps") },
+                    modifier      = Modifier.fillMaxWidth(),
+                    singleLine    = true,
                 )
                 Spacer(Modifier.height(10.dp))
                 LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 360.dp),
+                    modifier            = Modifier.fillMaxWidth().heightIn(max = 360.dp),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     items(filtered, key = { it.packageName }) { app ->
@@ -413,17 +400,13 @@ private fun AppPickerDialog(
                             Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    picked = if (app.packageName in picked) {
-                                        picked - app.packageName
-                                    } else {
-                                        picked + app.packageName
-                                    }
+                                    picked = if (app.packageName in picked) picked - app.packageName else picked + app.packageName
                                 }
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Checkbox(
-                                checked = app.packageName in picked,
+                                checked         = app.packageName in picked,
                                 onCheckedChange = { checked ->
                                     picked = if (checked) picked + app.packageName else picked - app.packageName
                                 },
@@ -433,8 +416,8 @@ private fun AppPickerDialog(
                                 Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(
                                     app.packageName,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    style    = MaterialTheme.typography.bodySmall,
+                                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -444,12 +427,8 @@ private fun AppPickerDialog(
                 }
             }
         },
-        confirmButton = {
-            Button(onClick = { onSave(picked.toList()) }) { Text("Save") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
-        },
+        confirmButton = { Button(onClick = { onSave(picked.toList()) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
 
@@ -465,27 +444,5 @@ private fun SettingsSection(title: String, content: @Composable ColumnScope.() -
             )
             content()
         }
-    }
-}
-
-@Composable
-private fun ThemeRow(theme: AppTheme, isSelected: Boolean, onClick: () -> Unit) {
-    val label = when (theme) {
-        AppTheme.CYBER   -> "⚡ Cyber (Dark-first)"
-        AppTheme.OCEAN   -> "🌊 Ocean"
-        AppTheme.FOREST  -> "🌿 Forest"
-        AppTheme.SUNSET  -> "🔥 Sunset"
-        AppTheme.DYNAMIC -> "🎨 Dynamic (Android 12+)"
-    }
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 4.dp),
-        verticalAlignment     = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-        RadioButton(selected = isSelected, onClick = onClick)
     }
 }

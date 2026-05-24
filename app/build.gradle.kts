@@ -91,6 +91,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.zxing.core)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.miuix.ui)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

@@ -6,12 +6,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.ThemeController
+import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 
 enum class AppTheme { CYBER, OCEAN, FOREST, SUNSET, DYNAMIC }
 enum class DarkModePreference { SYSTEM, ALWAYS_DARK, ALWAYS_LIGHT }
 
-val LocalAppTheme = compositionLocalOf { AppTheme.CYBER }
-val LocalDarkMode = compositionLocalOf { DarkModePreference.SYSTEM }
+val LocalAppTheme   = compositionLocalOf { AppTheme.CYBER }
+val LocalDarkMode   = compositionLocalOf { DarkModePreference.SYSTEM }
+
+// ── MD3 color schemes ───────────────────────────────────────────────────────
 
 private fun cyberDarkScheme() = darkColorScheme(
     primary            = CyberPrimary,
@@ -82,10 +87,37 @@ private fun sunsetScheme(dark: Boolean) = if (dark) darkColorScheme(
     outline = SunsetOutline,
 )
 
+// ── Resolve MD3 ColorScheme from AppTheme ───────────────────────────────────
+
+@Composable
+fun resolveColorScheme(appTheme: AppTheme, isDark: Boolean): ColorScheme {
+    val context = LocalContext.current
+    return when (appTheme) {
+        AppTheme.DYNAMIC -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        } else if (isDark) cyberDarkScheme() else cyberLightScheme()
+        AppTheme.CYBER   -> if (isDark) cyberDarkScheme()  else cyberLightScheme()
+        AppTheme.OCEAN   -> oceanScheme(isDark)
+        AppTheme.FOREST  -> forestScheme(isDark)
+        AppTheme.SUNSET  -> sunsetScheme(isDark)
+    }
+}
+
+// ── Miuix color mode from DarkModePreference ────────────────────────────────
+
+fun darkPrefToMiuixMode(pref: DarkModePreference) = when (pref) {
+    DarkModePreference.SYSTEM       -> ColorSchemeMode.System
+    DarkModePreference.ALWAYS_DARK  -> ColorSchemeMode.Dark
+    DarkModePreference.ALWAYS_LIGHT -> ColorSchemeMode.Light
+}
+
+// ── Main theme wrapper ───────────────────────────────────────────────────────
+
 @Composable
 fun palazikVPNTheme(
     appTheme: AppTheme = AppTheme.CYBER,
     darkModePreference: DarkModePreference = DarkModePreference.SYSTEM,
+    useMiuix: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()
@@ -95,25 +127,32 @@ fun palazikVPNTheme(
         DarkModePreference.SYSTEM       -> systemDark
     }
 
-    val context = LocalContext.current
-    val colorScheme = when (appTheme) {
-        AppTheme.DYNAMIC -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (isDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        } else if (isDark) cyberDarkScheme() else cyberLightScheme()
-        AppTheme.CYBER   -> if (isDark) cyberDarkScheme()  else cyberLightScheme()
-        AppTheme.OCEAN   -> oceanScheme(isDark)
-        AppTheme.FOREST  -> forestScheme(isDark)
-        AppTheme.SUNSET  -> sunsetScheme(isDark)
-    }
-
     CompositionLocalProvider(
         LocalAppTheme provides appTheme,
         LocalDarkMode  provides darkModePreference,
     ) {
-        MaterialTheme(
-            colorScheme = colorScheme,
-            typography  = palazikTypography,
-            content     = content,
-        )
+        if (useMiuix) {
+            // Miuix theme wraps MD3 — we still supply the MD3 colour scheme
+            // so Material3 components in the app keep their custom palette.
+            val miuixController = remember(darkModePreference) {
+                ThemeController(darkPrefToMiuixMode(darkModePreference))
+            }
+            MiuixTheme(controller = miuixController) {
+                // Also provide MD3 theme underneath for widgets that use MaterialTheme
+                val colorScheme = resolveColorScheme(appTheme, isDark)
+                MaterialTheme(
+                    colorScheme = colorScheme,
+                    typography  = palazikTypography,
+                    content     = content,
+                )
+            }
+        } else {
+            val colorScheme = resolveColorScheme(appTheme, isDark)
+            MaterialTheme(
+                colorScheme = colorScheme,
+                typography  = palazikTypography,
+                content     = content,
+            )
+        }
     }
 }

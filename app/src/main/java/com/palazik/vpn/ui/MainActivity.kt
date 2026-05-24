@@ -24,6 +24,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.palazik.vpn.data.model.DesignSystem
 import com.palazik.vpn.ui.screen.AppNavHost
 import com.palazik.vpn.ui.theme.DarkModePreference
 import com.palazik.vpn.ui.theme.palazikVPNTheme
@@ -61,6 +62,7 @@ class MainActivity : ComponentActivity() {
             palazikVPNTheme(
                 appTheme           = ui.appTheme,
                 darkModePreference = ui.darkMode,
+                useMiuix           = ui.designSystem == DesignSystem.MIUIX,
             ) {
                 val isDark = when (ui.darkMode) {
                     DarkModePreference.ALWAYS_DARK  -> true
