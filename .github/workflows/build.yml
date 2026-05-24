@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - miuix
   workflow_dispatch:
 
 jobs:
@@ -31,11 +32,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '8.14.3'
 
       - name: Regenerate Gradle wrapper
         run: |
-          gradle wrapper --gradle-version=8.9
+          gradle wrapper --gradle-version=8.14.3
           chmod +x gradlew
 
       # ── Android SDK ─────────────────────────────────────────────────────────
