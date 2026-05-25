@@ -161,11 +161,7 @@ jobs:
             SIZE_NOTE="${APK_SIZE}"
           fi
 
-          CAPTION="*palazikVPN* — Debug
-Branch: \`${{ github.ref_name }}\`
-Commit: \`${SHORT_SHA}\` — ${COMMIT_MSG}
-APK: \`${APK_NAME}\` ${SIZE_NOTE}
-Run: [#${{ github.run_number }}](${RUN_URL})"
+          CAPTION="*palazikVPN* — Debug%0ABranch: \`${{ github.ref_name }}\`%0ACommit: \`${SHORT_SHA}\` — ${COMMIT_MSG}%0AAPK: \`${APK_NAME}\` ${SIZE_NOTE}%0ARun: [#${{ github.run_number }}](${RUN_URL})"
 
           CURL_ARGS=(
             -s
