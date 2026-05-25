@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - miuix
   workflow_dispatch:
 
 jobs:
@@ -127,7 +126,7 @@ jobs:
           retention-days: 30
 
       # ── Telegram ────────────────────────────────────────────────────────────
-      - name: Send universal debug APK to Telegram
+      - name: Send debug APK to Telegram
         if: ${{ env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
         run: |
           SHORT_SHA="${{ github.sha }}"
@@ -135,33 +134,45 @@ jobs:
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           COMMIT_MSG="${{ github.event.head_commit.message }}"
 
-          # Find the universal debug APK
-          UNIVERSAL_APK=$(find app/build/outputs/apk/debug -name "*universal*.apk" | head -1)
+          # Prefer arm64 (~40MB), well under Telegram's 50MB limit.
+          # Fall back to armeabi-v7a, then universal as last resort.
+          APK=$(find app/build/outputs/apk/debug -name "*arm64*.apk" | head -1)
+          [ -z "$APK" ] && APK=$(find app/build/outputs/apk/debug -name "*armeabi*.apk" | head -1)
+          [ -z "$APK" ] && APK=$(find app/build/outputs/apk/debug -name "*universal*.apk" | head -1)
 
-          if [ -z "$UNIVERSAL_APK" ]; then
-            echo "❌ Universal APK not found"
+          if [ -z "$APK" ]; then
+            echo "❌ No debug APK found"
             exit 1
           fi
 
-          # Zip to get under Telegram's 50MB limit
-          ZIP_PATH="/tmp/palazikVPN-debug-universal.zip"
-          zip -j "$ZIP_PATH" "$UNIVERSAL_APK"
+          APK_SIZE=$(du -h "$APK" | cut -f1)
+          APK_NAME=$(basename "$APK")
 
-          APK_SIZE=$(du -h "$UNIVERSAL_APK" | cut -f1)
-          ZIP_SIZE=$(du -h "$ZIP_PATH" | cut -f1)
+          # Zip only if over 45MB
+          APK_BYTES=$(stat -c%s "$APK")
+          if [ "$APK_BYTES" -gt 47185920 ]; then
+            ZIP_PATH="/tmp/${APK_NAME%.apk}.zip"
+            zip -j "$ZIP_PATH" "$APK"
+            SEND_FILE="$ZIP_PATH"
+            SEND_SIZE=$(du -h "$ZIP_PATH" | cut -f1)
+            SIZE_NOTE="${APK_SIZE} → zipped: ${SEND_SIZE}"
+          else
+            SEND_FILE="$APK"
+            SIZE_NOTE="${APK_SIZE}"
+          fi
 
-          CAPTION="*palazikVPN* — Debug Universal
-          Branch: \`${{ github.ref_name }}\`
-          Commit: \`${SHORT_SHA}\` — ${COMMIT_MSG}
-          APK size: ${APK_SIZE} → zipped: ${ZIP_SIZE}
-          Run: [#${{ github.run_number }}](${RUN_URL})"
+          CAPTION="*palazikVPN* — Debug
+Branch: \`${{ github.ref_name }}\`
+Commit: \`${SHORT_SHA}\` — ${COMMIT_MSG}
+APK: \`${APK_NAME}\` ${SIZE_NOTE}
+Run: [#${{ github.run_number }}](${RUN_URL})"
 
           CURL_ARGS=(
             -s
             -X POST
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument"
             -F "chat_id=${TELEGRAM_CHAT_ID}"
-            -F "document=@${ZIP_PATH}"
+            -F "document=@${SEND_FILE}"
             -F "caption=${CAPTION}"
             -F "parse_mode=Markdown"
           )
@@ -172,7 +183,7 @@ jobs:
           RESPONSE=$(curl "${CURL_ARGS[@]}")
 
           if echo "$RESPONSE" | grep -q '"ok":true'; then
-            echo "✓ Sent universal debug APK (zipped: ${ZIP_SIZE})"
+            echo "✓ Sent ${APK_NAME} (${SIZE_NOTE})"
           else
             echo "❌ Failed — $RESPONSE"
             exit 1
