@@ -6,6 +6,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import com.palazik.vpn.data.model.DesignSystem
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
@@ -13,8 +14,9 @@ import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 enum class AppTheme { CYBER, OCEAN, FOREST, SUNSET, DYNAMIC }
 enum class DarkModePreference { SYSTEM, ALWAYS_DARK, ALWAYS_LIGHT }
 
-val LocalAppTheme   = compositionLocalOf { AppTheme.CYBER }
-val LocalDarkMode   = compositionLocalOf { DarkModePreference.SYSTEM }
+val LocalAppTheme      = compositionLocalOf { AppTheme.CYBER }
+val LocalDarkMode      = compositionLocalOf { DarkModePreference.SYSTEM }
+val LocalDesignSystem  = compositionLocalOf { DesignSystem.MIUIX }
 
 // ── MD3 color schemes ───────────────────────────────────────────────────────
 
@@ -103,7 +105,7 @@ fun resolveColorScheme(appTheme: AppTheme, isDark: Boolean): ColorScheme {
     }
 }
 
-// ── Miuix color mode from DarkModePreference ────────────────────────────────
+// ── Miuix color mode from DarkModePreference ─────────��──────────────────────
 
 fun darkPrefToMiuixMode(pref: DarkModePreference) = when (pref) {
     DarkModePreference.SYSTEM       -> ColorSchemeMode.System
@@ -111,8 +113,9 @@ fun darkPrefToMiuixMode(pref: DarkModePreference) = when (pref) {
     DarkModePreference.ALWAYS_LIGHT -> ColorSchemeMode.Light
 }
 
-// ── Main theme wrapper ───────────────────────────────────────────────────────
+// ── Main theme wrapper ───────────────────────────────────────��───────────────
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun palazikVPNTheme(
     appTheme: AppTheme = AppTheme.CYBER,
@@ -128,17 +131,15 @@ fun palazikVPNTheme(
     }
 
     CompositionLocalProvider(
-        LocalAppTheme provides appTheme,
-        LocalDarkMode  provides darkModePreference,
+        LocalAppTheme     provides appTheme,
+        LocalDarkMode     provides darkModePreference,
+        LocalDesignSystem provides if (useMiuix) DesignSystem.MIUIX else DesignSystem.MD3,
     ) {
         if (useMiuix) {
-            // Miuix theme wraps MD3 — we still supply the MD3 colour scheme
-            // so Material3 components in the app keep their custom palette.
             val miuixController = remember(darkModePreference) {
                 ThemeController(darkPrefToMiuixMode(darkModePreference))
             }
             MiuixTheme(controller = miuixController) {
-                // Also provide MD3 theme underneath for widgets that use MaterialTheme
                 val colorScheme = resolveColorScheme(appTheme, isDark)
                 MaterialTheme(
                     colorScheme = colorScheme,
@@ -148,7 +149,7 @@ fun palazikVPNTheme(
             }
         } else {
             val colorScheme = resolveColorScheme(appTheme, isDark)
-            MaterialTheme(
+            MaterialExpressiveTheme(
                 colorScheme = colorScheme,
                 typography  = palazikTypography,
                 content     = content,
