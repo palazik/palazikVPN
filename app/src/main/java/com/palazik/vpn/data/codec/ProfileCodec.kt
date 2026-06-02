@@ -48,12 +48,20 @@ object ProfileCodec {
 
     /** Decode a subscription body (newline-separated or base64-encoded links) */
     fun decodeSubscriptionBody(body: String): List<VpnProfile> {
-        val lines = try {
-            String(Base64.decode(body.trim(), Base64.DEFAULT)).lines()
-        } catch (_: Exception) {
-            body.lines()
+        val trimmed = body.trim()
+
+        // Try base64 first (many providers serve a base64 blob of newline-separated links).
+        val fromBase64 = listOf(Base64.DEFAULT, Base64.URL_SAFE).firstNotNullOfOrNull { flags ->
+            runCatching { String(Base64.decode(trimmed, flags)) }.getOrNull()
+                ?.lines()
+                ?.mapNotNull { decode(it.trim()) }
+                ?.takeIf { it.isNotEmpty() }
         }
-        return lines.mapNotNull { decode(it.trim()) }
+        if (fromBase64 != null) return fromBase64
+
+        // BUG FIX: a plain-text body can still be "Base64-decodable" into garbage, which
+        // previously yielded zero profiles. Fall back to parsing the original lines.
+        return trimmed.lines().mapNotNull { decode(it.trim()) }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -437,7 +445,7 @@ object ProfileCodec {
 
     private fun encodeVless(p: VpnProfile): String {
         val b = Uri.Builder().scheme("vless")
-            .encodedAuthority("${p.uuid}@${p.address}:${p.port}")
+            .encodedAuthority(buildEncodedAuthority(p.address, p.port, p.uuid))
             .appendQueryParameter("type", p.transport.name.lowercase())
             .appendQueryParameter("security", p.security.name.lowercase())
             // FIX: always encode path and host, not just for certain transports
@@ -462,7 +470,7 @@ object ProfileCodec {
 
     private fun encodeTrojan(p: VpnProfile): String {
         val b = Uri.Builder().scheme("trojan")
-            .encodedAuthority("${p.uuid}@${p.address}:${p.port}")
+            .encodedAuthority(buildEncodedAuthority(p.address, p.port, p.uuid))
             .appendQueryParameter("type", p.transport.name.lowercase())
             .appendQueryParameter("security", p.security.name.lowercase())
             .appendQueryParameter("sni", p.sni)
@@ -474,7 +482,7 @@ object ProfileCodec {
 
     private fun encodeHysteria2(p: VpnProfile): String {
         val b = Uri.Builder().scheme("hysteria2")
-            .encodedAuthority("${p.hystPassword}@${p.address}:${p.port}")
+            .encodedAuthority(buildEncodedAuthority(p.address, p.port, p.hystPassword))
             .appendQueryParameter("sni", p.sni)
         if (p.hystObfs.isNotEmpty()) {
             b.appendQueryParameter("obfs", p.hystObfs)
@@ -483,19 +491,26 @@ object ProfileCodec {
         return b.fragment(p.name).build().toString()
     }
 
-    private fun encodeWireguard(p: VpnProfile) =
-        Uri.Builder().scheme("wireguard")
-            .authority("${p.address}:${p.port}")
-            .appendQueryParameter("privatekey", p.wgPrivateKey)
+    private fun encodeWireguard(p: VpnProfile): String {
+        // The URI authority must be the peer ENDPOINT (host:port), not the local tunnel
+        // address (which is usually a CIDR like 10.0.0.2/32 and would corrupt the link).
+        // The local address is carried as the `address` query parameter.
+        val endpoint = p.wgEndpoint.ifBlank { "${stripCidr(p.address)}:${p.port}" }
+        val b = Uri.Builder().scheme("wireguard")
+            .encodedAuthority(endpoint)
+            .appendQueryParameter("address", p.address)
             .appendQueryParameter("publickey", p.wgPeerPublicKey)
-            .appendQueryParameter("endpoint", p.wgEndpoint)
+            .appendQueryParameter("privatekey", p.wgPrivateKey)
+        if (p.wgPreSharedKey.isNotBlank()) b.appendQueryParameter("presharedkey", p.wgPreSharedKey)
+        b.appendQueryParameter("endpoint", endpoint)
             .appendQueryParameter("dns", p.wgDns)
             .appendQueryParameter("mtu", p.wgMtu.toString())
-            .fragment(p.name).build().toString()
+        return b.fragment(p.name).build().toString()
+    }
 
     private fun encodeSocks5(p: VpnProfile): String =
         Uri.Builder().scheme("socks5")
-            .encodedAuthority(buildEncodedAuthority(p.address, p.port, p.uuid))
+            .encodedAuthority(buildEncodedAuthority(p.address, p.port, p.uuid, keepColon = true))
             .fragment(p.name)
             .build()
             .toString()
@@ -504,7 +519,7 @@ object ProfileCodec {
         // Uses the explicit httpproxy:// scheme so it round-trips without colliding
         // with plain http:// subscription URLs on import.
         return Uri.Builder().scheme("httpproxy")
-            .encodedAuthority(buildEncodedAuthority(p.address, p.port, p.uuid))
+            .encodedAuthority(buildEncodedAuthority(p.address, p.port, p.uuid, keepColon = true))
             .fragment(p.name)
             .build()
             .toString()
@@ -512,13 +527,33 @@ object ProfileCodec {
 
     private fun encodeTuic(p: VpnProfile) =
         Uri.Builder().scheme("tuic")
-            .encodedAuthority(buildEncodedAuthority(p.address, p.port, "${p.uuid}:${p.ssPassword}"))
+            .encodedAuthority(buildEncodedAuthority(p.address, p.port, "${p.uuid}:${p.ssPassword}", keepColon = true))
             .appendQueryParameter("sni", p.sni)
             .fragment(p.name).build().toString()
 
-    private fun buildEncodedAuthority(address: String, port: Int, userInfo: String = ""): String {
+    /**
+     * Build an `[userinfo@]host:port` authority with the userinfo percent-encoded so
+     * credentials containing URI-reserved characters (@ : / # ? etc.) don't corrupt the
+     * link or change the authority.
+     *
+     * @param keepColon keep ":" unescaped — only for composite `user:pass` userinfo
+     *   (socks5/http/tuic). For single-secret userinfo (trojan/hysteria password, vless
+     *   uuid) leave it false so a literal ":" in the secret is escaped.
+     */
+    private fun buildEncodedAuthority(
+        address: String,
+        port: Int,
+        userInfo: String = "",
+        keepColon: Boolean = false,
+    ): String {
         val host = if (":" in address && !address.startsWith("[")) "[$address]" else address
-        val encodedUserInfo = userInfo.takeIf { it.isNotBlank() }?.let { "${Uri.encode(it, ":")}@" }.orEmpty()
+        val encodedUserInfo = userInfo.takeIf { it.isNotBlank() }?.let {
+            val enc = if (keepColon) Uri.encode(it, ":") else Uri.encode(it)
+            "$enc@"
+        }.orEmpty()
         return "$encodedUserInfo$host:$port"
     }
+
+    /** Strip a CIDR suffix (e.g. "10.0.0.2/32" → "10.0.0.2"). */
+    private fun stripCidr(address: String): String = address.substringBefore("/")
 }

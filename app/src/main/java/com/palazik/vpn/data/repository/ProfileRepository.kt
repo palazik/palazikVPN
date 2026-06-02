@@ -211,6 +211,12 @@ class ProfileRepository @Inject constructor(
     /**
      * Ping many profiles concurrently and commit all results in a SINGLE atomic write.
      *
+     * Batch pings ALWAYS use TCP: HTTP/HEAD modes route through the single running local
+     * proxy, so they measure the active tunnel — not each candidate server — and would give
+     * every profile the same (wrong) latency. TCP connects to each server:port directly, so
+     * it is the only mode that meaningfully compares multiple profiles, and it works without
+     * the VPN running.
+     *
      * BUG FIX: pinging via [pingProfile] in a loop is slow (3s timeout each, serial), and
      * doing the per-profile writes concurrently would race on _profiles (read-modify-write).
      * Here we measure in parallel, then fold every result into one list update.
@@ -218,7 +224,7 @@ class ProfileRepository @Inject constructor(
     suspend fun pingProfiles(profiles: List<VpnProfile>): Unit = withContext(Dispatchers.IO) {
         if (profiles.isEmpty()) return@withContext
         val results = profiles
-            .map { p -> async { p.id to measureLatency(p) } }
+            .map { p -> async { p.id to tcpPing(p) } }
             .awaitAll()
             .toMap()
         val now = System.currentTimeMillis()
@@ -228,47 +234,47 @@ class ProfileRepository @Inject constructor(
         saveProfiles()
     }
 
-    /** Measure latency for one profile without persisting. Returns -1 on failure. */
+    /** Measure latency for one profile (respecting the selected mode) without persisting. */
     private suspend fun measureLatency(profile: VpnProfile): Long = runCatching {
         when (_pingMode.value) {
-            PingMode.TCP -> {
-                // v2rayNG SpeedtestManager.socketConnectTime: try twice, keep the best
-                var best = -1L
-                repeat(2) {
-                    val start  = System.currentTimeMillis()
-                    runCatching {
-                        Socket().use { sock ->
-                            sock.connect(InetSocketAddress(profile.address, profile.port), 3000)
-                        }
-                    }.onSuccess {
-                        val t = System.currentTimeMillis() - start
-                        if (best == -1L || t < best) best = t
-                    }
-                }
-                if (best == -1L) throw Exception("TCP connect failed")
-                best
-            }
-
-            PingMode.HTTP_GET -> {
-                // Route through local SOCKS proxy so the request travels via xray outbound.
-                val req = Request.Builder().url("https://cp.cloudflare.com/").get().build()
-                val start = System.currentTimeMillis()
-                proxyClient.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful && resp.code != 204) throw Exception("HTTP GET returned ${resp.code}")
-                }
-                System.currentTimeMillis() - start
-            }
-
-            PingMode.HTTP_HEAD -> {
-                val req = Request.Builder().url("https://cp.cloudflare.com/").head().build()
-                val start = System.currentTimeMillis()
-                proxyClient.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful && resp.code != 204) throw Exception("HTTP HEAD returned ${resp.code}")
-                }
-                System.currentTimeMillis() - start
-            }
+            PingMode.TCP       -> tcpPing(profile)
+            PingMode.HTTP_GET  -> httpPing(head = false)
+            PingMode.HTTP_HEAD -> httpPing(head = true)
         }
     }.getOrElse { -1L }
+
+    /** Direct TCP connect to the server's address:port. Returns -1 on failure. */
+    private fun tcpPing(profile: VpnProfile): Long {
+        // v2rayNG SpeedtestManager.socketConnectTime: try twice, keep the best
+        var best = -1L
+        repeat(2) {
+            val start = System.currentTimeMillis()
+            runCatching {
+                Socket().use { sock ->
+                    sock.connect(InetSocketAddress(profile.address, profile.port), 3000)
+                }
+            }.onSuccess {
+                val t = System.currentTimeMillis() - start
+                if (best == -1L || t < best) best = t
+            }
+        }
+        return best
+    }
+
+    /**
+     * HTTP(S) latency through the running local SOCKS proxy — i.e. the latency of the
+     * ACTIVE tunnel end-to-end. Not per-profile; callers must ensure the VPN is running.
+     */
+    private fun httpPing(head: Boolean): Long {
+        val req = Request.Builder().url("https://cp.cloudflare.com/")
+            .apply { if (head) head() else get() }
+            .build()
+        val start = System.currentTimeMillis()
+        proxyClient.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful && resp.code != 204) throw Exception("HTTP ${resp.code}")
+        }
+        return System.currentTimeMillis() - start
+    }
 
     // ── Backup / restore ────────────────────────────────────────────────────────
 

@@ -237,7 +237,10 @@ object XrayConfigBuilder {
                 put(JSONObject().apply {
                     put("publicKey",  p.wgPeerPublicKey)
                     put("allowedIPs", JSONArray().apply { put("0.0.0.0/0"); put("::/0") })
-                    put("endpoint",   p.wgEndpoint.ifEmpty { "${p.address}:${p.port}" })
+                    // The endpoint is the peer's public host:port. p.address is the LOCAL
+                    // tunnel address (often a CIDR like 10.0.0.2/32), so strip the CIDR in
+                    // the fallback to avoid an invalid endpoint like "10.0.0.2/32:51820".
+                    put("endpoint",   p.wgEndpoint.ifEmpty { "${p.address.substringBefore("/")}:${p.port}" })
                     if (p.wgPreSharedKey.isNotEmpty()) put("preSharedKey", p.wgPreSharedKey)
                 })
             })

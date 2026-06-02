@@ -12,6 +12,21 @@
          setUnderlyingNetworks so xray outbound sockets bypass the TUN interface) -->
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
+    <!-- Split tunneling needs to enumerate installed apps (including non-launcher ones)
+         so the user can pick which apps bypass the VPN. On Android 11+ this requires
+         broad package visibility. -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- Fallback visibility for launcher apps if QUERY_ALL_PACKAGES is unavailable -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:name=".palazikVPNApp"
         android:allowBackup="true"

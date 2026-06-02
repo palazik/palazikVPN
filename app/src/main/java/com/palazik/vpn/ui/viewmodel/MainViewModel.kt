@@ -267,9 +267,17 @@ class MainViewModel @Inject constructor(
 
     fun pingProfile(profile: VpnProfile) {
         viewModelScope.launch {
-            if (_ui.value.pingMode != PingMode.TCP && _ui.value.vpnState != VpnState.CONNECTED) {
-                snack("Connect VPN first for HTTP ping")
-                return@launch
+            // HTTP/HEAD ping measures the ACTIVE tunnel end-to-end, so it only makes sense
+            // for the currently active profile while connected. TCP works for any profile.
+            if (_ui.value.pingMode != PingMode.TCP) {
+                if (_ui.value.vpnState != VpnState.CONNECTED) {
+                    snack("Connect VPN first for HTTP ping")
+                    return@launch
+                }
+                if (profile.id != _ui.value.activeProfile?.id) {
+                    snack("HTTP ping measures the active profile only — use TCP mode to test others")
+                    return@launch
+                }
             }
             snack("Pinging ${profile.name}…")
             val ms = repo.pingProfile(profile)
@@ -279,10 +287,7 @@ class MainViewModel @Inject constructor(
 
     fun pingAll() {
         viewModelScope.launch {
-            if (_ui.value.pingMode != PingMode.TCP && _ui.value.vpnState != VpnState.CONNECTED) {
-                snack("Connect VPN first for HTTP ping")
-                return@launch
-            }
+            // pingProfiles always uses TCP (per-server) — no VPN required, no HTTP gate.
             snack("Pinging ${_ui.value.profiles.size} profiles…")
             repo.pingProfiles(_ui.value.profiles)
             snack("Ping complete")
@@ -334,12 +339,12 @@ class MainViewModel @Inject constructor(
 
     fun chooseBestProfileForSubscription(sub: Subscription) {
         viewModelScope.launch {
+            // Must be disconnected to switch the active profile. The comparison itself uses
+            // TCP (per-server) so it works while disconnected — BUG FIX: the old code also
+            // required the VPN to be CONNECTED for HTTP modes, which can never both hold, so
+            // this path always returned early.
             if (_ui.value.vpnState != VpnState.DISCONNECTED && _ui.value.vpnState != VpnState.ERROR) {
                 snack("Disconnect before switching profiles")
-                return@launch
-            }
-            if (_ui.value.pingMode != PingMode.TCP && _ui.value.vpnState != VpnState.CONNECTED) {
-                snack("Connect VPN first for HTTP ping")
                 return@launch
             }
             val candidates = _ui.value.profiles.filter { it.subscriptionId == sub.id }
