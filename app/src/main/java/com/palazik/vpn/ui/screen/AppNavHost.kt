@@ -44,6 +44,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -186,7 +187,7 @@ private fun NavPill(
         label = "nav_content_${screen.route}",
     )
     val width by animateDpAsState(
-        targetValue = if (selected) 94.dp else 44.dp,
+        targetValue = if (selected) 104.dp else 44.dp,
         animationSpec = tween(220, easing = EaseOutQuart),
         label = "nav_width_${screen.route}",
     )
@@ -215,6 +216,9 @@ private fun NavPill(
                         Modifier.padding(start = 7.dp),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Clip,
                     )
                 }
             }
