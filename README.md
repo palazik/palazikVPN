@@ -5,18 +5,25 @@ palazikVPN is a modern Android VPN client built with Kotlin, Jetpack Compose, Ma
 ## Features
 
 - Full-device VPN mode powered by libv2ray/Xray
-- Material 3 UI with light, dark, dynamic, and custom color themes
-- Profile import from share links and subscriptions
-- QR import from image files and QR export for profile sharing
+- Miuix and Material 3 Expressive design systems with light, dark, dynamic, and custom color themes
+- Profile import from share links, clipboard, and subscriptions
+- QR import from image files and live camera, plus QR export for profile sharing
 - Import preview with parsed protocol, server, transport, security, and validation warnings
-- Manual profile editor with validation and masked secret fields
+- Manual profile editor with validation, masked secret fields, per-profile `allowInsecure`, and VMess cipher selection
 - Profile duplicate, export as native link, export as palazikVPN link, and export generated JSON
-- Subscription refresh with progress and partial-failure messages
-- TCP / HTTP GET / HTTP HEAD latency tests
+- Profile search and sort (by name or latency) with grouping per subscription
+- Subscription refresh with progress and partial-failure messages, plus configurable subscription User-Agent
+- Background auto-update of subscriptions on a configurable interval (WorkManager)
+- TCP / HTTP GET / HTTP HEAD latency tests, run concurrently for "ping all" and "choose best"
 - Live connection state, connected duration, and traffic counters
+- Quick Settings tile and a notification **Disconnect** action
 - Clear connection error panel with retry action
 - Diagnostics log with copy-to-clipboard support
 - Custom DNS settings
+- Routing controls: ad blocking, bypass China, and custom direct/blocked domain lists
+- IPv6 leak protection (IPv6 is always captured by the tunnel) with an optional IPv6-through-tunnel toggle
+- Kill switch (lockdown) that blocks traffic while the tunnel is not ready
+- Backup and restore: export all profiles to a file and re-import on another device
 - Split tunneling by choosing installed apps to bypass the VPN
 - Optional auto-connect on boot when VPN permission has already been granted
 - ABI split APKs for `arm64-v8a` and `armeabi-v7a`, plus a universal APK in CI artifacts
@@ -34,25 +41,29 @@ Import support currently includes:
 - `socks5://`
 - `tuic://`
 - `xhttp://` as VLESS + XHTTP transport
+- `httpproxy://` for HTTP-proxy profiles (plain `http://` is treated as a subscription URL, not a profile)
 - `palazikvpn://` proprietary share links
+
+Native share links (`vmess://`, `vless://`, `ss://`, etc.) and `palazikvpn://` links also open directly from a browser or file manager via deep links.
 
 ## Screens
 
 - **Home**: connect/disconnect, active profile, connection status, duration, traffic, error retry, and quick ping
-- **Profiles**: link import, QR import, import preview, manual add/edit, duplicate, ping, export, QR share, delete with confirmation/undo
-- **Subscriptions**: add, refresh, update all, delete with confirmation
-- **Settings**: theme, ping mode, DNS, split tunneling, startup, diagnostics, app info
+- **Profiles**: link/clipboard/QR import, import preview, manual add/edit, search & sort, duplicate, ping, export, QR share, delete with confirmation/undo
+- **Subscriptions**: add, refresh, update all, choose best by latency, delete with confirmation
+- **Settings**: style (design system, dark mode, theme), ping mode, DNS, routing & privacy (ad block, bypass China, IPv6, kill switch, custom domains), subscription User-Agent, backup/restore, split tunneling, startup, diagnostics, app info
 
 ## Tech Stack
 
 - Kotlin
 - Jetpack Compose
-- Material 3
+- Material 3 Expressive + Miuix design systems
 - Navigation Compose
 - Hilt
+- WorkManager (background subscription updates)
 - OkHttp
 - ZXing QR encoder/decoder
-- Android `VpnService`
+- Android `VpnService` + Quick Settings `TileService`
 - libv2ray / Xray via `libv2ray.aar`
 
 ## Repository Notes
@@ -133,10 +144,12 @@ The app uses:
 
 ## Important Caveats
 
-- Always-on VPN still needs to be configured by the user in Android system settings.
+- Always-on VPN still needs to be configured by the user in Android system settings. The in-app kill switch (lockdown) blocks traffic while the tunnel is not ready, but full system-level lockdown requires enabling **Always-on VPN** + **Block connections without VPN** in Android settings.
+- IPv6 is always captured by the tunnel to prevent leaks; the "Route IPv6 through tunnel" toggle only controls whether IPv6 is dialled out (otherwise it is dropped, and apps fall back to IPv4).
 - Auto-connect on boot only works when Android has already granted VPN permission.
 - Subscription and profile compatibility depends on the fields present in imported links.
 - Some advanced Xray options are not exposed in the UI yet.
+- Shadowsocks SIP003 plugins (obfs / v2ray-plugin) are not supported by the bundled Xray core.
 - QR import reads QR codes from selected image files / live camera.
 - Unsigned release APKs from CI must be signed before distribution outside debug/testing use.
 

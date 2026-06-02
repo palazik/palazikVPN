@@ -251,6 +251,18 @@ class MainViewModel @Inject constructor(
 
     fun clearShareLink() = _ui.update { it.copy(shareLink = null) }
 
+    // ── Backup / restore ───────────────────────────────────────────────────────
+
+    /** Serialize every profile as palazikvpn:// links for export to a file. */
+    fun exportProfilesText(): String = repo.exportProfilesText()
+
+    /** Import profiles from a backup file body; reports how many were added. */
+    fun importProfilesText(body: String) {
+        val added = repo.importProfilesText(body)
+        syncServiceActiveProfile()
+        snack(if (added > 0) "Imported $added profiles" else "No new profiles found")
+    }
+
     // ── Ping ─────────────────────────────────────────────────────────────────
 
     fun pingProfile(profile: VpnProfile) {
@@ -271,7 +283,9 @@ class MainViewModel @Inject constructor(
                 snack("Connect VPN first for HTTP ping")
                 return@launch
             }
-            _ui.value.profiles.forEach { repo.pingProfile(it) }
+            snack("Pinging ${_ui.value.profiles.size} profiles…")
+            repo.pingProfiles(_ui.value.profiles)
+            snack("Ping complete")
         }
     }
 
@@ -336,14 +350,15 @@ class MainViewModel @Inject constructor(
             _ui.update { it.copy(updatingSubscriptionIds = it.updatingSubscriptionIds + sub.id) }
             try {
                 snack("Testing \"${sub.name}\" profiles…")
-                val best = candidates.mapNotNull { profile ->
-                    val ms = repo.pingProfile(profile)
-                    if (ms >= 0) profile.id to ms else null
-                }.minByOrNull { it.second }
+                // Ping concurrently, then read fresh latencies off the updated list
+                repo.pingProfiles(candidates)
+                val best = repo.profiles.value
+                    .filter { it.subscriptionId == sub.id && it.latencyMs >= 0 }
+                    .minByOrNull { it.latencyMs }
                 if (best != null) {
-                    repo.setActiveProfile(best.first)
-                    palazikVpnService.activeProfile = repo.profiles.value.firstOrNull { it.id == best.first }
-                    snack("Best profile selected: ${best.second}ms")
+                    repo.setActiveProfile(best.id)
+                    palazikVpnService.activeProfile = repo.profiles.value.firstOrNull { it.id == best.id }
+                    snack("Best profile selected: ${best.latencyMs}ms")
                 } else {
                     snack("All profiles timed out")
                 }

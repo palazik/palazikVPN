@@ -37,12 +37,22 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Deep-link handler: palazikvpn://import?config=vmess://... -->
+            <!-- Deep-link handler: palazikvpn://import?config=vmess://... plus native links -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="palazikvpn" />
+                <data android:scheme="vmess" />
+                <data android:scheme="vless" />
+                <data android:scheme="ss" />
+                <data android:scheme="trojan" />
+                <data android:scheme="hysteria2" />
+                <data android:scheme="wireguard" />
+                <data android:scheme="socks5" />
+                <data android:scheme="tuic" />
+                <data android:scheme="xhttp" />
+                <data android:scheme="httpproxy" />
             </intent-filter>
         </activity>
 
@@ -69,6 +79,18 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <!-- Quick Settings tile to toggle the VPN from the shade -->
+        <service
+            android:name=".service.VpnTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_vpn_key"
+            android:label="palazikVPN"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
     </application>
 </manifest>

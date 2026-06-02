@@ -3,12 +3,15 @@ package com.palazik.vpn.data.repository
 import android.content.Context
 import com.palazik.vpn.data.codec.ProfileCodec
 import com.palazik.vpn.data.model.AppSettings
+import com.palazik.vpn.data.model.AppSettingsCodec
 import com.palazik.vpn.data.model.PingMode
 import com.palazik.vpn.data.model.ProfileValidator
 import com.palazik.vpn.data.model.Subscription
 import com.palazik.vpn.data.model.VpnProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -200,61 +203,100 @@ class ProfileRepository @Inject constructor(
      *         Requires the VPN / xray service to be running.
      */
     suspend fun pingProfile(profile: VpnProfile): Long = withContext(Dispatchers.IO) {
-        val latency = runCatching {
-            when (_pingMode.value) {
-                PingMode.TCP -> {
-                    // v2rayNG SpeedtestManager.socketConnectTime: try twice, keep the best
-                    var best = -1L
-                    repeat(2) {
-                        val start  = System.currentTimeMillis()
-                        runCatching {
-                            Socket().use { sock ->
-                                sock.connect(InetSocketAddress(profile.address, profile.port), 3000)
-                            }
-                        }.onSuccess {
-                            val t = System.currentTimeMillis() - start
-                            if (best == -1L || t < best) best = t
-                        }
-                    }
-                    if (best == -1L) throw Exception("TCP connect failed")
-                    best
-                }
-
-                PingMode.HTTP_GET -> {
-                    // Route through local SOCKS proxy so the request travels via xray outbound.
-                    // v2rayNG: CoreNativeManager.measureOutboundDelay uses the running core's
-                    // local socks port for this same reason.
-                    val req = Request.Builder()
-                        .url("https://cp.cloudflare.com/")
-                        .get()
-                        .build()
-                    val start = System.currentTimeMillis()
-                    proxyClient.newCall(req).execute().use { resp ->
-                        if (!resp.isSuccessful && resp.code != 204) {
-                            throw Exception("HTTP GET returned ${resp.code}")
-                        }
-                    }
-                    System.currentTimeMillis() - start
-                }
-
-                PingMode.HTTP_HEAD -> {
-                    val req = Request.Builder()
-                        .url("https://cp.cloudflare.com/")
-                        .head()
-                        .build()
-                    val start = System.currentTimeMillis()
-                    proxyClient.newCall(req).execute().use { resp ->
-                        if (!resp.isSuccessful && resp.code != 204) {
-                            throw Exception("HTTP HEAD returned ${resp.code}")
-                        }
-                    }
-                    System.currentTimeMillis() - start
-                }
-            }
-        }.getOrElse { -1L }
-
-        updateProfile(profile.copy(latencyMs = latency))
+        val latency = measureLatency(profile)
+        updateProfile(profile.copy(latencyMs = latency, lastTested = System.currentTimeMillis()))
         latency
+    }
+
+    /**
+     * Ping many profiles concurrently and commit all results in a SINGLE atomic write.
+     *
+     * BUG FIX: pinging via [pingProfile] in a loop is slow (3s timeout each, serial), and
+     * doing the per-profile writes concurrently would race on _profiles (read-modify-write).
+     * Here we measure in parallel, then fold every result into one list update.
+     */
+    suspend fun pingProfiles(profiles: List<VpnProfile>): Unit = withContext(Dispatchers.IO) {
+        if (profiles.isEmpty()) return@withContext
+        val results = profiles
+            .map { p -> async { p.id to measureLatency(p) } }
+            .awaitAll()
+            .toMap()
+        val now = System.currentTimeMillis()
+        _profiles.value = _profiles.value.map { p ->
+            results[p.id]?.let { p.copy(latencyMs = it, lastTested = now) } ?: p
+        }
+        saveProfiles()
+    }
+
+    /** Measure latency for one profile without persisting. Returns -1 on failure. */
+    private suspend fun measureLatency(profile: VpnProfile): Long = runCatching {
+        when (_pingMode.value) {
+            PingMode.TCP -> {
+                // v2rayNG SpeedtestManager.socketConnectTime: try twice, keep the best
+                var best = -1L
+                repeat(2) {
+                    val start  = System.currentTimeMillis()
+                    runCatching {
+                        Socket().use { sock ->
+                            sock.connect(InetSocketAddress(profile.address, profile.port), 3000)
+                        }
+                    }.onSuccess {
+                        val t = System.currentTimeMillis() - start
+                        if (best == -1L || t < best) best = t
+                    }
+                }
+                if (best == -1L) throw Exception("TCP connect failed")
+                best
+            }
+
+            PingMode.HTTP_GET -> {
+                // Route through local SOCKS proxy so the request travels via xray outbound.
+                val req = Request.Builder().url("https://cp.cloudflare.com/").get().build()
+                val start = System.currentTimeMillis()
+                proxyClient.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful && resp.code != 204) throw Exception("HTTP GET returned ${resp.code}")
+                }
+                System.currentTimeMillis() - start
+            }
+
+            PingMode.HTTP_HEAD -> {
+                val req = Request.Builder().url("https://cp.cloudflare.com/").head().build()
+                val start = System.currentTimeMillis()
+                proxyClient.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful && resp.code != 204) throw Exception("HTTP HEAD returned ${resp.code}")
+                }
+                System.currentTimeMillis() - start
+            }
+        }
+    }.getOrElse { -1L }
+
+    // ── Backup / restore ────────────────────────────────────────────────────────
+
+    /** Export all profiles as palazikvpn:// links, one per line (for backup/share). */
+    fun exportProfilesText(): String =
+        _profiles.value.joinToString("\n") { ProfileCodec.encodePalazik(it) }
+
+    /**
+     * Import profiles from a newline-separated (or base64) backup body.
+     * Returns the number of profiles added. Skips invalid ones.
+     */
+    fun importProfilesText(body: String): Int {
+        val parsed = ProfileCodec.decodeSubscriptionBody(body)
+            .filter { ProfileValidator.validate(it).isEmpty() }
+        if (parsed.isEmpty()) return 0
+        val existingIds = _profiles.value.map { it.id }.toSet()
+        var hasActive = _profiles.value.any { it.isActive }
+        val toAdd = parsed
+            .filter { it.id !in existingIds }
+            .map { p ->
+                val activate = !hasActive
+                if (activate) hasActive = true
+                p.copy(isActive = activate)
+            }
+        if (toAdd.isEmpty()) return 0
+        _profiles.value = _profiles.value + toAdd
+        saveProfiles()
+        return toAdd.size
     }
 
     // ── Persistence ───────────────────────────────────────────────────────────
@@ -265,10 +307,11 @@ class ProfileRepository @Inject constructor(
         _profiles.value.forEach { p ->
             links.put(ProfileCodec.encodePalazik(p))
             meta.put(JSONObject().apply {
-                put("id",       p.id)
-                put("isActive", p.isActive)
-                put("latency",  p.latencyMs)
-                put("subId",    p.subscriptionId ?: "")
+                put("id",         p.id)
+                put("isActive",   p.isActive)
+                put("latency",    p.latencyMs)
+                put("lastTested", p.lastTested)
+                put("subId",      p.subscriptionId ?: "")
             })
         }
         prefs.edit()
@@ -300,16 +343,17 @@ class ProfileRepository @Inject constructor(
         val linksJson = prefs.getString("profiles_links", null)
         val metaJson  = prefs.getString("profiles_meta",  null)
 
-        data class Meta(val isActive: Boolean, val latency: Long, val subId: String?)
+        data class Meta(val isActive: Boolean, val latency: Long, val lastTested: Long, val subId: String?)
         val metaMap = mutableMapOf<String, Meta>()
         if (metaJson != null) runCatching {
             val arr = JSONArray(metaJson)
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 metaMap[o.getString("id")] = Meta(
-                    isActive = o.optBoolean("isActive", false),
-                    latency  = o.optLong("latency", -1L),
-                    subId    = o.optString("subId").takeIf { it.isNotEmpty() },
+                    isActive   = o.optBoolean("isActive", false),
+                    latency    = o.optLong("latency", -1L),
+                    lastTested = o.optLong("lastTested", 0L),
+                    subId      = o.optString("subId").takeIf { it.isNotEmpty() },
                 )
             }
         }
@@ -323,6 +367,7 @@ class ProfileRepository @Inject constructor(
                     loaded.add(profile.copy(
                         isActive       = m?.isActive ?: false,
                         latencyMs      = m?.latency  ?: -1L,
+                        lastTested     = m?.lastTested ?: 0L,
                         subscriptionId = m?.subId    ?: profile.subscriptionId,
                     ))
                 }
@@ -356,24 +401,9 @@ class ProfileRepository @Inject constructor(
             }
         }
 
-        val settingsJson = prefs.getString("app_settings", null)
-        if (settingsJson != null) runCatching {
-            val o = JSONObject(settingsJson)
-            _settings.value = AppSettings(
-                dnsServers = o.optJSONArray("dnsServers")?.toStringList()
-                    ?.filter { it.isNotBlank() }
-                    ?.ifEmpty { AppSettings().dnsServers }
-                    ?: AppSettings().dnsServers,
-                remoteDns = o.optString("remoteDns", AppSettings().remoteDns).ifBlank { AppSettings().remoteDns },
-                directDns = o.optString("directDns", AppSettings().directDns).ifBlank { AppSettings().directDns },
-                bypassPackages = o.optJSONArray("bypassPackages")?.toStringList()
-                    ?.map { it.trim() }
-                    ?.filter { it.isNotBlank() }
-                    ?: emptyList(),
-                startOnBoot = o.optBoolean("startOnBoot", false),
-                autoUpdateSubscriptions = o.optBoolean("autoUpdateSubscriptions", true),
-                subscriptionUpdateIntervalHours = o.optLong("subscriptionUpdateIntervalHours", 2L).coerceAtLeast(2L),
-            )
+        val settingsJson = prefs.getString(AppSettingsCodec.KEY, null)
+        if (settingsJson != null) {
+            _settings.value = AppSettingsCodec.fromJson(settingsJson)
         }
     }
 
@@ -385,31 +415,17 @@ class ProfileRepository @Inject constructor(
             directDns = settings.directDns.trim().ifBlank { AppSettings().directDns },
             bypassPackages = settings.bypassPackages.map { it.trim() }.filter { it.isNotBlank() }.distinct(),
             subscriptionUpdateIntervalHours = settings.subscriptionUpdateIntervalHours.coerceAtLeast(2L),
+            subscriptionUserAgent = settings.subscriptionUserAgent.trim().ifBlank { AppSettings().subscriptionUserAgent },
+            customDirectDomains = settings.customDirectDomains.map { it.trim() }.filter { it.isNotBlank() }.distinct(),
+            customBlockedDomains = settings.customBlockedDomains.map { it.trim() }.filter { it.isNotBlank() }.distinct(),
         )
         _settings.value = normalized
         saveSettings()
     }
 
     private fun saveSettings() {
-        val settings = _settings.value
-        prefs.edit().putString(
-            "app_settings",
-            JSONObject().apply {
-                put("dnsServers", JSONArray().apply { settings.dnsServers.forEach { put(it) } })
-                put("remoteDns", settings.remoteDns)
-                put("directDns", settings.directDns)
-                put("bypassPackages", JSONArray().apply { settings.bypassPackages.forEach { put(it) } })
-                put("startOnBoot", settings.startOnBoot)
-                put("autoUpdateSubscriptions", settings.autoUpdateSubscriptions)
-                put("subscriptionUpdateIntervalHours", settings.subscriptionUpdateIntervalHours)
-            }.toString(),
-        ).apply()
+        prefs.edit().putString(AppSettingsCodec.KEY, AppSettingsCodec.toJson(_settings.value)).apply()
     }
-
-    private fun JSONArray.toStringList(): List<String> =
-        buildList {
-            for (i in 0 until length()) add(optString(i))
-        }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
@@ -425,7 +441,7 @@ class ProfileRepository @Inject constructor(
     private fun fetchSubscriptionBody(url: String): String {
         val req = Request.Builder()
             .url(url)
-            .header("User-Agent", "v2rayNG/1.0")
+            .header("User-Agent", _settings.value.subscriptionUserAgent.ifBlank { "v2rayNG/1.0" })
             .build()
 
         // Attempt 1: through proxy (so the fetch itself goes through the active profile)

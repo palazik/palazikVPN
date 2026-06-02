@@ -122,8 +122,18 @@ class palazikVpnService : VpnService() {
     override fun onRevoke() { stopVpn() }
 
     override fun onDestroy() {
-        if (_connectionState.value != ServiceState.STOPPED && _connectionState.value != ServiceState.ERROR) {
-            stopVpn()
+        // Synchronous teardown here — the process is going away, so we cannot rely on a
+        // coroutine launched on `scope` (which we cancel below) to finish the cleanup.
+        statsJob?.cancel()
+        statsJob = null
+        unregisterNetworkCallbackSafely()
+        val s = _connectionState.value
+        if (s != ServiceState.STOPPED && s != ServiceState.ERROR) {
+            teardownCore()
+            _connectionState.value = ServiceState.STOPPED
+            _connectedSince.value = 0L
+            _bytesIn.value = 0L
+            _bytesOut.value = 0L
         }
         scope.cancel()
         super.onDestroy()
@@ -217,8 +227,14 @@ class palazikVpnService : VpnService() {
     }
 
     // v2rayNG: ANDROID_ID.toByteArray().copyOf(32) → Base64(NO_PADDING | URL_SAFE)
+    // BUG FIX: Settings.Secure.ANDROID_ID is the *key name* ("android_id"), not the value.
+    // Must read it via Settings.Secure.getString(resolver, ANDROID_ID) to get the real
+    // per-device id — otherwise every install derives the same XUDP base key.
     private fun getDeviceIdForXUDPBaseKey(): String {
-        val androidId = Settings.Secure.ANDROID_ID.toByteArray(Charsets.UTF_8)
+        val androidId = (
+            Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID)
+                ?: "palazikVPN"
+            ).toByteArray(Charsets.UTF_8)
         return Base64.encodeToString(
             androidId.copyOf(32),
             Base64.NO_PADDING or Base64.URL_SAFE
@@ -274,6 +290,15 @@ class palazikVpnService : VpnService() {
             .addRoute("0.0.0.0", 0)
             .addDisallowedApplication(packageName)
 
+        // BUG FIX: without an IPv6 address + ::/0 route, apps' IPv6 traffic bypasses the
+        // tunnel entirely on dual-stack networks → real IP leak. When IPv6 is enabled we
+        // capture it too; when disabled we still claim ::/0 so the OS drops it inside the
+        // TUN rather than leaking it around the VPN.
+        runCatching {
+            builder.addAddress("fd66:6ca7:14e7::1", 126)
+            builder.addRoute("::", 0)
+        }.onFailure { Log.w(TAG, "IPv6 TUN setup failed: ${it.message}") }
+
         settings.dnsServers.forEach { dns ->
             runCatching { builder.addDnsServer(dns) }
                 .onFailure { Log.w(TAG, "Invalid DNS server ignored: $dns") }
@@ -290,6 +315,14 @@ class palazikVpnService : VpnService() {
             builder.setMetered(false)
         }
 
+        // Kill switch: drop packets while the VPN handler isn't ready instead of letting
+        // them fall through to the underlying network. For a full system-level kill switch
+        // the user must also enable "Always-on VPN" + "Block connections without VPN".
+        if (settings.lockdownMode) {
+            runCatching { builder.setBlocking(true) }
+                .onFailure { Log.w(TAG, "setBlocking failed: ${it.message}") }
+        }
+
         return builder
             .establish()
             ?: throw IllegalStateException("establish() returned null — missing VPN permission?")
@@ -297,33 +330,8 @@ class palazikVpnService : VpnService() {
 
     private fun loadAppSettings(): AppSettings {
         val prefs = applicationContext.getSharedPreferences("palazik_profiles", Context.MODE_PRIVATE)
-        val raw = prefs.getString("app_settings", null) ?: return AppSettings()
-        return runCatching {
-            val o = JSONObject(raw)
-            AppSettings(
-                dnsServers = o.optJSONArray("dnsServers")?.toStringList()
-                    ?.filter { it.isNotBlank() }
-                    ?.ifEmpty { AppSettings().dnsServers }
-                    ?: AppSettings().dnsServers,
-                remoteDns = o.optString("remoteDns", AppSettings().remoteDns).ifBlank { AppSettings().remoteDns },
-                directDns = o.optString("directDns", AppSettings().directDns).ifBlank { AppSettings().directDns },
-                bypassPackages = o.optJSONArray("bypassPackages")?.toStringList()
-                    ?.map { it.trim() }
-                    ?.filter { it.isNotBlank() }
-                    ?: emptyList(),
-                startOnBoot = o.optBoolean("startOnBoot", false),
-                autoUpdateSubscriptions = o.optBoolean("autoUpdateSubscriptions", true),
-                subscriptionUpdateIntervalHours = o.optLong("subscriptionUpdateIntervalHours", 2L).coerceAtLeast(2L),
-            )
-        }.getOrDefault(AppSettings())
+        return com.palazik.vpn.data.model.AppSettingsCodec.fromJson(prefs.getString("app_settings", null))
     }
-
-    private fun JSONArray.toStringList(): List<String> =
-        buildList {
-            for (i in 0 until length()) {
-                add(optString(i))
-            }
-        }
 
     private fun loadActiveProfile(): VpnProfile? {
         val prefs = applicationContext.getSharedPreferences("palazik_profiles", Context.MODE_PRIVATE)
@@ -355,36 +363,50 @@ class palazikVpnService : VpnService() {
     // ── Stop ──────────────────────────────────────────────────────────────────
 
     private fun stopVpn() {
-        if (_connectionState.value == ServiceState.STOPPED) return
+        val s = _connectionState.value
+        // Guard STOPPING too — stop may be requested again while async teardown runs
+        if (s == ServiceState.STOPPED || s == ServiceState.STOPPING) return
         _connectionState.value = ServiceState.STOPPING
         addDiagnostic("Stopping VPN")
         statsJob?.cancel()
         statsJob = null
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            try { connectivity.unregisterNetworkCallback(defaultNetworkCallback) } catch (_: Exception) {}
-        }
-
-        // v2rayNG: stopSelf() BEFORE mInterface.close() — otherwise core fails to stop
-        // and subsequent startLoop calls report "port in use"
-        try { coreController?.stopLoop() } catch (e: Exception) { Log.w(TAG, "stopLoop: ${e.message}") }
-        coreController = null
+        unregisterNetworkCallbackSafely()
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
 
+        // BUG FIX: teardownCore() does a blocking Thread.sleep(100) + native stopLoop.
+        // stopVpn() is invoked from onStartCommand (main thread) and the xray shutdown
+        // callback, so run the blocking part off the main thread to avoid jank/ANR.
+        scope.launch {
+            teardownCore()
+            _connectionState.value = ServiceState.STOPPED
+            _lastError.value = null
+            _connectedSince.value = 0L
+            _bytesIn.value  = 0L
+            _bytesOut.value = 0L
+            addDiagnostic("Stopped")
+        }
+    }
+
+    /** Blocking: stop the native core, wait briefly, then close the TUN. */
+    private fun teardownCore() {
+        // v2rayNG: stopLoop() before closing the interface, otherwise the core fails to
+        // stop and subsequent startLoop calls report "port in use".
+        try { coreController?.stopLoop() } catch (e: Exception) { Log.w(TAG, "stopLoop: ${e.message}") }
+        coreController = null
+
         // Small delay to allow async core stop before closing TUN (v2rayNG: Thread.sleep(100))
-        Thread.sleep(100)
+        try { Thread.sleep(100) } catch (_: InterruptedException) {}
 
         try { vpnInterface?.close() } catch (e: Exception) { Log.w(TAG, "iface close: ${e.message}") }
         vpnInterface = null
+    }
 
-        _connectionState.value = ServiceState.STOPPED
-        _lastError.value = null
-        _connectedSince.value = 0L
-        addDiagnostic("Stopped")
-        _bytesIn.value  = 0L
-        _bytesOut.value = 0L
+    private fun unregisterNetworkCallbackSafely() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try { connectivity.unregisterNetworkCallback(defaultNetworkCallback) } catch (_: Exception) {}
+        }
     }
 
     private fun failVpn() {
@@ -453,11 +475,18 @@ class palazikVpnService : VpnService() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
+        // Stop action — lets the user disconnect straight from the notification shade.
+        val stopPi = PendingIntent.getService(
+            this, 1,
+            Intent(this, palazikVpnService::class.java).apply { action = ACTION_STOP },
+            PendingIntent.FLAG_IMMUTABLE,
+        )
         val builder = NotificationCompat.Builder(this, palazikVPNApp.CHANNEL_VPN)
             .setContentTitle("palazikVPN")
             .setContentText(status)
             .setSmallIcon(R.drawable.ic_vpn_key)
             .setOngoing(true)
+            .addAction(0, "Disconnect", stopPi)
         builder.setContentIntent(pi)
         return builder.build()
     }

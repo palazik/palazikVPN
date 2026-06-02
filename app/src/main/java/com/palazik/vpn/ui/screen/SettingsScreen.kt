@@ -1,5 +1,7 @@
 package com.palazik.vpn.ui.screen
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,15 +16,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.palazik.vpn.R
+import com.palazik.vpn.data.model.AppSettings
 import com.palazik.vpn.data.model.DesignSystem
 import com.palazik.vpn.data.model.PingMode
 import com.palazik.vpn.ui.theme.LocalDesignSystem
 import com.palazik.vpn.ui.viewmodel.MainViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -215,6 +222,30 @@ private fun MiuixSettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
                     }
                 }
             }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ── Routing & Privacy ────────────────────────────────────────────────
+        SmallTitle(text = "Routing & Privacy")
+        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            Column(Modifier.padding(16.dp)) { RoutingSettingsContent(vm, ui.settings) }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ── Subscriptions ────────────────────────────────────────────────────
+        SmallTitle(text = "Subscriptions")
+        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            Column(Modifier.padding(16.dp)) { SubscriptionUaContent(vm, ui.settings) }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // ── Backup ───────────────────────────────────────────────────────────
+        SmallTitle(text = "Backup")
+        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            Column(Modifier.padding(16.dp)) { BackupSettingsContent(vm) }
         }
 
         Spacer(Modifier.height(12.dp))
@@ -540,6 +571,24 @@ private fun Md3SettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
 
         Spacer(Modifier.height(8.dp))
 
+        SettingsSection(title = "Routing & Privacy") {
+            RoutingSettingsContent(vm, ui.settings)
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsSection(title = "Subscriptions") {
+            SubscriptionUaContent(vm, ui.settings)
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        SettingsSection(title = "Backup") {
+            BackupSettingsContent(vm)
+        }
+
+        Spacer(Modifier.height(8.dp))
+
         SettingsSection(title = "Startup") {
             Row(
                 Modifier.fillMaxWidth(),
@@ -728,6 +777,167 @@ private fun AppPickerDialog(
         confirmButton = { Button(onClick = { onSave(picked.toList()) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+// ── Routing / subscription / backup section bodies (shared by both design systems) ──
+
+@Composable
+private fun RoutingSettingsContent(vm: MainViewModel, settings: AppSettings) {
+    var directDomains by remember(settings.customDirectDomains) {
+        mutableStateOf(settings.customDirectDomains.joinToString(", "))
+    }
+    var blockedDomains by remember(settings.customBlockedDomains) {
+        mutableStateOf(settings.customBlockedDomains.joinToString(", "))
+    }
+
+    SettingRow(
+        title = "Block ads",
+        subtitle = "Drop requests matching the ad/tracker domain list",
+        checked = settings.blockAds,
+        onChange = { vm.updateAppSettings(settings.copy(blockAds = it)) },
+    )
+    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+    SettingRow(
+        title = "Bypass China",
+        subtitle = "Route mainland China domains & IPs directly (outside the proxy)",
+        checked = settings.bypassChina,
+        onChange = { vm.updateAppSettings(settings.copy(bypassChina = it)) },
+    )
+    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+    SettingRow(
+        title = "Route IPv6 through tunnel",
+        subtitle = "Off forces IPv4-only dialling. IPv6 is always captured to prevent leaks.",
+        checked = settings.enableIpv6,
+        onChange = { vm.updateAppSettings(settings.copy(enableIpv6 = it)) },
+    )
+    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+    SettingRow(
+        title = "Kill switch (lockdown)",
+        subtitle = "Block traffic while the tunnel isn't ready. For full effect also enable Android's Always-on VPN.",
+        checked = settings.lockdownMode,
+        onChange = { vm.updateAppSettings(settings.copy(lockdownMode = it)) },
+    )
+    Spacer(Modifier.height(10.dp))
+    OutlinedTextField(
+        value = directDomains,
+        onValueChange = { directDomains = it },
+        label = { Text("Direct domains") },
+        supportingText = { Text("Comma separated, e.g. geosite:google, example.com") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+    )
+    Spacer(Modifier.height(8.dp))
+    OutlinedTextField(
+        value = blockedDomains,
+        onValueChange = { blockedDomains = it },
+        label = { Text("Blocked domains") },
+        supportingText = { Text("Comma separated") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+    )
+    Spacer(Modifier.height(10.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Button(onClick = {
+            vm.updateAppSettings(settings.copy(
+                customDirectDomains = directDomains.split(",", "\n").map { it.trim() }.filter { it.isNotBlank() },
+                customBlockedDomains = blockedDomains.split(",", "\n").map { it.trim() }.filter { it.isNotBlank() },
+            ))
+        }) {
+            Icon(Icons.Rounded.Save, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Save Routing")
+        }
+    }
+}
+
+@Composable
+private fun SubscriptionUaContent(vm: MainViewModel, settings: AppSettings) {
+    var ua by remember(settings.subscriptionUserAgent) { mutableStateOf(settings.subscriptionUserAgent) }
+    OutlinedTextField(
+        value = ua,
+        onValueChange = { ua = it },
+        label = { Text("Subscription User-Agent") },
+        supportingText = { Text("Some providers serve configs based on this header") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+    )
+    Spacer(Modifier.height(10.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Button(onClick = { vm.updateAppSettings(settings.copy(subscriptionUserAgent = ua.trim())) }) {
+            Icon(Icons.Rounded.Save, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Save")
+        }
+    }
+}
+
+@Composable
+private fun BackupSettingsContent(vm: MainViewModel) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null) scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use {
+                        it.write(vm.exportProfilesText().toByteArray())
+                    }
+                }.isSuccess
+            }
+            vm.showSnack(if (ok) "Profiles exported" else "Export failed")
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) scope.launch {
+            val body = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { String(it.readBytes()) }
+                }.getOrNull()
+            }
+            if (body != null) vm.importProfilesText(body) else vm.showSnack("Could not read file")
+        }
+    }
+
+    Text(
+        "Export all profiles to a .txt file (palazikvpn:// links), or import them back on another device.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(10.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        OutlinedButton(onClick = { importLauncher.launch(arrayOf("text/plain", "*/*")) }) {
+            Icon(Icons.Rounded.FileUpload, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Import")
+        }
+        Spacer(Modifier.width(8.dp))
+        Button(onClick = { exportLauncher.launch("palazikvpn-profiles.txt") }) {
+            Icon(Icons.Rounded.FileDownload, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Export")
+        }
+    }
+}
+
+@Composable
+private fun SettingRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
 }
 
 @Composable

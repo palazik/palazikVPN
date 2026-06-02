@@ -90,8 +90,14 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         val data = intent?.data ?: return
-        if (data.scheme == "palazikvpn") {
-            vm.importProfileFromLink(data.getQueryParameter("config") ?: data.toString())
+        when (data.scheme?.lowercase()) {
+            // palazikvpn://import?config=<link>  → import the wrapped link
+            // palazikvpn://<base64>#name          → import the share link itself
+            "palazikvpn" ->
+                vm.importProfileFromLink(data.getQueryParameter("config") ?: data.toString())
+            // Other proxy schemes opened from a browser / file manager
+            "vmess", "vless", "ss", "trojan", "hysteria2", "wireguard", "socks5", "tuic", "xhttp", "httpproxy" ->
+                vm.importProfileFromLink(data.toString())
         }
     }
 

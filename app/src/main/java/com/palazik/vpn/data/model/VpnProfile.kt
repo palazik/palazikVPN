@@ -34,6 +34,10 @@ data class VpnProfile(
     val fingerprint: String = "chrome",
     val publicKey: String = "",       // reality / wireguard
     val shortId: String   = "",       // reality
+    val allowInsecure: Boolean = false, // skip TLS cert verification (self-signed servers)
+
+    // ── VMess ────────────────────────────────────────────────────────────────
+    val vmessSecurity: String = "auto", // vmess cipher: auto / aes-128-gcm / chacha20-poly1305 / none
 
     // ── Shadowsocks ──────────────────────────────────────────────────────────
     val ssMethod: String  = "chacha20-ietf-poly1305",
@@ -55,6 +59,7 @@ data class VpnProfile(
     // ── metadata ─────────────────────────────────────────────────────────────
     val subscriptionId: String? = null,
     val latencyMs: Long   = -1L,
+    val lastTested: Long  = 0L,         // epoch millis of last latency test (0 = never)
     val isActive: Boolean = false,
     val addedAt: Long     = System.currentTimeMillis(),
 )

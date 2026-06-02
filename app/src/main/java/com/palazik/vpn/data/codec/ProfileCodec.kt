@@ -36,7 +36,9 @@ object ProfileCodec {
             trimmed.startsWith("hysteria2://")  -> decodeHysteria2(trimmed)
             trimmed.startsWith("wireguard://")  -> decodeWireguard(trimmed)
             trimmed.startsWith("socks5://")     -> decodeSocks5(trimmed)
-            trimmed.startsWith("http://")       -> decodeHttp(trimmed)
+            // BUG FIX: plain http:// is ambiguous (it's how subscription URLs look), so an
+            // HTTP-proxy profile uses the explicit httpproxy:// scheme on import/export.
+            trimmed.startsWith("httpproxy://")  -> decodeHttp(trimmed.replaceFirst("httpproxy://", "http://"))
             trimmed.startsWith("tuic://")       -> decodeTuic(trimmed)
             // xhttp:// share links are VLESS profiles with Transport.XHTTP
             trimmed.startsWith("xhttp://")      -> decodeXhttp(trimmed)
@@ -87,6 +89,8 @@ object ProfileCodec {
             put("fp", p.fingerprint)
             put("pubkey", p.publicKey)
             put("shortId", p.shortId)
+            put("allowInsecure", p.allowInsecure)
+            put("vmessScy", p.vmessSecurity)
             put("ssMethod", p.ssMethod)
             put("ssPwd", p.ssPassword)
             put("wgPriv", p.wgPrivateKey)
@@ -133,6 +137,8 @@ object ProfileCodec {
             fingerprint = json.optString("fp", "chrome"),
             publicKey   = json.optString("pubkey"),
             shortId     = json.optString("shortId"),
+            allowInsecure = json.optBoolean("allowInsecure", false),
+            vmessSecurity = json.optString("vmessScy", "auto").ifBlank { "auto" },
             ssMethod    = json.optString("ssMethod", "chacha20-ietf-poly1305"),
             ssPassword  = json.optString("ssPwd"),
             wgPrivateKey    = json.optString("wgPriv"),
@@ -177,6 +183,10 @@ object ProfileCodec {
             host      = json.optString("host"),
             security  = security,
             sni       = json.optString("sni"),
+            // BUG FIX: honour the link's cipher (scy) instead of always "auto"
+            vmessSecurity = json.optString("scy", "auto").ifBlank { "auto" },
+            allowInsecure = json.optString("allowInsecure") == "1" ||
+                json.optString("allowInsecure").equals("true", true),
         )
     }
 
@@ -207,6 +217,7 @@ object ProfileCodec {
             fingerprint = params["fp"] ?: "chrome",
             publicKey   = params["pbk"] ?: "",
             shortId     = params["sid"] ?: "",
+            allowInsecure = params["allowInsecure"] == "1" || params["allowInsecure"].equals("true", true),
         )
     }
 
@@ -255,14 +266,30 @@ object ProfileCodec {
     private fun decodeTrojan(raw: String): VpnProfile {
         val uri    = Uri.parse(raw)
         val params = uri.queryParameterNames.associateWith { uri.getQueryParameter(it) ?: "" }
+        // BUG FIX: Trojan can run over WS/gRPC/H2 — read type/path/host so non-TCP
+        // Trojan links import correctly instead of silently falling back to plain TCP.
+        val transport = Transport.values().firstOrNull { it.name.equals(params["type"], true) } ?: Transport.TCP
+        val security = when (params["security"]?.lowercase()) {
+            "none"    -> Security.NONE
+            "reality" -> Security.REALITY
+            "xtls"    -> Security.XTLS
+            else      -> Security.TLS   // Trojan defaults to TLS
+        }
         return VpnProfile(
-            name     = Uri.decode(uri.fragment ?: "Trojan"),
-            protocol = Protocol.TROJAN,
-            address  = uri.host ?: "",
-            port     = uri.port.takeIf { it > 0 } ?: 443,
-            uuid     = uri.userInfo ?: "",
-            security = Security.TLS,
-            sni      = params["sni"] ?: "",
+            name        = Uri.decode(uri.fragment ?: "Trojan"),
+            protocol    = Protocol.TROJAN,
+            address     = uri.host ?: "",
+            port        = uri.port.takeIf { it > 0 } ?: 443,
+            uuid        = uri.userInfo ?: "",
+            transport   = transport,
+            path        = params["path"] ?: "/",
+            host        = params["host"] ?: "",
+            security    = security,
+            sni         = params["sni"] ?: "",
+            fingerprint = params["fp"]?.ifBlank { "chrome" } ?: "chrome",
+            publicKey   = params["pbk"] ?: "",
+            shortId     = params["sid"] ?: "",
+            allowInsecure = params["allowInsecure"] == "1" || params["allowInsecure"].equals("true", true),
         )
     }
 
@@ -374,6 +401,7 @@ object ProfileCodec {
             fingerprint = params["fp"] ?: "chrome",
             publicKey = params["pbk"] ?: "",
             shortId = params["sid"] ?: "",
+            allowInsecure = params["allowInsecure"] == "1" || params["allowInsecure"].equals("true", true),
         )
     }
 
@@ -399,8 +427,10 @@ object ProfileCodec {
         val json = JSONObject().apply {
             put("v","2"); put("ps",p.name); put("add",p.address)
             put("port",p.port); put("id",p.uuid); put("aid",0)
+            put("scy", p.vmessSecurity.ifBlank { "auto" })
             put("net",net); put("path",p.path); put("host",p.host)
             put("tls",tls); put("sni",p.sni)
+            if (p.allowInsecure) put("allowInsecure", "1")
         }.toString()
         return "vmess://${Base64.encodeToString(json.toByteArray(), Base64.NO_WRAP)}"
     }
@@ -419,6 +449,7 @@ object ProfileCodec {
             b.appendQueryParameter("pbk", p.publicKey)
                 .appendQueryParameter("sid", p.shortId)
         }
+        if (p.allowInsecure) b.appendQueryParameter("allowInsecure", "1")
         b.fragment(p.name)
         return b.build().toString()
     }
@@ -429,11 +460,17 @@ object ProfileCodec {
         return "ss://$userInfo@${p.address}:${p.port}#${Uri.encode(p.name)}"
     }
 
-    private fun encodeTrojan(p: VpnProfile) =
-        Uri.Builder().scheme("trojan")
+    private fun encodeTrojan(p: VpnProfile): String {
+        val b = Uri.Builder().scheme("trojan")
             .encodedAuthority("${p.uuid}@${p.address}:${p.port}")
+            .appendQueryParameter("type", p.transport.name.lowercase())
+            .appendQueryParameter("security", p.security.name.lowercase())
             .appendQueryParameter("sni", p.sni)
-            .fragment(p.name).build().toString()
+        if (p.path.isNotBlank() && p.path != "/") b.appendQueryParameter("path", p.path)
+        if (p.host.isNotBlank()) b.appendQueryParameter("host", p.host)
+        if (p.allowInsecure) b.appendQueryParameter("allowInsecure", "1")
+        return b.fragment(p.name).build().toString()
+    }
 
     private fun encodeHysteria2(p: VpnProfile): String {
         val b = Uri.Builder().scheme("hysteria2")
@@ -464,7 +501,9 @@ object ProfileCodec {
             .toString()
 
     private fun encodeHttp(p: VpnProfile): String {
-        return Uri.Builder().scheme("http")
+        // Uses the explicit httpproxy:// scheme so it round-trips without colliding
+        // with plain http:// subscription URLs on import.
+        return Uri.Builder().scheme("httpproxy")
             .encodedAuthority(buildEncodedAuthority(p.address, p.port, p.uuid))
             .fragment(p.name)
             .build()

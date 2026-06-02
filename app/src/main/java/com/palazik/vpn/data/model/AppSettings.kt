@@ -11,4 +11,17 @@ data class AppSettings(
     val autoUpdateSubscriptions: Boolean = true,
     val subscriptionUpdateIntervalHours: Long = 2L,
     val designSystem: DesignSystem = DesignSystem.MIUIX,
+
+    // ── Subscriptions ──────────────────────────────────────────────────────────
+    val subscriptionUserAgent: String = "v2rayNG/1.0",
+
+    // ── Routing ────────────────────────────────────────────────────────────────
+    val blockAds: Boolean = true,
+    val bypassChina: Boolean = false,           // route geosite:cn / geoip:cn direct
+    val customDirectDomains: List<String> = emptyList(),
+    val customBlockedDomains: List<String> = emptyList(),
+
+    // ── Privacy / leak protection ──────────────────────────────────────────────
+    val enableIpv6: Boolean = false,            // add IPv6 address + ::/0 route to TUN
+    val lockdownMode: Boolean = false,          // block traffic while VPN handler not ready (kill switch)
 )

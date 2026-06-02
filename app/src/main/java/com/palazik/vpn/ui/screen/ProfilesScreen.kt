@@ -64,6 +64,24 @@ fun ProfilesScreen(vm: MainViewModel) {
     var previewProfile by remember { mutableStateOf<VpnProfile?>(null) }
     var previewErrors by remember { mutableStateOf<List<String>>(emptyList()) }
     var importMenuExpanded by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var sortMode by remember { mutableStateOf(ProfileSortMode.DEFAULT) }
+
+    val visibleProfiles = remember(ui.profiles, searchQuery, sortMode) {
+        ui.profiles
+            .filter {
+                searchQuery.isBlank() ||
+                    it.name.contains(searchQuery, true) ||
+                    it.address.contains(searchQuery, true)
+            }
+            .let { list ->
+                when (sortMode) {
+                    ProfileSortMode.DEFAULT -> list
+                    ProfileSortMode.NAME    -> list.sortedBy { it.name.lowercase() }
+                    ProfileSortMode.LATENCY -> list.sortedBy { if (it.latencyMs < 0) Long.MAX_VALUE else it.latencyMs }
+                }
+            }
+    }
 
     fun previewImport(raw: String) {
         val profile = ProfileCodec.decode(raw)
@@ -189,6 +207,41 @@ fun ProfilesScreen(vm: MainViewModel) {
             }
         }
 
+        // ── Search + sort ────────────────────────────────────────────────────
+        AnimatedVisibility(visible = ui.profiles.size > 3) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Search") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, null, Modifier.size(18.dp)) },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                Box {
+                    var sortExpanded by remember { mutableStateOf(false) }
+                    IconButton(onClick = { sortExpanded = true }) {
+                        Icon(Icons.Rounded.Sort, "Sort profiles")
+                    }
+                    DropdownMenu(expanded = sortExpanded, onDismissRequest = { sortExpanded = false }) {
+                        ProfileSortMode.values().forEach { mode ->
+                            DropdownMenuItem(
+                                text = { Text(mode.label) },
+                                trailingIcon = if (sortMode == mode) {
+                                    { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
+                                } else null,
+                                onClick = { sortMode = mode; sortExpanded = false },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         Spacer(Modifier.height(12.dp))
 
         AnimatedContent(
@@ -227,7 +280,7 @@ fun ProfilesScreen(vm: MainViewModel) {
             } else {
                 // Bug fix #6: group profiles by subscription with collapsible sections
                 GroupedProfilesList(
-                    profiles      = ui.profiles,
+                    profiles      = visibleProfiles,
                     subscriptions = ui.subscriptions,
                     onSelect      = { vm.selectProfile(it) },
                     onDelete      = { profile -> deleteProfile = profile },
@@ -789,6 +842,13 @@ private fun ProfileCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (profile.lastTested > 0L) {
+                Text(
+                    "Tested ${relativeTime(profile.lastTested)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                )
+            }
 
             // Subscription source
             AnimatedVisibility(visible = subName != null) {
@@ -895,6 +955,8 @@ private fun ManualProfileDialog(
     var fingerprint by remember { mutableStateOf(initial?.fingerprint ?: "chrome") }
     var publicKey   by remember { mutableStateOf(initial?.publicKey   ?: "") }
     var shortId     by remember { mutableStateOf(initial?.shortId     ?: "") }
+    var allowInsecure by remember { mutableStateOf(initial?.allowInsecure ?: false) }
+    var vmessSecurity by remember { mutableStateOf(initial?.vmessSecurity ?: "auto") }
     var ssMethod    by remember { mutableStateOf(initial?.ssMethod    ?: "chacha20-ietf-poly1305") }
     var ssPassword  by remember { mutableStateOf(initial?.ssPassword  ?: "") }
     var hystPwd     by remember { mutableStateOf(initial?.hystPassword ?: "") }
@@ -908,6 +970,7 @@ private fun ManualProfileDialog(
     var protoExpanded     by remember { mutableStateOf(false) }
     var transportExpanded by remember { mutableStateOf(false) }
     var securityExpanded  by remember { mutableStateOf(false) }
+    var vmessCipherExpanded by remember { mutableStateOf(false) }
 
     val noTransportProtos = remember {
         listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.HYSTERIA2, Protocol.SOCKS5, Protocol.HTTP)
@@ -1048,6 +1111,41 @@ private fun ManualProfileDialog(
                                 OutlinedTextField(value = shortId,   onValueChange = { shortId   = it }, label = { Text("Short ID (sid)") },  modifier = Modifier.fillMaxWidth(), singleLine = true)
                             }
                         }
+                        // Allow insecure (skip cert verification) — for TLS-based security only
+                        AnimatedVisibility(visible = security == Security.TLS || security == Security.XTLS) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Allow insecure", style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        "Skip TLS certificate verification (self-signed servers)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(checked = allowInsecure, onCheckedChange = { allowInsecure = it })
+                            }
+                        }
+                    }
+                }
+
+                // VMess cipher
+                AnimatedVisibility(visible = protocol == Protocol.VMESS) {
+                    ExposedDropdownMenuBox(expanded = vmessCipherExpanded, onExpandedChange = { vmessCipherExpanded = it }) {
+                        OutlinedTextField(
+                            value = vmessSecurity, onValueChange = {}, readOnly = true,
+                            label = { Text("VMess Cipher") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(vmessCipherExpanded) },
+                            modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        )
+                        ExposedDropdownMenu(expanded = vmessCipherExpanded, onDismissRequest = { vmessCipherExpanded = false }) {
+                            listOf("auto", "aes-128-gcm", "chacha20-poly1305", "none", "zero").forEach { c ->
+                                DropdownMenuItem(text = { Text(c) }, onClick = { vmessSecurity = c; vmessCipherExpanded = false })
+                            }
+                        }
                     }
                 }
             }
@@ -1069,6 +1167,8 @@ private fun ManualProfileDialog(
                         fingerprint     = fingerprint.trim(),
                         publicKey       = publicKey.trim(),
                         shortId         = shortId.trim(),
+                        allowInsecure   = allowInsecure,
+                        vmessSecurity   = vmessSecurity,
                         ssMethod        = ssMethod.trim(),
                         ssPassword      = ssPassword.trim(),
                         hystPassword    = hystPwd.trim(),
@@ -1112,4 +1212,20 @@ private fun SecretTextField(
             }
         },
     )
+}
+
+private enum class ProfileSortMode(val label: String) {
+    DEFAULT("Default order"),
+    NAME("Name (A–Z)"),
+    LATENCY("Latency (fastest)"),
+}
+
+private fun relativeTime(epochMs: Long): String {
+    val diff = System.currentTimeMillis() - epochMs
+    return when {
+        diff < 60_000      -> "just now"
+        diff < 3_600_000   -> "${diff / 60_000}m ago"
+        diff < 86_400_000  -> "${diff / 3_600_000}h ago"
+        else               -> "${diff / 86_400_000}d ago"
+    }
 }

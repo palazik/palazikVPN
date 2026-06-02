@@ -11,8 +11,8 @@ object XrayConfigBuilder {
             put("log",       buildLog())
             put("dns",       buildDns(settings))
             put("inbounds",  buildInbounds())
-            put("outbounds", buildOutbounds(profile))
-            put("routing",   buildRouting())
+            put("outbounds", buildOutbounds(profile, settings))
+            put("routing",   buildRouting(settings))
             put("stats",     JSONObject())
             put("policy",    buildPolicy())
         }.toString(2)
@@ -68,12 +68,15 @@ object XrayConfigBuilder {
 
     // ── Outbounds ─────────────────────────────────────────────────────────────
 
-    private fun buildOutbounds(profile: VpnProfile) = JSONArray().apply {
+    private fun buildOutbounds(profile: VpnProfile, settings: AppSettings) = JSONArray().apply {
         put(buildProxyOutbound(profile))
         put(JSONObject().apply {
             put("tag", "direct")
             put("protocol", "freedom")
-            put("settings", JSONObject().apply { put("domainStrategy", "UseIPv4") })
+            // UseIP allows IPv6 dialling when the user opted into IPv6; otherwise force IPv4.
+            put("settings", JSONObject().apply {
+                put("domainStrategy", if (settings.enableIpv6) "UseIP" else "UseIPv4")
+            })
         })
         put(JSONObject().apply {
             put("tag", "block")
@@ -137,8 +140,13 @@ object XrayConfigBuilder {
                         put(JSONObject().apply {
                             put("id", p.uuid)
                             put("encryption", "none")
-                            val flow = when (p.security) {
-                                Security.REALITY, Security.XTLS -> "xtls-rprx-vision"
+                            // BUG FIX: xtls-rprx-vision flow is only valid on raw/TCP transport.
+                            // Setting it on WS/gRPC/XHTTP/H2/QUIC makes xray reject the outbound,
+                            // so only apply flow for REALITY/XTLS over TCP.
+                            val flow = when {
+                                p.transport == Transport.TCP &&
+                                    (p.security == Security.REALITY || p.security == Security.XTLS) ->
+                                    "xtls-rprx-vision"
                                 else -> ""
                             }
                             if (flow.isNotEmpty()) put("flow", flow)
@@ -160,7 +168,7 @@ object XrayConfigBuilder {
                         put(JSONObject().apply {
                             put("id", p.uuid)
                             put("alterId", 0)
-                            put("security", "auto")
+                            put("security", p.vmessSecurity.ifBlank { "auto" })
                         })
                     })
                 })
@@ -206,7 +214,7 @@ object XrayConfigBuilder {
                     if (p.sni.isNotEmpty()) {
                         put("tlsSettings", JSONObject().apply {
                             put("serverName", p.sni)
-                            put("allowInsecure", false)
+                            put("allowInsecure", p.allowInsecure)
                         })
                     }
                     if (p.hystObfs.isNotEmpty()) {
@@ -348,7 +356,7 @@ object XrayConfigBuilder {
                 put("security", "tls")
                 put("tlsSettings", JSONObject().apply {
                     put("serverName",    p.sni.ifEmpty { p.address })
-                    put("allowInsecure", false)
+                    put("allowInsecure", p.allowInsecure)
                     if (p.fingerprint.isNotEmpty()) put("fingerprint", p.fingerprint)
                     put("alpn", JSONArray().apply {
                         if (p.transport in listOf(Transport.GRPC, Transport.H2)) put("h2")
@@ -370,7 +378,7 @@ object XrayConfigBuilder {
                 put("security", "tls")
                 put("tlsSettings", JSONObject().apply {
                     put("serverName",    p.sni.ifEmpty { p.address })
-                    put("allowInsecure", false)
+                    put("allowInsecure", p.allowInsecure)
                     if (p.fingerprint.isNotEmpty()) put("fingerprint", p.fingerprint)
                 })
             }
@@ -432,7 +440,7 @@ object XrayConfigBuilder {
     //   inboundTag=["tun"], port="53" → outboundTag="dns-out"
     // This is critical — without it DNS packets from TUN go into proxy,
     // proxy resolves them, returns through TUN, xray intercepts again → loop.
-    private fun buildRouting() = JSONObject().apply {
+    private fun buildRouting(settings: AppSettings) = JSONObject().apply {
         put("domainStrategy", "IPIfNonMatch")
         put("domainMatcher",  "hybrid")
         put("rules", JSONArray().apply {
@@ -445,14 +453,48 @@ object XrayConfigBuilder {
                 put("port", "53")
             })
 
-            // Rule 2: Block ads
-            put(JSONObject().apply {
-                put("type", "field")
-                put("outboundTag", "block")
-                put("domain", JSONArray().apply { put("geosite:category-ads-all") })
-            })
+            // User-defined blocked domains
+            if (settings.customBlockedDomains.isNotEmpty()) {
+                put(JSONObject().apply {
+                    put("type", "field")
+                    put("outboundTag", "block")
+                    put("domain", JSONArray().apply { settings.customBlockedDomains.forEach { put(it) } })
+                })
+            }
 
-            // Rule 3: Private/LAN IPs → direct
+            // Block ads (optional)
+            if (settings.blockAds) {
+                put(JSONObject().apply {
+                    put("type", "field")
+                    put("outboundTag", "block")
+                    put("domain", JSONArray().apply { put("geosite:category-ads-all") })
+                })
+            }
+
+            // User-defined direct domains
+            if (settings.customDirectDomains.isNotEmpty()) {
+                put(JSONObject().apply {
+                    put("type", "field")
+                    put("outboundTag", "direct")
+                    put("domain", JSONArray().apply { settings.customDirectDomains.forEach { put(it) } })
+                })
+            }
+
+            // Bypass China (optional) — route mainland domains & IPs direct
+            if (settings.bypassChina) {
+                put(JSONObject().apply {
+                    put("type", "field")
+                    put("outboundTag", "direct")
+                    put("domain", JSONArray().apply { put("geosite:cn") })
+                })
+                put(JSONObject().apply {
+                    put("type", "field")
+                    put("outboundTag", "direct")
+                    put("ip", JSONArray().apply { put("geoip:cn") })
+                })
+            }
+
+            // Private/LAN IPs → direct
             put(JSONObject().apply {
                 put("type", "field")
                 put("outboundTag", "direct")
@@ -467,7 +509,7 @@ object XrayConfigBuilder {
                 })
             })
 
-            // Rule 4: All other traffic → proxy
+            // All other traffic → proxy
             put(JSONObject().apply {
                 put("type", "field")
                 put("outboundTag", "proxy")
