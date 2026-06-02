@@ -38,14 +38,8 @@ fun HomeScreen(
     val vpnState     = ui.vpnState
     val isConnected  = vpnState == VpnState.CONNECTED
     val isTransition = vpnState == VpnState.CONNECTING || vpnState == VpnState.DISCONNECTING
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-
-    LaunchedEffect(isConnected) {
-        while (isConnected) {
-            now = System.currentTimeMillis()
-            kotlinx.coroutines.delay(1000)
-        }
-    }
+    // NOTE: per-second traffic/duration updates live in ConnectedStats so they don't
+    // recompose this whole screen every second.
 
     // ── Animations ────────────────────────────────────────────────────────────
 
@@ -328,20 +322,7 @@ fun HomeScreen(
                       fadeIn(tween(300)),
             exit    = shrinkVertically(tween(250)) + fadeOut(tween(200)),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                ConnectionHealthCard(
-                    profileName = ui.activeProfile?.name ?: "",
-                    connectedFor = formatDuration((now - ui.connectedSince).coerceAtLeast(0L)),
-                    total = ui.bytesIn + ui.bytesOut,
-                )
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    TrafficCard(Modifier.weight(1f), "↓  Download", ui.bytesIn)
-                    TrafficCard(Modifier.weight(1f), "↑  Upload",   ui.bytesOut)
-                }
-            }
+            ConnectedStats(vm = vm, profileName = ui.activeProfile?.name ?: "", isConnected = isConnected)
         }
 
         // ── Quick ping ────────────────────────────────────────────────────────
@@ -462,6 +443,41 @@ private fun ErrorCard(message: String, onRetry: () -> Unit) {
                     Text("Retry")
                 }
             }
+        }
+    }
+}
+
+/**
+ * Self-contained traffic + duration block. It collects the high-frequency flows and
+ * runs its own 1s ticker, so the per-second updates recompose only this subtree —
+ * not the whole HomeScreen.
+ */
+@Composable
+private fun ConnectedStats(vm: MainViewModel, profileName: String, isConnected: Boolean) {
+    val bytesIn        by vm.bytesIn.collectAsState()
+    val bytesOut       by vm.bytesOut.collectAsState()
+    val connectedSince by vm.connectedSince.collectAsState()
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(isConnected) {
+        while (isConnected) {
+            now = System.currentTimeMillis()
+            kotlinx.coroutines.delay(1000)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        ConnectionHealthCard(
+            profileName = profileName,
+            connectedFor = formatDuration((now - connectedSince).coerceAtLeast(0L)),
+            total = bytesIn + bytesOut,
+        )
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            TrafficCard(Modifier.weight(1f), "↓  Download", bytesIn)
+            TrafficCard(Modifier.weight(1f), "↑  Upload",   bytesOut)
         }
     }
 }

@@ -10,11 +10,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -33,31 +35,143 @@ import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.Card as MiuixCard
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 private val PingModeOptions             = PingMode.values().toList()
 private val SubscriptionIntervalOptions = listOf(2L, 6L, 12L, 24L)
 
-@OptIn(ExperimentalLayoutApi::class)
+// ── Routes for the settings sub-screens ─────────────────────────────────────
+object SettingsRoutes {
+    const val STYLE        = "style"
+    const val CONNECTION   = "settings/connection"
+    const val DNS          = "settings/dns"
+    const val ROUTING      = "settings/routing"
+    const val SUBSCRIPTION  = "settings/subscriptions"
+    const val SPLIT        = "settings/split"
+    const val BACKUP       = "settings/backup"
+    const val STARTUP      = "settings/startup"
+    const val DIAGNOSTICS  = "settings/diagnostics"
+    const val ABOUT        = "settings/about"
+}
+
+private data class SettingsEntry(
+    val route: String,
+    val title: String,
+    val summary: String,
+    val icon: ImageVector,
+)
+
+private data class SettingsGroup(val title: String, val entries: List<SettingsEntry>)
+
+private val SettingsGroups = listOf(
+    SettingsGroup("Appearance", listOf(
+        SettingsEntry(SettingsRoutes.STYLE, "Style", "Design system, dark mode, color theme", Icons.Rounded.Palette),
+    )),
+    SettingsGroup("Connection", listOf(
+        SettingsEntry(SettingsRoutes.CONNECTION, "Connection", "Ping test mode", Icons.Rounded.NetworkCheck),
+        SettingsEntry(SettingsRoutes.DNS, "DNS", "VPN, remote and direct DNS", Icons.Rounded.Dns),
+        SettingsEntry(SettingsRoutes.ROUTING, "Routing & Privacy", "Ad block, bypass China, IPv6, kill switch", Icons.Rounded.AltRoute),
+    )),
+    SettingsGroup("Profiles & data", listOf(
+        SettingsEntry(SettingsRoutes.SUBSCRIPTION, "Subscriptions", "Auto-update and User-Agent", Icons.Rounded.Subscriptions),
+        SettingsEntry(SettingsRoutes.SPLIT, "Split Tunneling", "Apps that bypass the VPN", Icons.Rounded.Apps),
+        SettingsEntry(SettingsRoutes.BACKUP, "Backup", "Export / import profiles", Icons.Rounded.Backup),
+    )),
+    SettingsGroup("System", listOf(
+        SettingsEntry(SettingsRoutes.STARTUP, "Startup", "Auto-connect on boot", Icons.Rounded.PowerSettingsNew),
+        SettingsEntry(SettingsRoutes.DIAGNOSTICS, "Diagnostics", "Connection log", Icons.Rounded.BugReport),
+        SettingsEntry(SettingsRoutes.ABOUT, "About", "Version and info", Icons.Rounded.Info),
+    )),
+)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Settings hub
+// ─────────────────────────────────────────────────────────────────────────────
+
 @Composable
-fun SettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
+fun SettingsScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
     val designSystem = LocalDesignSystem.current
-    if (designSystem == DesignSystem.MIUIX) {
-        MiuixSettingsScreen(vm, onOpenStyle)
-    } else {
-        Md3SettingsScreen(vm, onOpenStyle)
+    if (designSystem == DesignSystem.MIUIX) MiuixSettingsHub(onNavigate)
+    else Md3SettingsHub(onNavigate)
+}
+
+@Composable
+private fun MiuixSettingsHub(onNavigate: (String) -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState()),
+    ) {
+        SmallTitle(text = "Settings")
+        SettingsGroups.forEach { group ->
+            SmallTitle(text = group.title)
+            MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                Column(Modifier.padding(vertical = 4.dp)) {
+                    group.entries.forEach { entry ->
+                        ArrowPreference(
+                            title = entry.title,
+                            summary = entry.summary,
+                            onClick = { onNavigate(entry.route) },
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+        Spacer(Modifier.height(8.dp))
     }
 }
 
-// ── MiuiX Settings ──────────────────────────────────────────────────────────
-
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun MiuixSettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
-    val ui        by vm.ui.collectAsState()
-    val clipboard  = LocalClipboardManager.current
-    var showAppPicker by remember { mutableStateOf(false) }
+private fun Md3SettingsHub(onNavigate: (String) -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .navigationBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("Settings", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(4.dp))
+        SettingsGroups.forEach { group ->
+            Text(
+                group.title,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+            )
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Column {
+                    group.entries.forEachIndexed { index, entry ->
+                        if (index > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+                        ListItem(
+                            headlineContent   = { Text(entry.title) },
+                            supportingContent = { Text(entry.summary) },
+                            leadingContent    = { Icon(entry.icon, null, tint = MaterialTheme.colorScheme.primary) },
+                            trailingContent   = { Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                            modifier = Modifier.clickable { onNavigate(entry.route) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-screen scaffold (shared by both design systems)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun SettingsScaffold(
+    title: String,
+    onBack: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -66,386 +180,46 @@ private fun MiuixSettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
             .imePadding()
             .verticalScroll(rememberScrollState()),
     ) {
-        SmallTitle(text = "Settings")
-
-        // ── Style ────────────────────────────────────────────────────────────
-        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            ArrowPreference(
-                title = "Style",
-                summary = "Design system, dark mode, color theme",
-                onClick = onOpenStyle,
-            )
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // ── Connection ───────────────────────────────────────────────────────
-        SmallTitle(text = "Connection")
-        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column(Modifier.padding(16.dp)) {
-                Text(
-                    "Ping Test Mode",
-                    style    = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(bottom = 4.dp),
-                )
-                Text(
-                    "TCP — raw socket connect (fastest).\nGET / HEAD — Cloudflare request through VPN.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 12.dp),
-                )
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    PingModeOptions.forEachIndexed { idx, mode ->
-                        SegmentedButton(
-                            shape    = SegmentedButtonDefaults.itemShape(idx, PingModeOptions.size),
-                            selected = ui.pingMode == mode,
-                            onClick  = { vm.setPingMode(mode) },
-                            label    = {
-                                Text(when (mode) {
-                                    PingMode.TCP       -> "TCP"
-                                    PingMode.HTTP_GET  -> "GET"
-                                    PingMode.HTTP_HEAD -> "HEAD"
-                                })
-                            },
-                        )
-                    }
-                }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "Back")
             }
+            Text(title, style = MaterialTheme.typography.headlineSmall)
         }
-
-        Spacer(Modifier.height(12.dp))
-
-        // ── DNS ──────────────────────────────────────────────────────────────
-        SmallTitle(text = "DNS")
-        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column(Modifier.padding(16.dp)) {
-                var tunDns    by remember(ui.settings.dnsServers) { mutableStateOf(ui.settings.dnsServers.joinToString(", ")) }
-                var remoteDns by remember(ui.settings.remoteDns)  { mutableStateOf(ui.settings.remoteDns) }
-                var directDns by remember(ui.settings.directDns)  { mutableStateOf(ui.settings.directDns) }
-
-                OutlinedTextField(
-                    value          = tunDns,
-                    onValueChange  = { tunDns = it },
-                    label          = { Text("VPN DNS servers") },
-                    supportingText = { Text("Comma separated") },
-                    modifier       = Modifier.fillMaxWidth(),
-                    singleLine     = true,
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value         = remoteDns,
-                    onValueChange = { remoteDns = it },
-                    label         = { Text("Remote DNS") },
-                    modifier      = Modifier.fillMaxWidth(),
-                    singleLine    = true,
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value         = directDns,
-                    onValueChange = { directDns = it },
-                    label         = { Text("Direct DNS") },
-                    modifier      = Modifier.fillMaxWidth(),
-                    singleLine    = true,
-                )
-                Spacer(Modifier.height(10.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Button(onClick = {
-                        vm.updateAppSettings(
-                            ui.settings.copy(
-                                dnsServers = tunDns.split(",", "\n").map { it.trim() }.filter { it.isNotBlank() },
-                                remoteDns  = remoteDns,
-                                directDns  = directDns,
-                            )
-                        )
-                    }) {
-                        Icon(Icons.Rounded.Save, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Save DNS")
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // ── Split Tunneling ──────────────────────────────────────────────────
-        SmallTitle(text = "Split Tunneling")
-        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column(Modifier.padding(16.dp)) {
-                Text(
-                    "${ui.settings.bypassPackages.size} apps bypass VPN",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                if (ui.settings.bypassPackages.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        ui.settings.bypassPackages.take(4).forEach { pkg ->
-                            AssistChip(
-                                onClick      = {},
-                                label        = { Text(pkg, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                trailingIcon = {
-                                    IconButton(
-                                        onClick  = { vm.updateAppSettings(ui.settings.copy(bypassPackages = ui.settings.bypassPackages - pkg)) },
-                                        modifier = Modifier.size(24.dp),
-                                    ) {
-                                        Icon(Icons.Rounded.Close, null, Modifier.size(16.dp))
-                                    }
-                                },
-                            )
-                        }
-                        if (ui.settings.bypassPackages.size > 4) {
-                            Text(
-                                "+${ui.settings.bypassPackages.size - 4} more",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-                FlowRow(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalArrangement   = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedButton(onClick = { vm.updateAppSettings(ui.settings.copy(bypassPackages = emptyList())) }) {
-                        Icon(Icons.Rounded.Clear, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Clear")
-                    }
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = { showAppPicker = true }) {
-                        Icon(Icons.Rounded.Apps, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Choose Apps")
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // ── Routing & Privacy ────────────────────────────────────────────────
-        SmallTitle(text = "Routing & Privacy")
-        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column(Modifier.padding(16.dp)) { RoutingSettingsContent(vm, ui.settings) }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // ── Subscriptions ────────────────────────────────────────────────────
-        SmallTitle(text = "Subscriptions")
-        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column(Modifier.padding(16.dp)) { SubscriptionUaContent(vm, ui.settings) }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // ── Backup ───────────────────────────────────────────────────────────
-        SmallTitle(text = "Backup")
-        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column(Modifier.padding(16.dp)) { BackupSettingsContent(vm) }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // ── Startup ──────────────────────────────────────────────────────────
-        SmallTitle(text = "Startup")
-        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            SwitchPreference(
-                title = "Auto-connect on boot",
-                summary = "Starts the selected profile after reboot",
-                checked = ui.settings.startOnBoot,
-                onCheckedChange = { enabled -> vm.updateAppSettings(ui.settings.copy(startOnBoot = enabled)) },
-            )
-            SwitchPreference(
-                title = "Auto-update subscriptions",
-                summary = "Refreshes every ${ui.settings.subscriptionUpdateIntervalHours}h when network available",
-                checked = ui.settings.autoUpdateSubscriptions,
-                onCheckedChange = { enabled -> vm.updateAppSettings(ui.settings.copy(autoUpdateSubscriptions = enabled)) },
-            )
-            AnimatedVisibility(visible = ui.settings.autoUpdateSubscriptions) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(
-                        "Update interval",
-                        style    = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement   = Arrangement.spacedBy(8.dp),
-                    ) {
-                        SubscriptionIntervalOptions.forEach { hours ->
-                            FilterChip(
-                                selected    = ui.settings.subscriptionUpdateIntervalHours == hours,
-                                onClick     = { vm.updateAppSettings(ui.settings.copy(subscriptionUpdateIntervalHours = hours)) },
-                                label       = { Text("${hours}h") },
-                                leadingIcon = if (ui.settings.subscriptionUpdateIntervalHours == hours) {
-                                    { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
-                                } else null,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // ── Diagnostics ──────────────────────────────────────────────────────
-        SmallTitle(text = "Diagnostics")
-        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            Column(Modifier.padding(16.dp)) {
-                if (ui.diagnostics.isEmpty()) {
-                    Text(
-                        "No connection events yet.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        ui.diagnostics.takeLast(6).forEach { line ->
-                            Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Button(
-                        onClick = { clipboard.setText(AnnotatedString(ui.diagnostics.joinToString("\n"))) },
-                        enabled = ui.diagnostics.isNotEmpty(),
-                    ) {
-                        Icon(Icons.Rounded.ContentCopy, null, Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Copy Logs")
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // ── About ────────────────────────────────────────────────────────────
-        SmallTitle(text = "About")
-        MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-            ArrowPreference(
-                title = "palazikVPN",
-                summary = "V${stringResource(R.string.app_version)} • by palaziks",
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-    }
-
-    if (showAppPicker) {
-        AppPickerDialog(
-            apps      = ui.installedApps,
-            selected  = ui.settings.bypassPackages.toSet(),
-            onDismiss = { showAppPicker = false },
-            onSave    = { selected ->
-                vm.updateAppSettings(ui.settings.copy(bypassPackages = selected.sorted()))
-                showAppPicker = false
-            },
+        Column(
+            Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            content = content,
         )
     }
 }
 
-// ── MD3 Expressive Settings ─────────────────────────────────────────────────
-
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
-private fun Md3SettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
-    val ui        by vm.ui.collectAsState()
-    val clipboard  = LocalClipboardManager.current
-    var showAppPicker by remember { mutableStateOf(false) }
+private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), content = content)
+    }
+}
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp)
-            .padding(bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text("Settings", style = MaterialTheme.typography.headlineSmall)
-        Spacer(Modifier.height(8.dp))
+// ─────────────────────────────────────────────────────────────────────────────
+// Sub-screens
+// ─────────────────────────────────────────────────────────────────────────────
 
-        // ── Style button ──────────────────────────────────────────────────────
-        ElevatedCard(
-            onClick = onOpenStyle,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Icon(
-                        Icons.Rounded.Palette,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                    Column {
-                        Text("Style", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "Design system, dark mode, color theme",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Text(
-                            when (ui.designSystem) {
-                                DesignSystem.MIUIX -> "Miuix"
-                                DesignSystem.MD3   -> "M3 Expressive"
-                            } + " · " + when (ui.darkMode.name) {
-                                "SYSTEM"       -> "System dark"
-                                "ALWAYS_DARK"  -> "Dark"
-                                "ALWAYS_LIGHT" -> "Light"
-                                else           -> ""
-                            } + " · " + when (ui.appTheme.name) {
-                                "CYBER"   -> "Cyber"
-                                "OCEAN"   -> "Ocean"
-                                "FOREST"  -> "Forest"
-                                "SUNSET"  -> "Sunset"
-                                "DYNAMIC" -> "Dynamic"
-                                else      -> ""
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-                Icon(
-                    Icons.Rounded.ChevronRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        // ── Connection ────────────────────────────────────────────────────────
-        SettingsSection(title = "Connection") {
-            Text(
-                "Ping Test Mode",
-                style    = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ConnectionSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val ui by vm.ui.collectAsState()
+    SettingsScaffold("Connection", onBack) {
+        SettingsCard {
+            Text("Ping Test Mode", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp))
             Text(
                 "TCP — raw socket connect (fastest, most accurate, default).\n" +
                 "GET / HEAD — Cloudflare request through the running VPN.",
-                style    = MaterialTheme.typography.bodySmall,
-                color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 12.dp),
             )
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -465,48 +239,42 @@ private fun Md3SettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
                 }
             }
         }
+    }
+}
 
-        Spacer(Modifier.height(8.dp))
-
-        SettingsSection(title = "DNS") {
+@Composable
+fun DnsSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val ui by vm.ui.collectAsState()
+    SettingsScaffold("DNS", onBack) {
+        SettingsCard {
             var tunDns    by remember(ui.settings.dnsServers) { mutableStateOf(ui.settings.dnsServers.joinToString(", ")) }
             var remoteDns by remember(ui.settings.remoteDns)  { mutableStateOf(ui.settings.remoteDns) }
             var directDns by remember(ui.settings.directDns)  { mutableStateOf(ui.settings.directDns) }
 
             OutlinedTextField(
-                value          = tunDns,
-                onValueChange  = { tunDns = it },
-                label          = { Text("VPN DNS servers") },
+                value = tunDns, onValueChange = { tunDns = it },
+                label = { Text("VPN DNS servers") },
                 supportingText = { Text("Comma separated") },
-                modifier       = Modifier.fillMaxWidth(),
-                singleLine     = true,
+                modifier = Modifier.fillMaxWidth(), singleLine = true,
             )
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
-                value         = remoteDns,
-                onValueChange = { remoteDns = it },
-                label         = { Text("Remote DNS") },
-                modifier      = Modifier.fillMaxWidth(),
-                singleLine    = true,
+                value = remoteDns, onValueChange = { remoteDns = it },
+                label = { Text("Remote DNS") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
             )
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
-                value         = directDns,
-                onValueChange = { directDns = it },
-                label         = { Text("Direct DNS") },
-                modifier      = Modifier.fillMaxWidth(),
-                singleLine    = true,
+                value = directDns, onValueChange = { directDns = it },
+                label = { Text("Direct DNS") }, modifier = Modifier.fillMaxWidth(), singleLine = true,
             )
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Button(onClick = {
-                    vm.updateAppSettings(
-                        ui.settings.copy(
-                            dnsServers = tunDns.split(",", "\n").map { it.trim() }.filter { it.isNotBlank() },
-                            remoteDns  = remoteDns,
-                            directDns  = directDns,
-                        )
-                    )
+                    vm.updateAppSettings(ui.settings.copy(
+                        dnsServers = tunDns.split(",", "\n").map { it.trim() }.filter { it.isNotBlank() },
+                        remoteDns  = remoteDns,
+                        directDns  = directDns,
+                    ))
                 }) {
                     Icon(Icons.Rounded.Save, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
@@ -514,158 +282,68 @@ private fun Md3SettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
                 }
             }
         }
+    }
+}
 
-        Spacer(Modifier.height(8.dp))
+@Composable
+fun RoutingSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val ui by vm.ui.collectAsState()
+    SettingsScaffold("Routing & Privacy", onBack) {
+        SettingsCard { RoutingSettingsContent(vm, ui.settings) }
+    }
+}
 
-        SettingsSection(title = "Split Tunneling") {
-            Text(
-                "${ui.settings.bypassPackages.size} apps bypass VPN",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+@Composable
+fun SubscriptionSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val ui by vm.ui.collectAsState()
+    SettingsScaffold("Subscriptions", onBack) {
+        SettingsCard { StartupAutoUpdateContent(vm, ui.settings) }
+        SettingsCard { SubscriptionUaContent(vm, ui.settings) }
+    }
+}
+
+@Composable
+fun SplitTunnelSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val ui by vm.ui.collectAsState()
+    SettingsScaffold("Split Tunneling", onBack) {
+        SettingsCard { SplitTunnelContent(vm, ui.settings, ui.installedApps) }
+    }
+}
+
+@Composable
+fun BackupSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    SettingsScaffold("Backup", onBack) {
+        SettingsCard { BackupSettingsContent(vm) }
+    }
+}
+
+@Composable
+fun StartupSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val ui by vm.ui.collectAsState()
+    SettingsScaffold("Startup", onBack) {
+        SettingsCard {
+            SettingRow(
+                title = "Auto-connect on boot",
+                subtitle = "Starts the selected profile after reboot when VPN permission is already granted.",
+                checked = ui.settings.startOnBoot,
+                onChange = { vm.updateAppSettings(ui.settings.copy(startOnBoot = it)) },
             )
-            Spacer(Modifier.height(8.dp))
-            if (ui.settings.bypassPackages.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    ui.settings.bypassPackages.take(4).forEach { pkg ->
-                        AssistChip(
-                            onClick      = {},
-                            label        = { Text(pkg, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                            trailingIcon = {
-                                IconButton(
-                                    onClick  = { vm.updateAppSettings(ui.settings.copy(bypassPackages = ui.settings.bypassPackages - pkg)) },
-                                    modifier = Modifier.size(24.dp),
-                                ) {
-                                    Icon(Icons.Rounded.Close, null, Modifier.size(16.dp))
-                                }
-                            },
-                        )
-                    }
-                    if (ui.settings.bypassPackages.size > 4) {
-                        Text(
-                            "+${ui.settings.bypassPackages.size - 4} more",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-            }
-            FlowRow(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalArrangement   = Arrangement.spacedBy(8.dp),
-            ) {
-                OutlinedButton(onClick = { vm.updateAppSettings(ui.settings.copy(bypassPackages = emptyList())) }) {
-                    Icon(Icons.Rounded.Clear, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Clear")
-                }
-                Spacer(Modifier.width(8.dp))
-                Button(onClick = { showAppPicker = true }) {
-                    Icon(Icons.Rounded.Apps, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Choose Apps")
-                }
-            }
         }
+        SettingsCard { StartupAutoUpdateContent(vm, ui.settings) }
+    }
+}
 
-        Spacer(Modifier.height(8.dp))
-
-        SettingsSection(title = "Routing & Privacy") {
-            RoutingSettingsContent(vm, ui.settings)
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        SettingsSection(title = "Subscriptions") {
-            SubscriptionUaContent(vm, ui.settings)
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        SettingsSection(title = "Backup") {
-            BackupSettingsContent(vm)
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        SettingsSection(title = "Startup") {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Auto-connect on boot", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "Starts the selected profile after reboot when VPN permission is already granted.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked         = ui.settings.startOnBoot,
-                    onCheckedChange = { enabled -> vm.updateAppSettings(ui.settings.copy(startOnBoot = enabled)) },
-                )
-            }
-            HorizontalDivider(Modifier.padding(vertical = 12.dp))
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment     = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Auto-update subscriptions", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "Refreshes subscriptions every ${ui.settings.subscriptionUpdateIntervalHours} hours when network is available.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Switch(
-                    checked         = ui.settings.autoUpdateSubscriptions,
-                    onCheckedChange = { enabled -> vm.updateAppSettings(ui.settings.copy(autoUpdateSubscriptions = enabled)) },
-                )
-            }
-            AnimatedVisibility(visible = ui.settings.autoUpdateSubscriptions) {
-                Column {
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "Update interval",
-                        style    = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement   = Arrangement.spacedBy(8.dp),
-                    ) {
-                        SubscriptionIntervalOptions.forEach { hours ->
-                            FilterChip(
-                                selected    = ui.settings.subscriptionUpdateIntervalHours == hours,
-                                onClick     = { vm.updateAppSettings(ui.settings.copy(subscriptionUpdateIntervalHours = hours)) },
-                                label       = { Text("${hours}h") },
-                                leadingIcon = if (ui.settings.subscriptionUpdateIntervalHours == hours) {
-                                    { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
-                                } else null,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        SettingsSection(title = "Diagnostics") {
-            if (ui.diagnostics.isEmpty()) {
-                Text(
-                    "No connection events yet.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+@Composable
+fun DiagnosticsSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val diagnostics by vm.diagnostics.collectAsState()
+    val clipboard = LocalClipboardManager.current
+    SettingsScaffold("Diagnostics", onBack) {
+        SettingsCard {
+            if (diagnostics.isEmpty()) {
+                Text("No connection events yet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ui.diagnostics.takeLast(6).forEach { line ->
+                    diagnostics.forEach { line ->
                         Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -673,8 +351,8 @@ private fun Md3SettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Button(
-                    onClick = { clipboard.setText(AnnotatedString(ui.diagnostics.joinToString("\n"))) },
-                    enabled = ui.diagnostics.isNotEmpty(),
+                    onClick = { clipboard.setText(AnnotatedString(diagnostics.joinToString("\n"))) },
+                    enabled = diagnostics.isNotEmpty(),
                 ) {
                     Icon(Icons.Rounded.ContentCopy, null, Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
@@ -682,10 +360,14 @@ private fun Md3SettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
                 }
             }
         }
+    }
+}
 
-        Spacer(Modifier.height(8.dp))
-
-        SettingsSection(title = "About") {
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AboutSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    SettingsScaffold("About", onBack) {
+        SettingsCard {
             ListItem(
                 headlineContent   = { Text("palazikVPN") },
                 supportingContent = { Text("V${stringResource(R.string.app_version)} • by palaziks") },
@@ -693,93 +375,109 @@ private fun Md3SettingsScreen(vm: MainViewModel, onOpenStyle: () -> Unit) {
             )
         }
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared section content
+// ─────────────────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SplitTunnelContent(
+    vm: MainViewModel,
+    settings: AppSettings,
+    installedApps: List<com.palazik.vpn.data.model.InstalledApp>,
+) {
+    var showAppPicker by remember { mutableStateOf(false) }
+
+    Text(
+        "${settings.bypassPackages.size} apps bypass VPN",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(8.dp))
+    if (settings.bypassPackages.isNotEmpty()) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            settings.bypassPackages.take(6).forEach { pkg ->
+                AssistChip(
+                    onClick = {},
+                    label = { Text(pkg, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = { vm.updateAppSettings(settings.copy(bypassPackages = settings.bypassPackages - pkg)) },
+                            modifier = Modifier.size(24.dp),
+                        ) { Icon(Icons.Rounded.Close, null, Modifier.size(16.dp)) }
+                    },
+                )
+            }
+            if (settings.bypassPackages.size > 6) {
+                Text("+${settings.bypassPackages.size - 6} more", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedButton(onClick = { vm.updateAppSettings(settings.copy(bypassPackages = emptyList())) }) {
+            Icon(Icons.Rounded.Clear, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Clear")
+        }
+        Spacer(Modifier.width(8.dp))
+        Button(onClick = { showAppPicker = true }) {
+            Icon(Icons.Rounded.Apps, null, Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Choose Apps")
+        }
+    }
 
     if (showAppPicker) {
         AppPickerDialog(
-            apps      = ui.installedApps,
-            selected  = ui.settings.bypassPackages.toSet(),
+            apps = installedApps,
+            selected = settings.bypassPackages.toSet(),
             onDismiss = { showAppPicker = false },
-            onSave    = { selected ->
-                vm.updateAppSettings(ui.settings.copy(bypassPackages = selected.sorted()))
+            onSave = { selected ->
+                vm.updateAppSettings(settings.copy(bypassPackages = selected.sorted()))
                 showAppPicker = false
             },
         )
     }
 }
 
-// ── Shared components ────────────────────────────────────────────────────────
-
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AppPickerDialog(
-    apps: List<com.palazik.vpn.data.model.InstalledApp>,
-    selected: Set<String>,
-    onDismiss: () -> Unit,
-    onSave: (List<String>) -> Unit,
-) {
-    var query  by remember { mutableStateOf("") }
-    var picked by remember(selected) { mutableStateOf(selected) }
-    val filtered = remember(apps, query) {
-        if (query.isBlank()) apps else apps.filter {
-            it.label.contains(query, ignoreCase = true) || it.packageName.contains(query, ignoreCase = true)
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title  = { Text("Bypass Apps") },
-        icon   = { Icon(Icons.Rounded.Apps, null) },
-        text   = {
-            Column {
-                OutlinedTextField(
-                    value         = query,
-                    onValueChange = { query = it },
-                    label         = { Text("Search apps") },
-                    modifier      = Modifier.fillMaxWidth(),
-                    singleLine    = true,
-                )
-                Spacer(Modifier.height(10.dp))
-                LazyColumn(
-                    modifier            = Modifier.fillMaxWidth().heightIn(max = 360.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    items(filtered, key = { it.packageName }) { app ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    picked = if (app.packageName in picked) picked - app.packageName else picked + app.packageName
-                                }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(
-                                checked         = app.packageName in picked,
-                                onCheckedChange = { checked ->
-                                    picked = if (checked) picked + app.packageName else picked - app.packageName
-                                },
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Text(
-                                    app.packageName,
-                                    style    = MaterialTheme.typography.bodySmall,
-                                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                    }
+private fun StartupAutoUpdateContent(vm: MainViewModel, settings: AppSettings) {
+    SettingRow(
+        title = "Auto-update subscriptions",
+        subtitle = "Refreshes subscriptions every ${settings.subscriptionUpdateIntervalHours}h when network is available.",
+        checked = settings.autoUpdateSubscriptions,
+        onChange = { vm.updateAppSettings(settings.copy(autoUpdateSubscriptions = it)) },
+    )
+    AnimatedVisibility(visible = settings.autoUpdateSubscriptions) {
+        Column {
+            Spacer(Modifier.height(12.dp))
+            Text("Update interval", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 8.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SubscriptionIntervalOptions.forEach { hours ->
+                    FilterChip(
+                        selected = settings.subscriptionUpdateIntervalHours == hours,
+                        onClick = { vm.updateAppSettings(settings.copy(subscriptionUpdateIntervalHours = hours)) },
+                        label = { Text("${hours}h") },
+                        leadingIcon = if (settings.subscriptionUpdateIntervalHours == hours) {
+                            { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
+                        } else null,
+                    )
                 }
             }
-        },
-        confirmButton = { Button(onClick = { onSave(picked.toList()) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+        }
+    }
 }
-
-// ── Routing / subscription / backup section bodies (shared by both design systems) ──
 
 @Composable
 private fun RoutingSettingsContent(vm: MainViewModel, settings: AppSettings) {
@@ -853,6 +551,7 @@ private fun RoutingSettingsContent(vm: MainViewModel, settings: AppSettings) {
 @Composable
 private fun SubscriptionUaContent(vm: MainViewModel, settings: AppSettings) {
     var ua by remember(settings.subscriptionUserAgent) { mutableStateOf(settings.subscriptionUserAgent) }
+    Text("Subscription fetch", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 8.dp))
     OutlinedTextField(
         value = ua,
         onValueChange = { ua = it },
@@ -936,21 +635,74 @@ private fun SettingRow(title: String, subtitle: String, checked: Boolean, onChan
             Text(title, style = MaterialTheme.typography.titleSmall)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        Spacer(Modifier.width(8.dp))
         Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 
 @Composable
-private fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    ElevatedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
-            Text(
-                title,
-                style    = MaterialTheme.typography.labelLarge,
-                color    = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 12.dp),
-            )
-            content()
+private fun AppPickerDialog(
+    apps: List<com.palazik.vpn.data.model.InstalledApp>,
+    selected: Set<String>,
+    onDismiss: () -> Unit,
+    onSave: (List<String>) -> Unit,
+) {
+    var query  by remember { mutableStateOf("") }
+    var picked by remember(selected) { mutableStateOf(selected) }
+    val filtered = remember(apps, query) {
+        if (query.isBlank()) apps else apps.filter {
+            it.label.contains(query, ignoreCase = true) || it.packageName.contains(query, ignoreCase = true)
         }
     }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title  = { Text("Bypass Apps") },
+        icon   = { Icon(Icons.Rounded.Apps, null) },
+        text   = {
+            Column {
+                OutlinedTextField(
+                    value = query, onValueChange = { query = it },
+                    label = { Text("Search apps") },
+                    modifier = Modifier.fillMaxWidth(), singleLine = true,
+                )
+                Spacer(Modifier.height(10.dp))
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    items(filtered, key = { it.packageName }) { app ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    picked = if (app.packageName in picked) picked - app.packageName else picked + app.packageName
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = app.packageName in picked,
+                                onCheckedChange = { checked ->
+                                    picked = if (checked) picked + app.packageName else picked - app.packageName
+                                },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    app.packageName,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(picked.toList()) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }

@@ -93,7 +93,9 @@ fun AppNavHost(
     // Hide the bottom bar when on the Style sub-screen
     val navBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStack?.destination?.route
-    val showBottomBar = currentRoute != Screen.Style.route
+    // Hide the bottom bar on settings sub-screens (Style + settings/*)
+    val showBottomBar = currentRoute == null ||
+        (currentRoute != Screen.Style.route && !currentRoute.startsWith("settings/"))
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -160,11 +162,21 @@ fun AppNavHost(
                     slideOutHorizontally(tween(140)) { it / 14 }
             },
         ) {
+            val back: () -> Unit = { navController.popBackStack() }
             composable(Screen.Home.route)          { HomeScreen(vm, permLauncher) }
             composable(Screen.Profiles.route)      { ProfilesScreen(vm) }
             composable(Screen.Subscriptions.route) { SubscriptionsScreen(vm) }
-            composable(Screen.Settings.route)      { SettingsScreen(vm, onOpenStyle = { navController.navigate(Screen.Style.route) }) }
-            composable(Screen.Style.route)         { StyleScreen(vm, onBack = { navController.popBackStack() }) }
+            composable(Screen.Settings.route)      { SettingsScreen(vm, onNavigate = { navController.navigate(it) }) }
+            composable(Screen.Style.route)                  { StyleScreen(vm, onBack = back) }
+            composable(SettingsRoutes.CONNECTION)           { ConnectionSettingsScreen(vm, back) }
+            composable(SettingsRoutes.DNS)                  { DnsSettingsScreen(vm, back) }
+            composable(SettingsRoutes.ROUTING)              { RoutingSettingsScreen(vm, back) }
+            composable(SettingsRoutes.SUBSCRIPTION)         { SubscriptionSettingsScreen(vm, back) }
+            composable(SettingsRoutes.SPLIT)                { SplitTunnelSettingsScreen(vm, back) }
+            composable(SettingsRoutes.BACKUP)               { BackupSettingsScreen(vm, back) }
+            composable(SettingsRoutes.STARTUP)              { StartupSettingsScreen(vm, back) }
+            composable(SettingsRoutes.DIAGNOSTICS)          { DiagnosticsSettingsScreen(vm, back) }
+            composable(SettingsRoutes.ABOUT)                { AboutSettingsScreen(vm, back) }
         }
     }
 }

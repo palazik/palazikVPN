@@ -34,10 +34,6 @@ data class UiState(
     val pingMode: PingMode                = PingMode.TCP,
     val settings: AppSettings             = AppSettings(),
     val installedApps: List<InstalledApp>  = emptyList(),
-    val bytesIn: Long                     = 0L,
-    val bytesOut: Long                    = 0L,
-    val connectedSince: Long              = 0L,
-    val diagnostics: List<String>         = emptyList(),
     val lastError: String?                = null,
     val snackMessage: String?             = null,
     val snackActionLabel: String?         = null,
@@ -62,6 +58,14 @@ class MainViewModel @Inject constructor(
 
     private val _ui = MutableStateFlow(UiState())
     val ui: StateFlow<UiState> = _ui.asStateFlow()
+
+    // High-frequency values (update ~1×/sec) are exposed as dedicated flows instead of
+    // living in the big UiState — so a traffic tick doesn't recompose every screen that
+    // reads `ui`. Collect these only where they're shown.
+    val bytesIn:        StateFlow<Long>         = palazikVpnService.bytesIn
+    val bytesOut:       StateFlow<Long>         = palazikVpnService.bytesOut
+    val connectedSince: StateFlow<Long>         = palazikVpnService.connectedSince
+    val diagnostics:    StateFlow<List<String>> = palazikVpnService.diagnostics
 
     init {
         // Restore persisted theme on startup
@@ -111,10 +115,6 @@ class MainViewModel @Inject constructor(
                 }) }
             }
         }
-        viewModelScope.launch { palazikVpnService.bytesIn.collect  { b -> _ui.update { it.copy(bytesIn  = b) } } }
-        viewModelScope.launch { palazikVpnService.bytesOut.collect { b -> _ui.update { it.copy(bytesOut = b) } } }
-        viewModelScope.launch { palazikVpnService.connectedSince.collect { t -> _ui.update { it.copy(connectedSince = t) } } }
-        viewModelScope.launch { palazikVpnService.diagnostics.collect { logs -> _ui.update { it.copy(diagnostics = logs) } } }
         viewModelScope.launch { palazikVpnService.lastError.collect { error -> _ui.update { it.copy(lastError = error) } } }
         loadInstalledApps()
     }
