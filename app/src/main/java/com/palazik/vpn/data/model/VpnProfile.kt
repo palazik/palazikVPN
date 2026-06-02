@@ -50,6 +50,7 @@ data class VpnProfile(
     val wgEndpoint: String = "",
     val wgDns: String = "1.1.1.1",
     val wgMtu: Int = 1280,
+    val wgReserved: String = "",      // 3-byte "reserved" for Cloudflare WARP, e.g. "12,34,56"
 
     // ── Hysteria2 ────────────────────────────────────────────────────────────
     val hystPassword: String = "",

@@ -107,6 +107,7 @@ object ProfileCodec {
             put("wgEndp", p.wgEndpoint)
             put("wgDns", p.wgDns)
             put("wgMtu", p.wgMtu)
+            put("wgReserved", p.wgReserved)
             put("hystPwd", p.hystPassword)
             put("hystObfs", p.hystObfs)
             put("hystObfsPwd", p.hystObfsPassword)
@@ -155,6 +156,7 @@ object ProfileCodec {
             wgEndpoint      = json.optString("wgEndp"),
             wgDns           = json.optString("wgDns", "1.1.1.1"),
             wgMtu           = json.optInt("wgMtu", 1280),
+            wgReserved      = json.optString("wgReserved"),
             hystPassword    = json.optString("hystPwd"),
             hystObfs        = json.optString("hystObfs"),
             hystObfsPassword = json.optString("hystObfsPwd"),
@@ -336,7 +338,27 @@ object ProfileCodec {
                 ?: "",
             wgDns           = params["dns"] ?: "1.1.1.1",
             wgMtu           = params["mtu"]?.toIntOrNull() ?: 1280,
+            wgReserved      = normalizeReserved(params["reserved"] ?: ""),
         )
+    }
+
+    /**
+     * Normalize a WARP "reserved" value to "a,b,c". Accepts comma/space-separated ints
+     * or a base64 of exactly three bytes (some WARP clients use that form).
+     */
+    private fun normalizeReserved(raw: String): String {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty()) return ""
+        if ("," in trimmed || " " in trimmed) {
+            val ints = trimmed.split(",", " ").map { it.trim() }.filter { it.isNotEmpty() }
+                .mapNotNull { it.toIntOrNull()?.takeIf { n -> n in 0..255 } }
+            return if (ints.size == 3) ints.joinToString(",") else ""
+        }
+        // Base64 of exactly three bytes — decode to the raw bytes (not via a String).
+        val bytes = listOf(Base64.DEFAULT, Base64.URL_SAFE).firstNotNullOfOrNull { flags ->
+            runCatching { Base64.decode(trimmed, flags) }.getOrNull()?.takeIf { it.size == 3 }
+        }
+        return bytes?.joinToString(",") { (it.toInt() and 0xFF).toString() } ?: ""
     }
 
     private fun decodeSocks5(raw: String): VpnProfile {
@@ -505,6 +527,7 @@ object ProfileCodec {
         b.appendQueryParameter("endpoint", endpoint)
             .appendQueryParameter("dns", p.wgDns)
             .appendQueryParameter("mtu", p.wgMtu.toString())
+        if (p.wgReserved.isNotBlank()) b.appendQueryParameter("reserved", p.wgReserved)
         return b.fragment(p.name).build().toString()
     }
 

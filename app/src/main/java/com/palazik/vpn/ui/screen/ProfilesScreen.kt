@@ -966,6 +966,7 @@ private fun ManualProfileDialog(
     var wgEndpoint  by remember { mutableStateOf(initial?.wgEndpoint ?: "") }
     var wgDns       by remember { mutableStateOf(initial?.wgDns       ?: "1.1.1.1") }
     var wgMtu       by remember { mutableStateOf(initial?.wgMtu?.toString() ?: "1280") }
+    var wgReserved  by remember { mutableStateOf(initial?.wgReserved  ?: "") }
 
     var protoExpanded     by remember { mutableStateOf(false) }
     var transportExpanded by remember { mutableStateOf(false) }
@@ -1054,6 +1055,14 @@ private fun ManualProfileDialog(
                             OutlinedTextField(value = wgDns, onValueChange = { wgDns = it }, label = { Text("DNS") }, modifier = Modifier.weight(1f), singleLine = true)
                             OutlinedTextField(value = wgMtu, onValueChange = { wgMtu = it }, label = { Text("MTU") }, modifier = Modifier.width(88.dp), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
                         }
+                        OutlinedTextField(
+                            value = wgReserved,
+                            onValueChange = { wgReserved = it },
+                            label = { Text("Reserved (WARP, optional)") },
+                            placeholder = { Text("e.g. 12,34,56") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
                     }
                     else -> {}
                 }
@@ -1178,6 +1187,7 @@ private fun ManualProfileDialog(
                         wgEndpoint      = wgEndpoint.trim(),
                         wgDns           = wgDns.trim(),
                         wgMtu           = wgMtu.toIntOrNull() ?: 1280,
+                        wgReserved      = wgReserved.trim(),
                     ))
                 },
                 enabled = address.isNotBlank(),

@@ -245,8 +245,21 @@ object XrayConfigBuilder {
                 })
             })
             put("mtu", p.wgMtu)
+            // Cloudflare WARP "reserved" — 3 bytes prepended to each WG packet.
+            parseReserved(p.wgReserved)?.let { bytes ->
+                put("reserved", JSONArray().apply { bytes.forEach { put(it) } })
+            }
             if (p.wgDns.isNotEmpty()) put("domainStrategy", "UseIPv4")
         })
+    }
+
+    /** Parse a WARP "reserved" value ("a,b,c") into exactly three ints, or null. */
+    private fun parseReserved(raw: String): List<Int>? {
+        if (raw.isBlank()) return null
+        val parts = raw.split(",", " ").map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.size != 3) return null
+        val ints = parts.mapNotNull { it.toIntOrNull()?.takeIf { n -> n in 0..255 } }
+        return ints.takeIf { it.size == 3 }
     }
 
     private fun buildSocksOut(obj: JSONObject, p: VpnProfile) {

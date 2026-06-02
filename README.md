@@ -91,7 +91,7 @@ Run it manually from GitHub Actions using **Build palazikVPN**. The workflow:
 3. Installs Android SDK, NDK, CMake, and ccache
 4. Downloads `libv2ray.aar`, `geoip.dat`, and `geosite.dat`
 5. Builds debug APKs
-6. Builds unsigned release APKs
+6. Builds release APKs (signed if signing secrets are configured, otherwise unsigned)
 7. Uploads APKs as GitHub Actions artifacts
 8. Optionally sends per-ABI APKs to Telegram if repository secrets are configured
 
@@ -99,6 +99,33 @@ Telegram upload requires:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
+
+### Release signing
+
+Release APKs are signed automatically when these repository secrets are present (if
+they are absent, the workflow still produces an unsigned release as before):
+
+- `KEYSTORE_BASE64` — your keystore (`.jks`) base64-encoded: `base64 -w0 release.jks`
+- `KEYSTORE_PASSWORD`
+- `KEY_ALIAS`
+- `KEY_PASSWORD`
+
+Generate a keystore once with:
+
+```bash
+keytool -genkeypair -v -keystore release.jks -keyalg RSA -keysize 2048 \
+  -validity 10000 -alias palazik
+```
+
+Keep `release.jks` and its passwords out of git (they are gitignored). For local signed
+builds, create `keystore.properties` in the project root instead:
+
+```properties
+storeFile=/absolute/path/to/release.jks
+storePassword=…
+keyAlias=palazik
+keyPassword=…
+```
 
 ## Local Build
 
@@ -129,7 +156,8 @@ Then build:
 ./gradlew assembleDebug --no-daemon --no-configuration-cache
 ```
 
-Release APKs produced by the default workflow are unsigned.
+Release APKs are unsigned unless you provide signing secrets (CI) or a
+`keystore.properties` (local) — see [Release signing](#release-signing).
 
 ## Android Permissions
 
@@ -151,7 +179,7 @@ The app uses:
 - Some advanced Xray options are not exposed in the UI yet.
 - Shadowsocks SIP003 plugins (obfs / v2ray-plugin) are not supported by the bundled Xray core.
 - QR import reads QR codes from selected image files / live camera.
-- Unsigned release APKs from CI must be signed before distribution outside debug/testing use.
+- Release APKs are signed only when signing secrets / `keystore.properties` are configured; otherwise the unsigned output must be signed before distribution.
 
 ## Project Structure
 
