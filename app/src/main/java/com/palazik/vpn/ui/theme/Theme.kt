@@ -115,6 +115,7 @@ fun darkPrefToMiuixMode(pref: DarkModePreference) = when (pref) {
 
 // ── Main theme wrapper ───────────────────────────────────────��───────────────
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun palazikVPNTheme(
     appTheme: AppTheme = AppTheme.CYBER,
@@ -148,7 +149,7 @@ fun palazikVPNTheme(
             }
         } else {
             val colorScheme = resolveColorScheme(appTheme, isDark)
-            MaterialTheme(
+            MaterialExpressiveTheme(
                 colorScheme = colorScheme,
                 typography  = palazikTypography,
                 content     = content,

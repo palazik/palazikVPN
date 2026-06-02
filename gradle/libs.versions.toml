@@ -1,13 +1,14 @@
 [versions]
-agp                    = "8.11.0"
+agp                    = "9.2.0"
 kotlin                 = "2.3.21"
-ksp                    = "2.3.7"
+ksp                    = "2.3.9"
 coreKtx                = "1.18.0"
 lifecycleRuntimeKtx    = "2.10.0"
 activityCompose        = "1.13.0"
 composeBom             = "2025.05.00"
 navigationCompose      = "2.9.8"
 hilt                   = "2.59.2"
+material3Expressive    = "1.5.0-alpha20"
 hiltNavigationCompose  = "1.3.0"
 lifecycleViewmodelCompose = "2.10.0"
 okhttp                 = "4.12.0"
@@ -42,6 +43,7 @@ zxing-core                         = { group = "com.google.zxing",          name
 androidx-work-runtime-ktx          = { group = "androidx.work",             name = "work-runtime-ktx",              version.ref = "workManager" }
 miuix-ui                           = { group = "top.yukonga.miuix.kmp",     name = "miuix-ui-android",              version.ref = "miuix" }
 miuix-preference                   = { group = "top.yukonga.miuix.kmp",     name = "miuix-preference-android",      version.ref = "miuix" }
+androidx-material3-expressive      = { group = "androidx.compose.material3",name = "material3",                     version.ref = "material3Expressive" }
 junit                              = { group = "junit",                     name = "junit",                         version.ref = "junit" }
 androidx-junit                     = { group = "androidx.test.ext",         name = "junit",                         version.ref = "junitAndroid" }
 androidx-espresso-core             = { group = "androidx.test.espresso",    name = "espresso-core",                 version.ref = "espresso" }
