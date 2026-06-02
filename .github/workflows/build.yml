@@ -15,6 +15,12 @@ jobs:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       TELEGRAM_TOPIC_ID: ${{ secrets.TELEGRAM_TOPIC_ID }}
+      # Signing — exposed via env so `if:` step conditions can reference them
+      # (the `secrets` context is NOT allowed inside step `if:` expressions).
+      KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+      KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
     steps:
       - name: Checkout
@@ -98,17 +104,15 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon --no-configuration-cache --stacktrace
 
       # Decode the base64 keystore from secrets (no-op if the secret is absent →
-      # the release build stays unsigned, same as before).
+      # the release build stays unsigned, same as before). KEYSTORE_FILE is exported
+      # so the next step's Gradle build picks up the signing config.
       - name: Decode release keystore
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
-        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
 
       - name: Build Release APKs
-        env:
-          KEYSTORE_FILE: ${{ secrets.KEYSTORE_BASE64 != '' && format('{0}/release.jks', runner.temp) || '' }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: ./gradlew assembleRelease --no-daemon --no-configuration-cache --stacktrace
 
       - name: Print ccache stats
@@ -140,7 +144,7 @@ jobs:
           retention-days: 30
 
       # ── Telegram ────────────────────────────────────────────────────────────
-      - name: Send debug APK to Telegram
+      - name: Send release APK to Telegram
         if: ${{ env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
         run: |
           SHORT_SHA="${{ github.sha }}"
@@ -150,12 +154,12 @@ jobs:
 
           # Prefer arm64 (~40MB), well under Telegram's 50MB limit.
           # Fall back to armeabi-v7a, then universal as last resort.
-          APK=$(find app/build/outputs/apk/debug -name "*arm64*.apk" | head -1)
-          [ -z "$APK" ] && APK=$(find app/build/outputs/apk/debug -name "*armeabi*.apk" | head -1)
-          [ -z "$APK" ] && APK=$(find app/build/outputs/apk/debug -name "*universal*.apk" | head -1)
+          APK=$(find app/build/outputs/apk/release -name "*arm64*.apk" | head -1)
+          [ -z "$APK" ] && APK=$(find app/build/outputs/apk/release -name "*armeabi*.apk" | head -1)
+          [ -z "$APK" ] && APK=$(find app/build/outputs/apk/release -name "*universal*.apk" | head -1)
 
           if [ -z "$APK" ]; then
-            echo "❌ No debug APK found"
+            echo "❌ No release APK found"
             exit 1
           fi
 
@@ -175,7 +179,10 @@ jobs:
             SIZE_NOTE="${APK_SIZE}"
           fi
 
-          CAPTION="*palazikVPN* — Debug
+          SIGNED_NOTE="signed"
+          case "$APK_NAME" in *unsigned*) SIGNED_NOTE="unsigned" ;; esac
+
+          CAPTION="*palazikVPN* — Release (${SIGNED_NOTE})
           Branch: \`${{ github.ref_name }}\`
           Commit: \`${SHORT_SHA}\` — ${COMMIT_MSG}
           APK: \`${APK_NAME}\` ${SIZE_NOTE}
