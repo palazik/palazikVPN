@@ -3,8 +3,7 @@ name: Build palazikVPN
 on:
   push:
     branches:
-      - main
-      - miuix
+      - master
   workflow_dispatch:
 
 jobs:
