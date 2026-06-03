@@ -32,8 +32,8 @@ data class UiState(
     val subscriptions: List<Subscription> = emptyList(),
     val appTheme: AppTheme                = AppTheme.CYBER,
     val darkMode: DarkModePreference      = DarkModePreference.SYSTEM,
-    val designSystem: DesignSystem        = DesignSystem.MIUIX,
-    val language: AppLanguage             = AppLanguage.SYSTEM,
+    val designSystem: DesignSystem        = DesignSystem.MD3,
+    val language: AppLanguage             = AppLanguage.ENGLISH,
     val pingMode: PingMode                = PingMode.TCP,
     val settings: AppSettings             = AppSettings(),
     val installedApps: List<InstalledApp>  = emptyList(),
@@ -74,11 +74,11 @@ class MainViewModel @Inject constructor(
         // Restore persisted theme on startup
         val savedTheme  = themePrefs.getString(KEY_THEME,         AppTheme.CYBER.name)
         val savedDark   = themePrefs.getString(KEY_DARKMODE,      DarkModePreference.SYSTEM.name)
-        val savedDesign = themePrefs.getString(KEY_DESIGN_SYSTEM, DesignSystem.MIUIX.name)
+        val savedDesign = themePrefs.getString(KEY_DESIGN_SYSTEM, DesignSystem.MD3.name)
         _ui.update { it.copy(
             appTheme     = runCatching { AppTheme.valueOf(savedTheme ?: "") }.getOrDefault(AppTheme.CYBER),
             darkMode     = runCatching { DarkModePreference.valueOf(savedDark ?: "") }.getOrDefault(DarkModePreference.SYSTEM),
-            designSystem = runCatching { DesignSystem.valueOf(savedDesign ?: "") }.getOrDefault(DesignSystem.MIUIX),
+            designSystem = runCatching { DesignSystem.valueOf(savedDesign ?: "") }.getOrDefault(DesignSystem.MD3),
             language     = LocaleHelper.savedLanguage(context),
         ) }
 

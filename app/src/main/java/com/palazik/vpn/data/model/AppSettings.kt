@@ -20,7 +20,7 @@ data class AppSettings(
     val startOnBoot: Boolean = false,
     val autoUpdateSubscriptions: Boolean = true,
     val subscriptionUpdateIntervalHours: Long = 2L,
-    val designSystem: DesignSystem = DesignSystem.MIUIX,
+    val designSystem: DesignSystem = DesignSystem.MD3,
 
     // ── Subscriptions ──────────────────────────────────────────────────────────
     val subscriptionUserAgent: String = "v2rayNG/1.0",

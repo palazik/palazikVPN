@@ -16,7 +16,7 @@ enum class DarkModePreference { SYSTEM, ALWAYS_DARK, ALWAYS_LIGHT }
 
 val LocalAppTheme      = compositionLocalOf { AppTheme.CYBER }
 val LocalDarkMode      = compositionLocalOf { DarkModePreference.SYSTEM }
-val LocalDesignSystem  = compositionLocalOf { DesignSystem.MIUIX }
+val LocalDesignSystem  = compositionLocalOf { DesignSystem.MD3 }
 
 // ── MD3 color schemes ───────────────────────────────────────────────────────
 
@@ -120,7 +120,7 @@ fun darkPrefToMiuixMode(pref: DarkModePreference) = when (pref) {
 fun palazikVPNTheme(
     appTheme: AppTheme = AppTheme.CYBER,
     darkModePreference: DarkModePreference = DarkModePreference.SYSTEM,
-    useMiuix: Boolean = true,
+    useMiuix: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val systemDark = isSystemInDarkTheme()

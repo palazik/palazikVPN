@@ -372,7 +372,6 @@ fun LanguageSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     SettingsScaffold(stringResource(R.string.settings_language), onBack) {
         SettingsCard {
             val options = listOf(
-                com.palazik.vpn.ui.locale.AppLanguage.SYSTEM  to stringResource(R.string.language_system),
                 com.palazik.vpn.ui.locale.AppLanguage.ENGLISH to "English",
                 com.palazik.vpn.ui.locale.AppLanguage.RUSSIAN to "Русский",
             )
