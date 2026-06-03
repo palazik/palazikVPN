@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,20 +53,21 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.palazik.vpn.R
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 
 sealed class Screen(
     val route: String,
-    val label: String,
+    @androidx.annotation.StringRes val label: Int,
     val icon: ImageVector,
 ) {
-    object Home          : Screen("home",     "Home",     Icons.Rounded.Home)
-    object Profiles      : Screen("profiles", "Profiles", Icons.AutoMirrored.Rounded.List)
-    object Subscriptions : Screen("subs",     "Subs",     Icons.Rounded.Subscriptions)
-    object Settings      : Screen("settings", "Settings", Icons.Rounded.Settings)
+    object Home          : Screen("home",     R.string.nav_home,     Icons.Rounded.Home)
+    object Profiles      : Screen("profiles", R.string.nav_profiles, Icons.AutoMirrored.Rounded.List)
+    object Subscriptions : Screen("subs",     R.string.nav_subs,     Icons.Rounded.Subscriptions)
+    object Settings      : Screen("settings", R.string.nav_settings, Icons.Rounded.Settings)
 
     // Sub-screen — not a tab, no icon needed for the nav bar
-    object Style : Screen("style", "Style", Icons.Rounded.Settings)
+    object Style : Screen("style", R.string.nav_settings, Icons.Rounded.Settings)
 }
 
 @Composable
@@ -168,6 +170,7 @@ fun AppNavHost(
             composable(Screen.Subscriptions.route) { SubscriptionsScreen(vm) }
             composable(Screen.Settings.route)      { SettingsScreen(vm, onNavigate = { navController.navigate(it) }) }
             composable(Screen.Style.route)                  { StyleScreen(vm, onBack = back) }
+            composable(SettingsRoutes.LANGUAGE)             { LanguageSettingsScreen(vm, back) }
             composable(SettingsRoutes.CONNECTION)           { ConnectionSettingsScreen(vm, back) }
             composable(SettingsRoutes.DNS)                  { DnsSettingsScreen(vm, back) }
             composable(SettingsRoutes.ROUTING)              { RoutingSettingsScreen(vm, back) }
@@ -204,6 +207,7 @@ private fun NavPill(
         label = "nav_width_${screen.route}",
     )
 
+    val label = stringResource(screen.label)
     Surface(
         onClick = onClick,
         color = container,
@@ -216,7 +220,7 @@ private fun NavPill(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            Icon(screen.icon, screen.label, Modifier.size(20.dp))
+            Icon(screen.icon, label, Modifier.size(20.dp))
             AnimatedContent(
                 targetState = selected,
                 transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(80)) },
@@ -224,7 +228,7 @@ private fun NavPill(
             ) { show ->
                 if (show) {
                     Text(
-                        screen.label,
+                        label,
                         Modifier.padding(start = 7.dp),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,

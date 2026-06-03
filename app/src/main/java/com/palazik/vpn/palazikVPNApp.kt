@@ -8,7 +8,13 @@ import android.os.Build
 import com.palazik.vpn.data.model.AppSettings
 import com.palazik.vpn.data.model.AppSettingsCodec
 import com.palazik.vpn.data.repository.SubscriptionUpdateScheduler
+import com.palazik.vpn.service.palazikVpnService
+import com.palazik.vpn.widget.VpnWidgetProvider
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 @HiltAndroidApp
 class palazikVPNApp : Application() {
@@ -31,7 +37,14 @@ class palazikVPNApp : Application() {
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
         SubscriptionUpdateScheduler.sync(this, loadAppSettings())
+
+        // Keep the home-screen widget in sync with the live connection state.
+        appScope.launch {
+            palazikVpnService.connectionState.collect { VpnWidgetProvider.refresh(this@palazikVPNApp) }
+        }
     }
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private fun loadAppSettings(): AppSettings {
         val prefs = getSharedPreferences("palazik_profiles", Context.MODE_PRIVATE)

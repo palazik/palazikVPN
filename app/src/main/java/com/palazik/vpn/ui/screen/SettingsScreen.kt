@@ -42,6 +42,7 @@ private val SubscriptionIntervalOptions = listOf(2L, 6L, 12L, 24L)
 // ── Routes for the settings sub-screens ─────────────────────────────────────
 object SettingsRoutes {
     const val STYLE        = "style"
+    const val LANGUAGE     = "settings/language"
     const val CONNECTION   = "settings/connection"
     const val DNS          = "settings/dns"
     const val ROUTING      = "settings/routing"
@@ -55,31 +56,32 @@ object SettingsRoutes {
 
 private data class SettingsEntry(
     val route: String,
-    val title: String,
-    val summary: String,
+    @androidx.annotation.StringRes val title: Int,
+    @androidx.annotation.StringRes val summary: Int,
     val icon: ImageVector,
 )
 
-private data class SettingsGroup(val title: String, val entries: List<SettingsEntry>)
+private data class SettingsGroup(@androidx.annotation.StringRes val title: Int, val entries: List<SettingsEntry>)
 
 private val SettingsGroups = listOf(
-    SettingsGroup("Appearance", listOf(
-        SettingsEntry(SettingsRoutes.STYLE, "Style", "Design system, dark mode, color theme", Icons.Rounded.Palette),
+    SettingsGroup(R.string.group_appearance, listOf(
+        SettingsEntry(SettingsRoutes.STYLE, R.string.settings_style, R.string.settings_style_summary, Icons.Rounded.Palette),
+        SettingsEntry(SettingsRoutes.LANGUAGE, R.string.settings_language, R.string.settings_language_summary, Icons.Rounded.Language),
     )),
-    SettingsGroup("Connection", listOf(
-        SettingsEntry(SettingsRoutes.CONNECTION, "Connection", "Ping test mode", Icons.Rounded.NetworkCheck),
-        SettingsEntry(SettingsRoutes.DNS, "DNS", "VPN, remote and direct DNS", Icons.Rounded.Dns),
-        SettingsEntry(SettingsRoutes.ROUTING, "Routing & Privacy", "Ad block, bypass China, IPv6, kill switch", Icons.Rounded.AltRoute),
+    SettingsGroup(R.string.group_connection, listOf(
+        SettingsEntry(SettingsRoutes.CONNECTION, R.string.settings_connection, R.string.settings_connection_summary, Icons.Rounded.NetworkCheck),
+        SettingsEntry(SettingsRoutes.DNS, R.string.settings_dns, R.string.settings_dns_summary, Icons.Rounded.Dns),
+        SettingsEntry(SettingsRoutes.ROUTING, R.string.settings_routing, R.string.settings_routing_summary, Icons.Rounded.AltRoute),
     )),
-    SettingsGroup("Profiles & data", listOf(
-        SettingsEntry(SettingsRoutes.SUBSCRIPTION, "Subscriptions", "Auto-update and User-Agent", Icons.Rounded.Subscriptions),
-        SettingsEntry(SettingsRoutes.SPLIT, "Split Tunneling", "Apps that bypass the VPN", Icons.Rounded.Apps),
-        SettingsEntry(SettingsRoutes.BACKUP, "Backup", "Export / import profiles", Icons.Rounded.Backup),
+    SettingsGroup(R.string.group_profiles_data, listOf(
+        SettingsEntry(SettingsRoutes.SUBSCRIPTION, R.string.settings_subscriptions, R.string.settings_subscriptions_summary, Icons.Rounded.Subscriptions),
+        SettingsEntry(SettingsRoutes.SPLIT, R.string.settings_split, R.string.settings_split_summary, Icons.Rounded.Apps),
+        SettingsEntry(SettingsRoutes.BACKUP, R.string.settings_backup, R.string.settings_backup_summary, Icons.Rounded.Backup),
     )),
-    SettingsGroup("System", listOf(
-        SettingsEntry(SettingsRoutes.STARTUP, "Startup", "Auto-connect on boot", Icons.Rounded.PowerSettingsNew),
-        SettingsEntry(SettingsRoutes.DIAGNOSTICS, "Diagnostics", "Connection log", Icons.Rounded.BugReport),
-        SettingsEntry(SettingsRoutes.ABOUT, "About", "Version and info", Icons.Rounded.Info),
+    SettingsGroup(R.string.group_system, listOf(
+        SettingsEntry(SettingsRoutes.STARTUP, R.string.settings_startup, R.string.settings_startup_summary, Icons.Rounded.PowerSettingsNew),
+        SettingsEntry(SettingsRoutes.DIAGNOSTICS, R.string.settings_diagnostics, R.string.settings_diagnostics_summary, Icons.Rounded.BugReport),
+        SettingsEntry(SettingsRoutes.ABOUT, R.string.settings_about, R.string.settings_about_summary, Icons.Rounded.Info),
     )),
 )
 
@@ -103,15 +105,15 @@ private fun MiuixSettingsHub(onNavigate: (String) -> Unit) {
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState()),
     ) {
-        SmallTitle(text = "Settings")
+        SmallTitle(text = stringResource(R.string.settings_title))
         SettingsGroups.forEach { group ->
-            SmallTitle(text = group.title)
+            SmallTitle(text = stringResource(group.title))
             MiuixCard(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
                 Column(Modifier.padding(vertical = 4.dp)) {
                     group.entries.forEach { entry ->
                         ArrowPreference(
-                            title = entry.title,
-                            summary = entry.summary,
+                            title = stringResource(entry.title),
+                            summary = stringResource(entry.summary),
                             onClick = { onNavigate(entry.route) },
                         )
                     }
@@ -135,11 +137,11 @@ private fun Md3SettingsHub(onNavigate: (String) -> Unit) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Settings", style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(4.dp))
         SettingsGroups.forEach { group ->
             Text(
-                group.title,
+                stringResource(group.title),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp),
@@ -149,8 +151,8 @@ private fun Md3SettingsHub(onNavigate: (String) -> Unit) {
                     group.entries.forEachIndexed { index, entry ->
                         if (index > 0) HorizontalDivider(Modifier.padding(horizontal = 16.dp))
                         ListItem(
-                            headlineContent   = { Text(entry.title) },
-                            supportingContent = { Text(entry.summary) },
+                            headlineContent   = { Text(stringResource(entry.title)) },
+                            supportingContent = { Text(stringResource(entry.summary)) },
                             leadingContent    = { Icon(entry.icon, null, tint = MaterialTheme.colorScheme.primary) },
                             trailingContent   = { Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                             modifier = Modifier.clickable { onNavigate(entry.route) },
@@ -212,7 +214,7 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 @Composable
 fun ConnectionSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
-    SettingsScaffold("Connection", onBack) {
+    SettingsScaffold(stringResource(R.string.settings_connection), onBack) {
         SettingsCard {
             Text("Ping Test Mode", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp))
             Text(
@@ -245,7 +247,7 @@ fun ConnectionSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 @Composable
 fun DnsSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
-    SettingsScaffold("DNS", onBack) {
+    SettingsScaffold(stringResource(R.string.settings_dns), onBack) {
         SettingsCard {
             var tunDns    by remember(ui.settings.dnsServers) { mutableStateOf(ui.settings.dnsServers.joinToString(", ")) }
             var remoteDns by remember(ui.settings.remoteDns)  { mutableStateOf(ui.settings.remoteDns) }
@@ -288,7 +290,7 @@ fun DnsSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 @Composable
 fun RoutingSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
-    SettingsScaffold("Routing & Privacy", onBack) {
+    SettingsScaffold(stringResource(R.string.settings_routing), onBack) {
         SettingsCard { RoutingSettingsContent(vm, ui.settings) }
     }
 }
@@ -296,7 +298,7 @@ fun RoutingSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 @Composable
 fun SubscriptionSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
-    SettingsScaffold("Subscriptions", onBack) {
+    SettingsScaffold(stringResource(R.string.settings_subscriptions), onBack) {
         SettingsCard { StartupAutoUpdateContent(vm, ui.settings) }
         SettingsCard { SubscriptionUaContent(vm, ui.settings) }
     }
@@ -305,14 +307,14 @@ fun SubscriptionSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 @Composable
 fun SplitTunnelSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
-    SettingsScaffold("Split Tunneling", onBack) {
+    SettingsScaffold(stringResource(R.string.settings_split), onBack) {
         SettingsCard { SplitTunnelContent(vm, ui.settings, ui.installedApps) }
     }
 }
 
 @Composable
 fun BackupSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
-    SettingsScaffold("Backup", onBack) {
+    SettingsScaffold(stringResource(R.string.settings_backup), onBack) {
         SettingsCard { BackupSettingsContent(vm) }
     }
 }
@@ -320,7 +322,7 @@ fun BackupSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 @Composable
 fun StartupSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
-    SettingsScaffold("Startup", onBack) {
+    SettingsScaffold(stringResource(R.string.settings_startup), onBack) {
         SettingsCard {
             SettingRow(
                 title = "Auto-connect on boot",
@@ -337,7 +339,7 @@ fun StartupSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 fun DiagnosticsSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val diagnostics by vm.diagnostics.collectAsState()
     val clipboard = LocalClipboardManager.current
-    SettingsScaffold("Diagnostics", onBack) {
+    SettingsScaffold(stringResource(R.string.settings_diagnostics), onBack) {
         SettingsCard {
             if (diagnostics.isEmpty()) {
                 Text("No connection events yet.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -363,10 +365,45 @@ fun DiagnosticsSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     }
 }
 
+@Composable
+fun LanguageSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val ui by vm.ui.collectAsState()
+    val context = LocalContext.current
+    SettingsScaffold(stringResource(R.string.settings_language), onBack) {
+        SettingsCard {
+            val options = listOf(
+                com.palazik.vpn.ui.locale.AppLanguage.SYSTEM  to stringResource(R.string.language_system),
+                com.palazik.vpn.ui.locale.AppLanguage.ENGLISH to "English",
+                com.palazik.vpn.ui.locale.AppLanguage.RUSSIAN to "Русский",
+            )
+            options.forEachIndexed { index, (lang, label) ->
+                if (index > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            if (ui.language != lang) {
+                                vm.setLanguage(lang)
+                                // Resources bind at attach time — recreate to apply the locale.
+                                (context as? androidx.activity.ComponentActivity)?.recreate()
+                            }
+                        }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = ui.language == lang, onClick = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text(label, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
-    SettingsScaffold("About", onBack) {
+    SettingsScaffold(stringResource(R.string.settings_about), onBack) {
         SettingsCard {
             ListItem(
                 headlineContent   = { Text("palazikVPN") },

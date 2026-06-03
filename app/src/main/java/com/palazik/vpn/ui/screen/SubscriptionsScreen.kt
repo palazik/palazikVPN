@@ -19,6 +19,17 @@ import com.palazik.vpn.data.model.Subscription
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.math.ln
+import kotlin.math.pow
+
+/** Human-readable byte count, e.g. 10737418240 → "10.0 GB". */
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val units = arrayOf("KB", "MB", "GB", "TB", "PB")
+    val exp = (ln(bytes.toDouble()) / ln(1024.0)).toInt().coerceIn(1, units.size)
+    val value = bytes / 1024.0.pow(exp.toDouble())
+    return String.format(Locale.US, "%.1f %s", value, units[exp - 1])
+}
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -209,6 +220,7 @@ private fun SubscriptionCard(
     onDelete: () -> Unit,
 ) {
     val sdf = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
+    val expDateFmt = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
     val cardColor by animateColorAsState(
         targetValue = if (isUpdating) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
             else MaterialTheme.colorScheme.surface,
@@ -299,6 +311,55 @@ private fun SubscriptionCard(
                             style    = MaterialTheme.typography.labelSmall,
                             color    = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                    }
+                }
+                if (sub.hasUsageInfo) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.13f),
+                        shape = CircleShape,
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.DataUsage, null, Modifier.size(13.dp), tint = MaterialTheme.colorScheme.secondary)
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                buildString {
+                                    append(formatBytes(sub.usedBytes.coerceAtLeast(0)))
+                                    if (sub.totalBytes > 0) append(" / ${formatBytes(sub.totalBytes)}")
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
+                        }
+                    }
+                }
+                if (sub.hasExpiry) {
+                    val daysLeft = ((sub.expireEpochSec * 1000 - System.currentTimeMillis()) / 86_400_000L)
+                    val expiring = daysLeft in 0L..7L
+                    val expired  = daysLeft < 0
+                    val tint = when {
+                        expired  -> MaterialTheme.colorScheme.error
+                        expiring -> MaterialTheme.colorScheme.tertiary
+                        else     -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Surface(color = tint.copy(alpha = 0.13f), shape = CircleShape) {
+                        Row(
+                            Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(Icons.Rounded.Schedule, null, Modifier.size(13.dp), tint = tint)
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                when {
+                                    expired  -> "Expired"
+                                    else     -> "${expDateFmt.format(Date(sub.expireEpochSec * 1000))} ($daysLeft d)"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = tint,
+                            )
+                        }
                     }
                 }
                 Surface(

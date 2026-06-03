@@ -116,7 +116,9 @@ class ProfileRepository @Inject constructor(
     suspend fun updateSubscription(sub: Subscription): Result<Int> = withContext(Dispatchers.IO) {
         updateMutex.withLock {
             runCatching {
-                val body = fetchSubscriptionBody(sub.url)
+                val fetched = fetchSubscriptionBody(sub.url)
+                val body = fetched.body
+                val usage = parseUserInfo(fetched.userInfo)
 
                 val freshProfiles = ProfileCodec.decodeSubscriptionBody(body)
                     .filter { ProfileValidator.validate(it).isEmpty() }
@@ -171,6 +173,10 @@ class ProfileRepository @Inject constructor(
                 val updated = sub.copy(
                     lastUpdated  = System.currentTimeMillis(),
                     profileCount = merged.size,
+                    uploadBytes    = usage?.upload ?: sub.uploadBytes,
+                    downloadBytes  = usage?.download ?: sub.downloadBytes,
+                    totalBytes     = usage?.total ?: sub.totalBytes,
+                    expireEpochSec = usage?.expire ?: sub.expireEpochSec,
                 )
                 _subscriptions.value = _subscriptions.value.map { if (it.id == sub.id) updated else it }
                 saveSubscriptions()
@@ -340,6 +346,10 @@ class ProfileRepository @Inject constructor(
                 put("url",          sub.url)
                 put("lastUpdated",  sub.lastUpdated)
                 put("profileCount", sub.profileCount)
+                put("uploadBytes",    sub.uploadBytes)
+                put("downloadBytes",  sub.downloadBytes)
+                put("totalBytes",     sub.totalBytes)
+                put("expireEpochSec", sub.expireEpochSec)
             })
         }
         prefs.edit().putString("subscriptions_json", arr.toString()).apply()
@@ -393,6 +403,10 @@ class ProfileRepository @Inject constructor(
                     url          = o.getString("url"),
                     lastUpdated  = o.optLong("lastUpdated", 0L),
                     profileCount = o.optInt("profileCount", 0),
+                    uploadBytes    = o.optLong("uploadBytes", -1L),
+                    downloadBytes  = o.optLong("downloadBytes", -1L),
+                    totalBytes     = o.optLong("totalBytes", -1L),
+                    expireEpochSec = o.optLong("expireEpochSec", -1L),
                 ))
             }
             _subscriptions.value = loaded
@@ -444,7 +458,7 @@ class ProfileRepository @Inject constructor(
      *
      * Returns the raw string (may be base64 or plain links). Throws if both fail.
      */
-    private fun fetchSubscriptionBody(url: String): String {
+    private fun fetchSubscriptionBody(url: String): SubscriptionFetch {
         val req = Request.Builder()
             .url(url)
             .header("User-Agent", _settings.value.subscriptionUserAgent.ifBlank { "v2rayNG/1.0" })
@@ -454,8 +468,9 @@ class ProfileRepository @Inject constructor(
         val proxyResult = runCatching {
             proxyClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
-                resp.body?.string()?.takeIf { it.isNotBlank() }
+                val body = resp.body?.string()?.takeIf { it.isNotBlank() }
                     ?: throw Exception("Empty body")
+                SubscriptionFetch(body, resp.header("Subscription-Userinfo"))
             }
         }
         if (proxyResult.isSuccess) return proxyResult.getOrThrow()
@@ -463,8 +478,35 @@ class ProfileRepository @Inject constructor(
         // Attempt 2: direct (VPN not running, or proxy refused)
         return directClient.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
-            resp.body?.string()?.takeIf { it.isNotBlank() }
+            val body = resp.body?.string()?.takeIf { it.isNotBlank() }
                 ?: throw Exception("Empty body from direct fetch")
+            SubscriptionFetch(body, resp.header("Subscription-Userinfo"))
         }
+    }
+
+    private data class SubscriptionFetch(val body: String, val userInfo: String?)
+
+    private data class Usage(val upload: Long, val download: Long, val total: Long, val expire: Long)
+
+    /**
+     * Parse the `Subscription-Userinfo` header, e.g.
+     *   "upload=455; download=2342; total=10737418240; expire=2218532"
+     * Missing keys default to -1 (not reported). Returns null if the header is absent.
+     */
+    private fun parseUserInfo(raw: String?): Usage? {
+        if (raw.isNullOrBlank()) return null
+        val map = raw.split(";")
+            .mapNotNull { part ->
+                val kv = part.split("=", limit = 2)
+                if (kv.size == 2) kv[0].trim().lowercase() to (kv[1].trim().toLongOrNull() ?: return@mapNotNull null)
+                else null
+            }.toMap()
+        if (map.isEmpty()) return null
+        return Usage(
+            upload   = map["upload"] ?: -1L,
+            download = map["download"] ?: -1L,
+            total    = map["total"] ?: -1L,
+            expire   = map["expire"] ?: -1L,
+        )
     }
 }

@@ -95,6 +95,19 @@
             </intent-filter>
         </receiver>
 
+        <!-- Home-screen widget to toggle the VPN and show current state -->
+        <receiver
+            android:name=".widget.VpnWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.palazik.vpn.WIDGET_TOGGLE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_vpn_info" />
+        </receiver>
+
         <!-- Quick Settings tile to toggle the VPN from the shade -->
         <service
             android:name=".service.VpnTileService"

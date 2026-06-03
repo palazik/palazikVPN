@@ -16,6 +16,8 @@ import com.palazik.vpn.service.palazikVpnService
 import com.palazik.vpn.data.model.DesignSystem
 import com.palazik.vpn.ui.theme.AppTheme
 import com.palazik.vpn.ui.theme.DarkModePreference
+import com.palazik.vpn.ui.locale.AppLanguage
+import com.palazik.vpn.ui.locale.LocaleHelper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +33,7 @@ data class UiState(
     val appTheme: AppTheme                = AppTheme.CYBER,
     val darkMode: DarkModePreference      = DarkModePreference.SYSTEM,
     val designSystem: DesignSystem        = DesignSystem.MIUIX,
+    val language: AppLanguage             = AppLanguage.SYSTEM,
     val pingMode: PingMode                = PingMode.TCP,
     val settings: AppSettings             = AppSettings(),
     val installedApps: List<InstalledApp>  = emptyList(),
@@ -76,6 +79,7 @@ class MainViewModel @Inject constructor(
             appTheme     = runCatching { AppTheme.valueOf(savedTheme ?: "") }.getOrDefault(AppTheme.CYBER),
             darkMode     = runCatching { DarkModePreference.valueOf(savedDark ?: "") }.getOrDefault(DarkModePreference.SYSTEM),
             designSystem = runCatching { DesignSystem.valueOf(savedDesign ?: "") }.getOrDefault(DesignSystem.MIUIX),
+            language     = LocaleHelper.savedLanguage(context),
         ) }
 
         // Mirror repo flows into UI
@@ -401,6 +405,15 @@ class MainViewModel @Inject constructor(
     fun setDesignSystem(design: DesignSystem) {
         _ui.update { it.copy(designSystem = design) }
         themePrefs.edit().putString(KEY_DESIGN_SYSTEM, design.name).apply()
+    }
+
+    /**
+     * Persist the chosen UI language. The caller is responsible for recreating the
+     * Activity so the new locale takes effect (resources are bound at attach time).
+     */
+    fun setLanguage(language: AppLanguage) {
+        _ui.update { it.copy(language = language) }
+        LocaleHelper.persistLanguage(context, language)
     }
 
     // ── Ping mode ─────────────────────────────────────────────────────────────
