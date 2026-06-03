@@ -55,6 +55,9 @@ object ProfileValidator {
                 if (profile.ssPassword.isBlank()) errors += "TUIC password is required"
             }
             Protocol.HTTP -> Unit
+            Protocol.ANYTLS -> {
+                if (profile.uuid.isBlank()) errors += "AnyTLS password is required"
+            }
         }
 
         return errors

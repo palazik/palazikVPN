@@ -516,6 +516,7 @@ private fun StartupAutoUpdateContent(vm: MainViewModel, settings: AppSettings) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RoutingSettingsContent(vm: MainViewModel, settings: AppSettings) {
     var directDomains by remember(settings.customDirectDomains) {
@@ -524,7 +525,54 @@ private fun RoutingSettingsContent(vm: MainViewModel, settings: AppSettings) {
     var blockedDomains by remember(settings.customBlockedDomains) {
         mutableStateOf(settings.customBlockedDomains.joinToString(", "))
     }
+    var fragPackets  by remember(settings.fragmentPackets)  { mutableStateOf(settings.fragmentPackets) }
+    var fragLength   by remember(settings.fragmentLength)   { mutableStateOf(settings.fragmentLength) }
+    var fragInterval by remember(settings.fragmentInterval) { mutableStateOf(settings.fragmentInterval) }
 
+    // Routing preset (#2) — applies immediately
+    Text("Routing mode", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 8.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        com.palazik.vpn.data.model.RoutingMode.values().forEach { mode ->
+            val label = when (mode) {
+                com.palazik.vpn.data.model.RoutingMode.RULE_BASED -> "Rule-based"
+                com.palazik.vpn.data.model.RoutingMode.GLOBAL     -> "Global"
+                com.palazik.vpn.data.model.RoutingMode.BYPASS_LAN -> "Bypass LAN"
+            }
+            FilterChip(
+                selected = settings.routingMode == mode,
+                onClick = { vm.updateAppSettings(settings.copy(routingMode = mode)) },
+                label = { Text(label) },
+                leadingIcon = if (settings.routingMode == mode) {
+                    { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
+                } else null,
+            )
+        }
+    }
+    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+
+    // Domain strategy (#7) — applies immediately
+    Text("Domain strategy", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 8.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        com.palazik.vpn.data.model.DomainStrategy.values().forEach { ds ->
+            FilterChip(
+                selected = settings.domainStrategy == ds,
+                onClick = { vm.updateAppSettings(settings.copy(domainStrategy = ds)) },
+                label = { Text(ds.name) },
+                leadingIcon = if (settings.domainStrategy == ds) {
+                    { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) }
+                } else null,
+            )
+        }
+    }
+    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+
+    SettingRow(
+        title = "FakeDNS",
+        subtitle = "Resolve via an internal fake-IP pool — faster routing and no DNS leaks",
+        checked = settings.enableFakeDns,
+        onChange = { vm.updateAppSettings(settings.copy(enableFakeDns = it)) },
+    )
+    HorizontalDivider(Modifier.padding(vertical = 10.dp))
     SettingRow(
         title = "Block ads",
         subtitle = "Drop requests matching the ad/tracker domain list",
@@ -570,12 +618,41 @@ private fun RoutingSettingsContent(vm: MainViewModel, settings: AppSettings) {
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
     )
+
+    HorizontalDivider(Modifier.padding(vertical = 10.dp))
+    Text("TLS fragment (anti-DPI)", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Global parameters. Enable per profile in its edit screen.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(bottom = 8.dp),
+    )
+    OutlinedTextField(
+        value = fragPackets, onValueChange = { fragPackets = it },
+        label = { Text("Packets") }, supportingText = { Text("e.g. tlshello or 1-3") },
+        modifier = Modifier.fillMaxWidth(), singleLine = true,
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = fragLength, onValueChange = { fragLength = it },
+            label = { Text("Length") }, modifier = Modifier.weight(1f), singleLine = true,
+        )
+        OutlinedTextField(
+            value = fragInterval, onValueChange = { fragInterval = it },
+            label = { Text("Interval") }, modifier = Modifier.weight(1f), singleLine = true,
+        )
+    }
+
     Spacer(Modifier.height(10.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
         Button(onClick = {
             vm.updateAppSettings(settings.copy(
                 customDirectDomains = directDomains.split(",", "\n").map { it.trim() }.filter { it.isNotBlank() },
                 customBlockedDomains = blockedDomains.split(",", "\n").map { it.trim() }.filter { it.isNotBlank() },
+                fragmentPackets  = fragPackets.trim().ifBlank { "tlshello" },
+                fragmentLength   = fragLength.trim().ifBlank { "100-200" },
+                fragmentInterval = fragInterval.trim().ifBlank { "10-20" },
             ))
         }) {
             Icon(Icons.Rounded.Save, null, Modifier.size(16.dp))

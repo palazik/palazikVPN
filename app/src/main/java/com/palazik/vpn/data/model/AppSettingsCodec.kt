@@ -43,6 +43,14 @@ object AppSettingsCodec {
                     ?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList(),
                 enableIpv6 = o.optBoolean("enableIpv6", d.enableIpv6),
                 lockdownMode = o.optBoolean("lockdownMode", d.lockdownMode),
+                routingMode = runCatching { RoutingMode.valueOf(o.optString("routingMode", d.routingMode.name)) }
+                    .getOrDefault(d.routingMode),
+                domainStrategy = runCatching { DomainStrategy.valueOf(o.optString("domainStrategy", d.domainStrategy.name)) }
+                    .getOrDefault(d.domainStrategy),
+                enableFakeDns = o.optBoolean("enableFakeDns", d.enableFakeDns),
+                fragmentPackets = o.optString("fragmentPackets", d.fragmentPackets).ifBlank { d.fragmentPackets },
+                fragmentLength = o.optString("fragmentLength", d.fragmentLength).ifBlank { d.fragmentLength },
+                fragmentInterval = o.optString("fragmentInterval", d.fragmentInterval).ifBlank { d.fragmentInterval },
             )
         }.getOrDefault(AppSettings())
     }
@@ -62,6 +70,12 @@ object AppSettingsCodec {
         put("customBlockedDomains", JSONArray().apply { s.customBlockedDomains.forEach { put(it) } })
         put("enableIpv6", s.enableIpv6)
         put("lockdownMode", s.lockdownMode)
+        put("routingMode", s.routingMode.name)
+        put("domainStrategy", s.domainStrategy.name)
+        put("enableFakeDns", s.enableFakeDns)
+        put("fragmentPackets", s.fragmentPackets)
+        put("fragmentLength", s.fragmentLength)
+        put("fragmentInterval", s.fragmentInterval)
     }.toString()
 
     private fun JSONArray.toStringList(): List<String> =

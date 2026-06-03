@@ -40,6 +40,7 @@ object ProfileCodec {
             // HTTP-proxy profile uses the explicit httpproxy:// scheme on import/export.
             trimmed.startsWith("httpproxy://")  -> decodeHttp(trimmed.replaceFirst("httpproxy://", "http://"))
             trimmed.startsWith("tuic://")       -> decodeTuic(trimmed)
+            trimmed.startsWith("anytls://")     -> decodeAnyTls(trimmed)
             // xhttp:// share links are VLESS profiles with Transport.XHTTP
             trimmed.startsWith("xhttp://")      -> decodeXhttp(trimmed)
             else -> null
@@ -78,6 +79,7 @@ object ProfileCodec {
         Protocol.SOCKS5      -> encodeSocks5(p)
         Protocol.HTTP        -> encodeHttp(p)
         Protocol.TUIC        -> encodeTuic(p)
+        Protocol.ANYTLS      -> encodeAnyTls(p)
     }
 
     /** Returns palazikvpn://<base64(json)>#name */
@@ -111,6 +113,8 @@ object ProfileCodec {
             put("hystPwd", p.hystPassword)
             put("hystObfs", p.hystObfs)
             put("hystObfsPwd", p.hystObfsPassword)
+            put("muxEnabled", p.muxEnabled)
+            put("fragmentEnabled", p.fragmentEnabled)
             put("name", p.name)
         }.toString()
         val b64 = Base64.encodeToString(json.toByteArray(), Base64.URL_SAFE or Base64.NO_WRAP)
@@ -160,6 +164,8 @@ object ProfileCodec {
             hystPassword    = json.optString("hystPwd"),
             hystObfs        = json.optString("hystObfs"),
             hystObfsPassword = json.optString("hystObfsPwd"),
+            muxEnabled  = json.optBoolean("muxEnabled", true),
+            fragmentEnabled = json.optBoolean("fragmentEnabled", false),
             name        = json.optString("name", "Imported"),
         )
     }
@@ -401,6 +407,38 @@ object ProfileCodec {
             security   = Security.TLS,
             sni        = params["sni"] ?: "",
         )
+    }
+
+    private fun decodeAnyTls(raw: String): VpnProfile {
+        val uri    = Uri.parse(raw)
+        val params = uri.queryParameterNames.associateWith { uri.getQueryParameter(it) ?: "" }
+        val security = when (params["security"]?.lowercase()) {
+            "none" -> Security.NONE
+            else   -> Security.TLS   // AnyTLS is TLS-based by default
+        }
+        return VpnProfile(
+            name        = Uri.decode(uri.fragment ?: "AnyTLS"),
+            protocol    = Protocol.ANYTLS,
+            address     = uri.host ?: "",
+            port        = uri.port.takeIf { it > 0 } ?: 443,
+            uuid        = uri.userInfo ?: "",   // password
+            transport   = Transport.TCP,
+            security    = security,
+            sni         = params["sni"] ?: "",
+            fingerprint = params["fp"]?.ifBlank { "chrome" } ?: "chrome",
+            allowInsecure = params["allowInsecure"] == "1" || params["insecure"] == "1" ||
+                params["allowInsecure"].equals("true", true),
+        )
+    }
+
+    private fun encodeAnyTls(p: VpnProfile): String {
+        val b = Uri.Builder().scheme("anytls")
+            .encodedAuthority(buildEncodedAuthority(p.address, p.port, p.uuid))
+            .appendQueryParameter("security", p.security.name.lowercase())
+            .appendQueryParameter("sni", p.sni)
+            .appendQueryParameter("fp", p.fingerprint)
+        if (p.allowInsecure) b.appendQueryParameter("allowInsecure", "1")
+        return b.fragment(p.name).build().toString()
     }
 
     /**

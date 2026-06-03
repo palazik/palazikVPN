@@ -5,7 +5,7 @@ import java.util.UUID
 enum class Protocol {
     VMESS, VLESS, SHADOWSOCKS, TROJAN,
     HYSTERIA2, WIREGUARD, SOCKS5, HTTP,
-    TUIC
+    TUIC, ANYTLS
     // XHTTP removed — it is a Transport, not a Protocol (use VLESS + Transport.XHTTP)
     // REALITY removed — it is a Security layer, not a Protocol (use Security.REALITY)
 }
@@ -56,6 +56,10 @@ data class VpnProfile(
     val hystPassword: String = "",
     val hystObfs: String = "",
     val hystObfsPassword: String = "",
+
+    // ── per-profile overrides (#22) ───────────────────────────────────────────
+    val muxEnabled: Boolean = true,        // force-disable mux when false (auto-off still applies)
+    val fragmentEnabled: Boolean = false,  // route this profile through the TLS-fragment dialer (#23)
 
     // ── metadata ─────────────────────────────────────────────────────────────
     val subscriptionId: String? = null,

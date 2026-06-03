@@ -6,21 +6,25 @@ palazikVPN is a modern Android VPN client built with Kotlin, Jetpack Compose, Ma
 
 - Full-device VPN mode powered by libv2ray/Xray
 - Miuix and Material 3 Expressive design systems with light, dark, dynamic, and custom color themes
+- English and Russian UI languages (system default, English, or Русский)
 - Profile import from share links, clipboard, and subscriptions
 - QR import from image files and live camera, plus QR export for profile sharing
 - Import preview with parsed protocol, server, transport, security, and validation warnings
 - Manual profile editor with validation, masked secret fields, per-profile `allowInsecure`, and VMess cipher selection
+- Per-profile overrides: multiplexing (mux) on/off and TLS fragment (anti-DPI) toggles
 - Profile duplicate, export as native link, export as palazikVPN link, and export generated JSON
 - Profile search and sort (by name or latency) with grouping per subscription
 - Subscription refresh with progress and partial-failure messages, plus configurable subscription User-Agent
+- Subscription data usage and expiry display (parsed from the `Subscription-Userinfo` header)
 - Background auto-update of subscriptions on a configurable interval (WorkManager)
 - TCP / HTTP GET / HTTP HEAD latency tests, run concurrently for "ping all" and "choose best"
 - Live connection state, connected duration, and traffic counters
-- Quick Settings tile and a notification **Disconnect** action
+- Quick Settings tile, a home-screen widget, and a notification **Disconnect** action
 - Clear connection error panel with retry action
 - Diagnostics log with copy-to-clipboard support
-- Custom DNS settings
-- Routing controls: ad blocking, bypass China, and custom direct/blocked domain lists
+- Custom DNS settings, optional FakeDNS, and a selectable routing domain strategy
+- Routing presets (rule-based, global, bypass LAN), ad blocking, bypass China, and custom direct/blocked domain lists
+- TLS fragmentation (anti-DPI) with configurable packets/length/interval, applied per profile
 - IPv6 leak protection (IPv6 is always captured by the tunnel) with an optional IPv6-through-tunnel toggle
 - Kill switch (lockdown) that blocks traffic while the tunnel is not ready
 - Backup and restore: export all profiles to a file and re-import on another device
@@ -40,6 +44,7 @@ Import support currently includes:
 - `wireguard://`
 - `socks5://`
 - `tuic://`
+- `anytls://`
 - `xhttp://` as VLESS + XHTTP transport
 - `httpproxy://` for HTTP-proxy profiles (plain `http://` is treated as a subscription URL, not a profile)
 - `palazikvpn://` proprietary share links
@@ -49,9 +54,9 @@ Native share links (`vmess://`, `vless://`, `ss://`, etc.) and `palazikvpn://` l
 ## Screens
 
 - **Home**: connect/disconnect, active profile, connection status, duration, traffic, error retry, and quick ping
-- **Profiles**: link/clipboard/QR import, import preview, manual add/edit, search & sort, duplicate, ping, export, QR share, delete with confirmation/undo
-- **Subscriptions**: add, refresh, update all, choose best by latency, delete with confirmation
-- **Settings**: style (design system, dark mode, theme), ping mode, DNS, routing & privacy (ad block, bypass China, IPv6, kill switch, custom domains), subscription User-Agent, backup/restore, split tunneling, startup, diagnostics, app info
+- **Profiles**: link/clipboard/QR import, import preview, manual add/edit (incl. per-profile mux and TLS-fragment toggles), search & sort, duplicate, ping, export, QR share, delete with confirmation/undo
+- **Subscriptions**: add, refresh, update all, choose best by latency, data usage/expiry, delete with confirmation
+- **Settings**: style (design system, dark mode, theme), language (English/Russian), ping mode, DNS, routing & privacy (routing presets, domain strategy, FakeDNS, ad block, bypass China, IPv6, kill switch, TLS fragment params, custom domains), subscription User-Agent, backup/restore, split tunneling, startup, diagnostics, app info
 
 ## Tech Stack
 
@@ -177,6 +182,8 @@ The app uses:
 - Auto-connect on boot only works when Android has already granted VPN permission.
 - Subscription and profile compatibility depends on the fields present in imported links.
 - Some advanced Xray options are not exposed in the UI yet.
+- AnyTLS, FakeDNS, and TLS fragmentation depend on the bundled Xray core supporting them; older cores may ignore or reject these configs.
+- Protocols that are exclusive to other cores (e.g. SSH, Juicity, Mieru, ShadowTLS in sing-box) are intentionally not offered, since this app runs on Xray.
 - Shadowsocks SIP003 plugins (obfs / v2ray-plugin) are not supported by the bundled Xray core.
 - QR import reads QR codes from selected image files / live camera.
 - Release APKs are signed only when signing secrets / `keystore.properties` are configured; otherwise the unsigned output must be signed before distribution.

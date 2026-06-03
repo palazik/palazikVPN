@@ -10,7 +10,16 @@ object XrayConfigBuilder {
         JSONObject().apply {
             put("log",       buildLog())
             put("dns",       buildDns(settings))
-            put("inbounds",  buildInbounds())
+            // FakeDNS pool — speeds up routing and avoids real DNS leaks (#6)
+            if (settings.enableFakeDns) {
+                put("fakedns", JSONArray().apply {
+                    put(JSONObject().apply {
+                        put("ipPool",   "198.18.0.0/15")
+                        put("poolSize", 65535)
+                    })
+                })
+            }
+            put("inbounds",  buildInbounds(settings))
             put("outbounds", buildOutbounds(profile, settings))
             put("routing",   buildRouting(settings))
             put("stats",     JSONObject())
@@ -28,7 +37,16 @@ object XrayConfigBuilder {
     // Mirrors v2ray_config_with_tun.json from v2rayNG assets.
     // TUN inbound must be present for xray to process packets from the tunFd
     // passed to startLoop(). Without it xray ignores the fd entirely.
-    private fun buildInbounds() = JSONArray().apply {
+    private fun buildInbounds(settings: AppSettings) = JSONArray().apply {
+        // FakeDNS must be the first destOverride entry so sniffed connections map back
+        // to their real domain before http/tls override (v2rayNG ordering).
+        fun sniffing() = JSONObject().apply {
+            put("enabled", true)
+            put("destOverride", JSONArray().apply {
+                if (settings.enableFakeDns) put("fakedns")
+                put("http"); put("tls")
+            })
+        }
         put(JSONObject().apply {
             put("tag", "tun")
             put("protocol", "tun")
@@ -37,10 +55,7 @@ object XrayConfigBuilder {
                 put("mtu", 1500)
                 put("userLevel", 8)
             })
-            put("sniffing", JSONObject().apply {
-                put("enabled", true)
-                put("destOverride", JSONArray().apply { put("http"); put("tls") })
-            })
+            put("sniffing", sniffing())
         })
         put(JSONObject().apply {
             put("tag", "socks")
@@ -52,10 +67,7 @@ object XrayConfigBuilder {
                 put("udp", true)
                 put("userLevel", 8)
             })
-            put("sniffing", JSONObject().apply {
-                put("enabled", true)
-                put("destOverride", JSONArray().apply { put("http"); put("tls") })
-            })
+            put("sniffing", sniffing())
         })
         put(JSONObject().apply {
             put("tag", "http")
@@ -69,7 +81,26 @@ object XrayConfigBuilder {
     // ── Outbounds ─────────────────────────────────────────────────────────────
 
     private fun buildOutbounds(profile: VpnProfile, settings: AppSettings) = JSONArray().apply {
-        put(buildProxyOutbound(profile))
+        put(buildProxyOutbound(profile, settings))
+        // Anti-DPI fragment dialer (#23) — the proxy outbound chains through this via
+        // sockopt.dialerProxy when the profile opts in. Only added when needed.
+        if (profile.fragmentEnabled) {
+            put(JSONObject().apply {
+                put("tag", "fragment")
+                put("protocol", "freedom")
+                put("settings", JSONObject().apply {
+                    put("domainStrategy", "AsIs")
+                    put("fragment", JSONObject().apply {
+                        put("packets",  settings.fragmentPackets.ifBlank { "tlshello" })
+                        put("length",   settings.fragmentLength.ifBlank { "100-200" })
+                        put("interval", settings.fragmentInterval.ifBlank { "10-20" })
+                    })
+                })
+                put("streamSettings", JSONObject().apply {
+                    put("sockopt", JSONObject().apply { put("tcpNoDelay", true) })
+                })
+            })
+        }
         put(JSONObject().apply {
             put("tag", "direct")
             put("protocol", "freedom")
@@ -92,7 +123,7 @@ object XrayConfigBuilder {
         })
     }
 
-    private fun buildProxyOutbound(profile: VpnProfile) = JSONObject().apply {
+    private fun buildProxyOutbound(profile: VpnProfile, settings: AppSettings) = JSONObject().apply {
         put("tag", "proxy")
 
         when (profile.protocol) {
@@ -105,19 +136,30 @@ object XrayConfigBuilder {
             Protocol.SOCKS5      -> buildSocksOut(this, profile)
             Protocol.HTTP        -> buildHttpOut(this, profile)
             Protocol.TUIC        -> buildTuic(this, profile)
+            Protocol.ANYTLS      -> buildAnyTls(this, profile)
         }
 
         // SS handles its own framing; streamSettings causes TLS handshake against plain SS servers
         val needsStream = profile.protocol !in listOf(
             Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.HTTP
         )
-        if (needsStream) put("streamSettings", buildStreamSettings(profile))
+        if (needsStream) {
+            val stream = buildStreamSettings(profile)
+            // Chain through the fragment dialer for anti-DPI (#22/#23). Only meaningful
+            // for TCP-based transports; QUIC/UDP transports ignore TCP fragmentation.
+            if (profile.fragmentEnabled && profile.transport != Transport.QUIC) {
+                stream.put("sockopt", JSONObject().apply { put("dialerProxy", "fragment") })
+            }
+            put("streamSettings", stream)
+        }
 
-        // v2rayNG: mux disabled for SS, Trojan, WireGuard, Hysteria2, TUIC, SOCKS5
+        // v2rayNG: mux disabled for SS, Trojan, WireGuard, Hysteria2, TUIC, SOCKS5, AnyTLS
         // Shadowsocks + mux is broken — xray-core does not support it
         // REALITY/XTLS use xtls-rprx-vision flow which is incompatible with mux
-        val useMux = profile.protocol !in listOf(
-            Protocol.SHADOWSOCKS, Protocol.TROJAN,
+        // AnyTLS has its own session multiplexing, so xray mux must stay off.
+        // Per-profile override (#22): the user can force mux off via profile.muxEnabled.
+        val useMux = profile.muxEnabled && profile.protocol !in listOf(
+            Protocol.SHADOWSOCKS, Protocol.TROJAN, Protocol.ANYTLS,
             Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.TUIC, Protocol.SOCKS5, Protocol.HTTP
         ) && profile.transport !in listOf(Transport.XHTTP, Transport.QUIC)
           && profile.security !in listOf(Security.REALITY, Security.XTLS)
@@ -315,6 +357,15 @@ object XrayConfigBuilder {
         })
     }
 
+    private fun buildAnyTls(obj: JSONObject, p: VpnProfile) {
+        obj.put("protocol", "anytls")
+        obj.put("settings", JSONObject().apply {
+            put("address",  p.address)
+            put("port",     p.port)
+            put("password", p.uuid)
+        })
+    }
+
     // ── Stream settings ───────────────────────────────────────────────────────
 
     private fun buildStreamSettings(p: VpnProfile) = JSONObject().apply {
@@ -423,6 +474,8 @@ object XrayConfigBuilder {
             put("clients4.google.com", "clients.google.com")
         })
         put("servers", JSONArray().apply {
+            // FakeDNS server must come first so A/AAAA queries get a fake IP from the pool (#6).
+            if (settings.enableFakeDns) put("fakedns")
             put(JSONObject().apply {
                 put("address", settings.remoteDns)
                 put("domains", JSONArray().apply { put("geosite:geolocation-!cn") })
@@ -457,8 +510,12 @@ object XrayConfigBuilder {
     // This is critical — without it DNS packets from TUN go into proxy,
     // proxy resolves them, returns through TUN, xray intercepts again → loop.
     private fun buildRouting(settings: AppSettings) = JSONObject().apply {
-        put("domainStrategy", "IPIfNonMatch")
+        put("domainStrategy", settings.domainStrategy.name)   // #7 user-selectable
         put("domainMatcher",  "hybrid")
+        // GLOBAL forces everything (except LAN/DNS) through the proxy; BYPASS_LAN ignores
+        // China/custom-direct bypass. Only RULE_BASED applies the full direct/bypass rules. (#2)
+        val applyDirectRules = settings.routingMode == RoutingMode.RULE_BASED
+        val applyChina       = settings.routingMode == RoutingMode.RULE_BASED && settings.bypassChina
         put("rules", JSONArray().apply {
 
             // Rule 1: DNS from TUN → dns-out (MUST be first)
@@ -469,7 +526,7 @@ object XrayConfigBuilder {
                 put("port", "53")
             })
 
-            // User-defined blocked domains
+            // User-defined blocked domains (always honoured — blocking is not a "direct" rule)
             if (settings.customBlockedDomains.isNotEmpty()) {
                 put(JSONObject().apply {
                     put("type", "field")
@@ -478,7 +535,7 @@ object XrayConfigBuilder {
                 })
             }
 
-            // Block ads (optional)
+            // Block ads (optional, always honoured)
             if (settings.blockAds) {
                 put(JSONObject().apply {
                     put("type", "field")
@@ -488,7 +545,7 @@ object XrayConfigBuilder {
             }
 
             // User-defined direct domains
-            if (settings.customDirectDomains.isNotEmpty()) {
+            if (applyDirectRules && settings.customDirectDomains.isNotEmpty()) {
                 put(JSONObject().apply {
                     put("type", "field")
                     put("outboundTag", "direct")
@@ -497,7 +554,7 @@ object XrayConfigBuilder {
             }
 
             // Bypass China (optional) — route mainland domains & IPs direct
-            if (settings.bypassChina) {
+            if (applyChina) {
                 put(JSONObject().apply {
                     put("type", "field")
                     put("outboundTag", "direct")

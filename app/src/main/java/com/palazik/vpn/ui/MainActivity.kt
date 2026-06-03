@@ -101,7 +101,7 @@ class MainActivity : ComponentActivity() {
             "palazikvpn" ->
                 vm.importProfileFromLink(data.getQueryParameter("config") ?: data.toString())
             // Other proxy schemes opened from a browser / file manager
-            "vmess", "vless", "ss", "trojan", "hysteria2", "wireguard", "socks5", "tuic", "xhttp", "httpproxy" ->
+            "vmess", "vless", "ss", "trojan", "hysteria2", "wireguard", "socks5", "tuic", "anytls", "xhttp", "httpproxy" ->
                 vm.importProfileFromLink(data.toString())
         }
     }

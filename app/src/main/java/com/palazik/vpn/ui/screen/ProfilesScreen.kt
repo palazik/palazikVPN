@@ -973,8 +973,11 @@ private fun ManualProfileDialog(
     var securityExpanded  by remember { mutableStateOf(false) }
     var vmessCipherExpanded by remember { mutableStateOf(false) }
 
+    var muxEnabled  by remember { mutableStateOf(initial?.muxEnabled ?: true) }
+    var fragmentEnabled by remember { mutableStateOf(initial?.fragmentEnabled ?: false) }
+
     val noTransportProtos = remember {
-        listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.HYSTERIA2, Protocol.SOCKS5, Protocol.HTTP)
+        listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.HYSTERIA2, Protocol.SOCKS5, Protocol.HTTP, Protocol.ANYTLS)
     }
     val noSecurityProtos = remember {
         listOf(Protocol.WIREGUARD, Protocol.SHADOWSOCKS, Protocol.SOCKS5, Protocol.HTTP)
@@ -1002,7 +1005,8 @@ private fun ManualProfileDialog(
                     )
                     ExposedDropdownMenu(expanded = protoExpanded, onDismissRequest = { protoExpanded = false }) {
                         listOf(Protocol.VLESS, Protocol.VMESS, Protocol.SHADOWSOCKS, Protocol.TROJAN,
-                            Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.SOCKS5, Protocol.HTTP, Protocol.TUIC).forEach { p ->
+                            Protocol.HYSTERIA2, Protocol.WIREGUARD, Protocol.SOCKS5, Protocol.HTTP, Protocol.TUIC,
+                            Protocol.ANYTLS).forEach { p ->
                             DropdownMenuItem(text = { Text(p.name) }, onClick = { protocol = p; protoExpanded = false })
                         }
                     }
@@ -1015,8 +1019,8 @@ private fun ManualProfileDialog(
 
                 // Protocol-specific fields
                 when (protocol) {
-                    Protocol.VMESS, Protocol.VLESS, Protocol.TROJAN, Protocol.SOCKS5, Protocol.HTTP, Protocol.TUIC -> {
-                        if (protocol == Protocol.TROJAN) {
+                    Protocol.VMESS, Protocol.VLESS, Protocol.TROJAN, Protocol.SOCKS5, Protocol.HTTP, Protocol.TUIC, Protocol.ANYTLS -> {
+                        if (protocol == Protocol.TROJAN || protocol == Protocol.ANYTLS) {
                             SecretTextField(value = uuid, onValueChange = { uuid = it }, label = "Password")
                         } else if (protocol == Protocol.SOCKS5 || protocol == Protocol.HTTP) {
                             OutlinedTextField(
@@ -1037,6 +1041,11 @@ private fun ManualProfileDialog(
                                     }
                                 },
                             )
+                        }
+                        // BUG FIX: TUIC needs a password too — without this field, manual TUIC
+                        // profiles always failed validation ("TUIC password is required").
+                        if (protocol == Protocol.TUIC) {
+                            SecretTextField(value = ssPassword, onValueChange = { ssPassword = it }, label = "Password")
                         }
                     }
                     Protocol.SHADOWSOCKS -> {
@@ -1157,6 +1166,21 @@ private fun ManualProfileDialog(
                         }
                     }
                 }
+
+                // Per-profile advanced overrides (#22 / #23)
+                HorizontalDivider()
+                ProfileToggleRow(
+                    title = "Multiplexing (mux)",
+                    subtitle = "Reuse one connection for many streams. Ignored for protocols that don't support it.",
+                    checked = muxEnabled,
+                    onChange = { muxEnabled = it },
+                )
+                ProfileToggleRow(
+                    title = "TLS fragment (anti-DPI)",
+                    subtitle = "Split the TLS handshake to bypass DPI. Configure sizes in Routing & Privacy.",
+                    checked = fragmentEnabled,
+                    onChange = { fragmentEnabled = it },
+                )
             }
         },
         confirmButton = {
@@ -1188,6 +1212,8 @@ private fun ManualProfileDialog(
                         wgDns           = wgDns.trim(),
                         wgMtu           = wgMtu.toIntOrNull() ?: 1280,
                         wgReserved      = wgReserved.trim(),
+                        muxEnabled      = muxEnabled,
+                        fragmentEnabled = fragmentEnabled,
                     ))
                 },
                 enabled = address.isNotBlank(),
@@ -1195,6 +1221,27 @@ private fun ManualProfileDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+@Composable
+private fun ProfileToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(8.dp))
+        Switch(checked = checked, onCheckedChange = onChange)
+    }
 }
 
 @Composable

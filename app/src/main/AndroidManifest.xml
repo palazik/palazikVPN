@@ -66,6 +66,7 @@
                 <data android:scheme="wireguard" />
                 <data android:scheme="socks5" />
                 <data android:scheme="tuic" />
+                <data android:scheme="anytls" />
                 <data android:scheme="xhttp" />
                 <data android:scheme="httpproxy" />
             </intent-filter>
