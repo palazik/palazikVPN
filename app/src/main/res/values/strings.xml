@@ -40,7 +40,7 @@
     <string name="settings_subscriptions">Subscriptions</string>
     <string name="settings_subscriptions_summary">Auto-update and User-Agent</string>
     <string name="settings_split">Split Tunneling</string>
-    <string name="settings_split_summary">Apps that bypass the VPN</string>
+    <string name="settings_split_summary">Choose which apps use or bypass the VPN</string>
     <string name="settings_backup">Backup</string>
     <string name="settings_backup_summary">Export / import profiles</string>
     <string name="settings_startup">Startup</string>

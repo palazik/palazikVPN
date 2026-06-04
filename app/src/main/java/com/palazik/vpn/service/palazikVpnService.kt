@@ -18,6 +18,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.palazik.vpn.R
 import com.palazik.vpn.data.model.AppSettings
+import com.palazik.vpn.data.model.SplitTunnelMode
 import com.palazik.vpn.data.model.VpnProfile
 import com.palazik.vpn.palazikVPNApp
 import com.palazik.vpn.ui.MainActivity
@@ -268,7 +269,7 @@ class palazikVpnService : VpnService() {
                 val assetPath = userAssetPath()
                 val deviceId  = getDeviceIdForXUDPBaseKey()
                 Libv2ray.initCoreEnv(assetPath, deviceId)
-                Log.d(TAG, "✓ Libv2ray.initCoreEnv($assetPath)")
+                Log.d(TAG, "Libv2ray.initCoreEnv($assetPath)")
             } catch (e: Exception) {
                 coreEnvInitialized.set(false)
                 throw e
@@ -288,12 +289,10 @@ class palazikVpnService : VpnService() {
             .setMtu(1500)
             .addAddress("10.10.14.1", 30)   // v2rayNG default: OPTION_1
             .addRoute("0.0.0.0", 0)
-            .addDisallowedApplication(packageName)
 
-        // BUG FIX: without an IPv6 address + ::/0 route, apps' IPv6 traffic bypasses the
-        // tunnel entirely on dual-stack networks → real IP leak. When IPv6 is enabled we
-        // capture it too; when disabled we still claim ::/0 so the OS drops it inside the
-        // TUN rather than leaking it around the VPN.
+        // Without an IPv6 address + ::/0 route, apps' IPv6 traffic bypasses the tunnel on
+        // dual-stack networks and leaks the real IP. With IPv6 enabled we carry it; with it
+        // disabled we still claim ::/0 so the OS drops it inside the TUN instead.
         runCatching {
             builder.addAddress("fd66:6ca7:14e7::1", 126)
             builder.addRoute("::", 0)
@@ -304,12 +303,7 @@ class palazikVpnService : VpnService() {
                 .onFailure { Log.w(TAG, "Invalid DNS server ignored: $dns") }
         }
 
-        settings.bypassPackages.forEach { pkg ->
-            if (pkg != packageName) {
-                runCatching { builder.addDisallowedApplication(pkg) }
-                    .onFailure { Log.w(TAG, "Bypass package ignored: $pkg") }
-            }
-        }
+        applyAppFilter(builder, settings)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
@@ -326,6 +320,31 @@ class palazikVpnService : VpnService() {
         return builder
             .establish()
             ?: throw IllegalStateException("establish() returned null — missing VPN permission?")
+    }
+
+    /**
+     * Apply split tunnelling. Android only lets us call one of addAllowedApplication /
+     * addDisallowedApplication per builder, never both, so the two modes are mutually
+     * exclusive. Our own package is always kept off the tunnel to avoid a loop.
+     */
+    private fun applyAppFilter(builder: Builder, settings: AppSettings) {
+        val packages = settings.bypassPackages.filter { it != packageName }
+
+        if (settings.splitTunnelMode == SplitTunnelMode.ONLY && packages.isNotEmpty()) {
+            // Whitelist: route only the chosen apps. We are not in the list, so our own
+            // traffic stays direct — no need (and not allowed) to also disallow ourselves.
+            packages.forEach { pkg ->
+                runCatching { builder.addAllowedApplication(pkg) }
+                    .onFailure { Log.w(TAG, "Allowed app ignored: $pkg") }
+            }
+        } else {
+            // Bypass (default): the chosen apps plus ourselves skip the tunnel.
+            builder.addDisallowedApplication(packageName)
+            packages.forEach { pkg ->
+                runCatching { builder.addDisallowedApplication(pkg) }
+                    .onFailure { Log.w(TAG, "Bypass app ignored: $pkg") }
+            }
+        }
     }
 
     private fun loadAppSettings(): AppSettings {

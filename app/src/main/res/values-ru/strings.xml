@@ -37,7 +37,7 @@
     <string name="settings_subscriptions">Подписки</string>
     <string name="settings_subscriptions_summary">Автообновление и User-Agent</string>
     <string name="settings_split">Раздельное туннелирование</string>
-    <string name="settings_split_summary">Приложения в обход VPN</string>
+    <string name="settings_split_summary">Какие приложения используют VPN или обходят его</string>
     <string name="settings_backup">Резервная копия</string>
     <string name="settings_backup_summary">Экспорт / импорт профилей</string>
     <string name="settings_startup">Запуск</string>

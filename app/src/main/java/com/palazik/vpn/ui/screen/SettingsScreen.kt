@@ -27,6 +27,7 @@ import com.palazik.vpn.R
 import com.palazik.vpn.data.model.AppSettings
 import com.palazik.vpn.data.model.DesignSystem
 import com.palazik.vpn.data.model.PingMode
+import com.palazik.vpn.data.model.SplitTunnelMode
 import com.palazik.vpn.ui.theme.LocalDesignSystem
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
@@ -425,9 +426,28 @@ private fun SplitTunnelContent(
     installedApps: List<com.palazik.vpn.data.model.InstalledApp>,
 ) {
     var showAppPicker by remember { mutableStateOf(false) }
+    val onlyMode = settings.splitTunnelMode == SplitTunnelMode.ONLY
+
+    Text("Mode", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 8.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = !onlyMode,
+            onClick = { vm.updateAppSettings(settings.copy(splitTunnelMode = SplitTunnelMode.BYPASS)) },
+            label = { Text("Apps bypass VPN") },
+            leadingIcon = if (!onlyMode) { { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) } } else null,
+        )
+        FilterChip(
+            selected = onlyMode,
+            onClick = { vm.updateAppSettings(settings.copy(splitTunnelMode = SplitTunnelMode.ONLY)) },
+            label = { Text("Only these use VPN") },
+            leadingIcon = if (onlyMode) { { Icon(Icons.Rounded.Check, null, Modifier.size(16.dp)) } } else null,
+        )
+    }
+    HorizontalDivider(Modifier.padding(vertical = 10.dp))
 
     Text(
-        "${settings.bypassPackages.size} apps bypass VPN",
+        if (onlyMode) "${settings.bypassPackages.size} apps use the VPN exclusively"
+        else "${settings.bypassPackages.size} apps bypass VPN",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )

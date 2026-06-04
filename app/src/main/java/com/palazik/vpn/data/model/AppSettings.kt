@@ -12,11 +12,19 @@ enum class RoutingMode {
 /** xray `domainStrategy` for the routing matcher (#7). */
 enum class DomainStrategy { IPIfNonMatch, AsIs, IPOnDemand }
 
+/**
+ * How the selected app list is interpreted:
+ *  - BYPASS: the listed apps skip the tunnel, everything else goes through it.
+ *  - ONLY:   only the listed apps go through the tunnel, everything else is direct.
+ */
+enum class SplitTunnelMode { BYPASS, ONLY }
+
 data class AppSettings(
     val dnsServers: List<String> = listOf("8.8.8.8", "1.1.1.1"),
     val remoteDns: String = "https://1.1.1.1/dns-query",
     val directDns: String = "223.5.5.5",
     val bypassPackages: List<String> = emptyList(),
+    val splitTunnelMode: SplitTunnelMode = SplitTunnelMode.BYPASS,
     val startOnBoot: Boolean = false,
     val autoUpdateSubscriptions: Boolean = true,
     val subscriptionUpdateIntervalHours: Long = 2L,
