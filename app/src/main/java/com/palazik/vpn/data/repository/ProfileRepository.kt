@@ -16,7 +16,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -50,6 +52,10 @@ class ProfileRepository @Inject constructor(
 
     // Serializes concurrent subscription updates to prevent profile duplication
     private val updateMutex = Mutex()
+
+    private companion object {
+        const val MAX_CONCURRENT_PINGS = 24
+    }
 
     init { loadFromPrefs() }
 
@@ -223,14 +229,18 @@ class ProfileRepository @Inject constructor(
      * it is the only mode that meaningfully compares multiple profiles, and it works without
      * the VPN running.
      *
-     * BUG FIX: pinging via [pingProfile] in a loop is slow (3s timeout each, serial), and
-     * doing the per-profile writes concurrently would race on _profiles (read-modify-write).
-     * Here we measure in parallel, then fold every result into one list update.
+     * Pinging via [pingProfile] in a loop is slow (3s timeout each, serial), and doing the
+     * per-profile writes concurrently would race on _profiles (read-modify-write). Here we
+     * measure in parallel, then fold every result into one list update.
+     *
+     * Concurrency is capped so a large subscription doesn't open hundreds of sockets at once
+     * (which can exhaust file descriptors and just thrashes the IO dispatcher anyway).
      */
     suspend fun pingProfiles(profiles: List<VpnProfile>): Unit = withContext(Dispatchers.IO) {
         if (profiles.isEmpty()) return@withContext
+        val gate = Semaphore(MAX_CONCURRENT_PINGS)
         val results = profiles
-            .map { p -> async { p.id to tcpPing(p) } }
+            .map { p -> async { gate.withPermit { p.id to tcpPing(p) } } }
             .awaitAll()
             .toMap()
         val now = System.currentTimeMillis()

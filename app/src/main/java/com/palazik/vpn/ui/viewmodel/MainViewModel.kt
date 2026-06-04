@@ -2,6 +2,7 @@ package com.palazik.vpn.ui.viewmodel
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.VpnService
 import androidx.activity.result.ActivityResultLauncher
@@ -435,31 +436,32 @@ class MainViewModel @Inject constructor(
     private fun loadInstalledApps() {
         viewModelScope.launch(Dispatchers.IO) {
             val pm = context.packageManager
-            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-            val launcherApps = pm.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
-                .mapNotNull { info ->
-                    val pkg = info.activityInfo?.packageName ?: return@mapNotNull null
-                    if (pkg == context.packageName) return@mapNotNull null
-                    InstalledApp(
-                        label = info.loadLabel(pm)?.toString()?.ifBlank { pkg } ?: pkg,
-                        packageName = pkg,
-                    )
+            val self = context.packageName
+
+            // Gather candidates from both sources and dedupe by package before touching
+            // loadLabel() — that call hits the PackageManager once per app and is the slow
+            // part, so we don't want to pay it twice for apps that show up in both lists.
+            // getInstalledApplications covers everything when QUERY_ALL_PACKAGES is granted;
+            // the launcher query is the fallback (visible via the <queries> manifest entry).
+            val candidates = LinkedHashMap<String, ApplicationInfo>()
+
+            runCatching { pm.getInstalledApplications(PackageManager.MATCH_DISABLED_COMPONENTS) }
+                .getOrDefault(emptyList())
+                .forEach { app ->
+                    if (app.enabled && app.packageName != self) candidates.putIfAbsent(app.packageName, app)
                 }
-            val installedApps = runCatching {
-                pm.getInstalledApplications(PackageManager.MATCH_DISABLED_COMPONENTS)
-                    .mapNotNull { app ->
-                        val pkg = app.packageName ?: return@mapNotNull null
-                        if (!app.enabled) return@mapNotNull null
-                        if (pkg == context.packageName) return@mapNotNull null
-                        InstalledApp(
-                            label = app.loadLabel(pm)?.toString()?.ifBlank { pkg } ?: pkg,
-                            packageName = pkg,
-                        )
-                    }
-            }.getOrDefault(emptyList())
-            val apps = (launcherApps + installedApps)
-                .distinctBy { it.packageName }
+
+            val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            pm.queryIntentActivities(launcherIntent, PackageManager.MATCH_DEFAULT_ONLY)
+                .forEach { resolve ->
+                    val app = resolve.activityInfo?.applicationInfo ?: return@forEach
+                    if (app.packageName != self) candidates.putIfAbsent(app.packageName, app)
+                }
+
+            val apps = candidates.values
+                .map { app -> InstalledApp(app.loadLabel(pm).toString().ifBlank { app.packageName }, app.packageName) }
                 .sortedBy { it.label.lowercase() }
+
             _ui.update { it.copy(installedApps = apps) }
         }
     }
