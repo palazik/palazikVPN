@@ -1,4 +1,4 @@
-name: Build palazikVPN
+name: Build CI
 
 on:
   push:
