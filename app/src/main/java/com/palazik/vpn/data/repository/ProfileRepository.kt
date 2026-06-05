@@ -24,6 +24,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
 import javax.inject.Inject
@@ -194,6 +195,42 @@ class ProfileRepository @Inject constructor(
 
     suspend fun updateAllSubscriptions(): List<Result<Int>> =
         _subscriptions.value.map { updateSubscription(it) }
+
+    // ── Geo files ───────────────────────────────────────────────────────────────
+
+    /**
+     * Download user-supplied geoip.dat / geosite.dat into the directory xray reads from,
+     * overriding the bundled copies. Returns how many files were refreshed, or fails if a
+     * configured URL could not be fetched. Files with a blank URL are left untouched.
+     */
+    suspend fun updateGeoFiles(): Result<Int> = withContext(Dispatchers.IO) {
+        runCatching {
+            val targets = buildList {
+                _settings.value.geoipUrl.trim().takeIf { it.isNotBlank() }?.let { add("geoip.dat" to it) }
+                _settings.value.geositeUrl.trim().takeIf { it.isNotBlank() }?.let { add("geosite.dat" to it) }
+            }
+            if (targets.isEmpty()) throw Exception("No geo file URLs set")
+
+            val dir = (context.getExternalFilesDir("assets") ?: context.getDir("assets", 0))
+                .also { it.mkdirs() }
+
+            targets.forEach { (fileName, url) ->
+                val req = Request.Builder().url(url).build()
+                directClient.newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) throw Exception("$fileName: HTTP ${resp.code}")
+                    val bytes = resp.body?.bytes()?.takeIf { it.isNotEmpty() }
+                        ?: throw Exception("$fileName: empty response")
+                    File(dir, fileName).writeBytes(bytes)
+                }
+            }
+            targets.size
+        }
+    }
+
+    /** Register a free Cloudflare WARP account and add it as a WireGuard profile. */
+    suspend fun provisionWarp(): Result<Unit> = withContext(Dispatchers.IO) {
+        com.palazik.vpn.data.warp.WarpProvisioner.register(directClient).map { addProfile(it) }
+    }
 
     // ── Ping ──────────────────────────────────────────────────────────────────
 

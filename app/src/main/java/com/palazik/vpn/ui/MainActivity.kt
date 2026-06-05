@@ -18,6 +18,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -27,6 +30,7 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.palazik.vpn.data.model.DesignSystem
 import com.palazik.vpn.ui.screen.AppNavHost
+import com.palazik.vpn.ui.screen.OnboardingScreen
 import com.palazik.vpn.ui.theme.DarkModePreference
 import com.palazik.vpn.ui.theme.palazikVPNTheme
 import com.palazik.vpn.ui.viewmodel.MainViewModel
@@ -82,7 +86,20 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color    = Color.Transparent,
                 ) {
-                    AppNavHost(vm = vm, permLauncher = vpnPermLauncher)
+                    val onboardingPrefs = remember {
+                        getSharedPreferences("palazik_theme", MODE_PRIVATE)
+                    }
+                    var showOnboarding by remember {
+                        mutableStateOf(!onboardingPrefs.getBoolean("onboarding_done", false))
+                    }
+                    if (showOnboarding) {
+                        OnboardingScreen(onFinish = {
+                            onboardingPrefs.edit().putBoolean("onboarding_done", true).apply()
+                            showOnboarding = false
+                        })
+                    } else {
+                        AppNavHost(vm = vm, permLauncher = vpnPermLauncher)
+                    }
                 }
             }
         }

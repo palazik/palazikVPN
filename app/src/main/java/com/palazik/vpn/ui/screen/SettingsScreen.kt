@@ -47,6 +47,7 @@ object SettingsRoutes {
     const val CONNECTION   = "settings/connection"
     const val DNS          = "settings/dns"
     const val ROUTING      = "settings/routing"
+    const val GEO          = "settings/geo"
     const val SUBSCRIPTION  = "settings/subscriptions"
     const val SPLIT        = "settings/split"
     const val BACKUP       = "settings/backup"
@@ -73,6 +74,7 @@ private val SettingsGroups = listOf(
         SettingsEntry(SettingsRoutes.CONNECTION, R.string.settings_connection, R.string.settings_connection_summary, Icons.Rounded.NetworkCheck),
         SettingsEntry(SettingsRoutes.DNS, R.string.settings_dns, R.string.settings_dns_summary, Icons.Rounded.Dns),
         SettingsEntry(SettingsRoutes.ROUTING, R.string.settings_routing, R.string.settings_routing_summary, Icons.Rounded.AltRoute),
+        SettingsEntry(SettingsRoutes.GEO, R.string.settings_geo, R.string.settings_geo_summary, Icons.Rounded.Public),
     )),
     SettingsGroup(R.string.group_profiles_data, listOf(
         SettingsEntry(SettingsRoutes.SUBSCRIPTION, R.string.settings_subscriptions, R.string.settings_subscriptions_summary, Icons.Rounded.Subscriptions),
@@ -293,6 +295,55 @@ fun RoutingSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
     SettingsScaffold(stringResource(R.string.settings_routing), onBack) {
         SettingsCard { RoutingSettingsContent(vm, ui.settings) }
+    }
+}
+
+@Composable
+fun GeoFilesSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val ui by vm.ui.collectAsState()
+    SettingsScaffold(stringResource(R.string.settings_geo), onBack) {
+        SettingsCard {
+            var geoip   by remember(ui.settings.geoipUrl)   { mutableStateOf(ui.settings.geoipUrl) }
+            var geosite by remember(ui.settings.geositeUrl) { mutableStateOf(ui.settings.geositeUrl) }
+
+            Text(
+                "Override the bundled geoip.dat / geosite.dat with files from a URL. " +
+                    "Leave blank to keep the built-in data. Reconnect to apply.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 10.dp),
+            )
+            OutlinedTextField(
+                value = geoip, onValueChange = { geoip = it },
+                label = { Text("geoip.dat URL") }, placeholder = { Text("https://…/geoip.dat") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = geosite, onValueChange = { geosite = it },
+                label = { Text("geosite.dat URL") }, placeholder = { Text("https://…/geosite.dat") },
+                modifier = Modifier.fillMaxWidth(), singleLine = true,
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                OutlinedButton(onClick = {
+                    vm.updateAppSettings(ui.settings.copy(geoipUrl = geoip.trim(), geositeUrl = geosite.trim()))
+                }) {
+                    Icon(Icons.Rounded.Save, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Save")
+                }
+                Spacer(Modifier.width(8.dp))
+                Button(onClick = {
+                    vm.updateAppSettings(ui.settings.copy(geoipUrl = geoip.trim(), geositeUrl = geosite.trim()))
+                    vm.updateGeoFiles()
+                }) {
+                    Icon(Icons.Rounded.Download, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Update now")
+                }
+            }
+        }
     }
 }
 

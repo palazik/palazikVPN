@@ -11,7 +11,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 
-enum class AppTheme { CYBER, OCEAN, FOREST, SUNSET, DYNAMIC }
+enum class AppTheme { CYBER, OCEAN, FOREST, SUNSET, ROSE, VIOLET, AMOLED, DYNAMIC }
 enum class DarkModePreference { SYSTEM, ALWAYS_DARK, ALWAYS_LIGHT }
 
 val LocalAppTheme      = compositionLocalOf { AppTheme.CYBER }
@@ -44,11 +44,39 @@ private fun cyberLightScheme() = lightColorScheme(
     onSurface          = CyberBackground,
 )
 
-private fun oceanScheme(dark: Boolean) = if (dark) darkColorScheme(
-    primary = OceanPrimary, onPrimary = OceanOnPrimary,
-    primaryContainer = OceanPrimaryContainer,
-    onPrimaryContainer = OceanOnPrimaryContainer,
-    secondary = OceanSecondary,
+// Shared dark surfaces so every coloured theme reads as a proper deep-dark UI instead of
+// falling back to Material's grey defaults (which clashed with the light containers the
+// themes ship for light mode). Each theme just supplies its own accent colours.
+private val DarkBg        = Color(0xFF0A0E13)
+private val DarkSurface   = Color(0xFF121822)
+private val DarkSurfaceV  = Color(0xFF1C2430)
+private val DarkOnSurface = Color(0xFFE2E8F0)
+private val DarkOutline   = Color(0xFF2C3744)
+
+private fun darkScheme(
+    primary: Color,
+    secondary: Color,
+    container: Color,
+    onContainer: Color,
+    background: Color = DarkBg,
+    surface: Color = DarkSurface,
+) = darkColorScheme(
+    primary            = primary,
+    onPrimary          = Color(0xFF06121A),
+    primaryContainer   = container,
+    onPrimaryContainer = onContainer,
+    secondary          = secondary,
+    background         = background,
+    surface            = surface,
+    surfaceVariant     = DarkSurfaceV,
+    onSurface          = DarkOnSurface,
+    onSurfaceVariant   = DarkOnSurface.copy(alpha = 0.72f),
+    outline            = DarkOutline,
+)
+
+private fun oceanScheme(dark: Boolean) = if (dark) darkScheme(
+    primary = Color(0xFF4FC3F7), secondary = OceanSecondary,
+    container = Color(0xFF00405C), onContainer = Color(0xFFCAE9FF),
 ) else lightColorScheme(
     primary = OceanPrimary, onPrimary = OceanOnPrimary,
     primaryContainer = OceanPrimaryContainer,
@@ -59,11 +87,9 @@ private fun oceanScheme(dark: Boolean) = if (dark) darkColorScheme(
     outline = OceanOutline,
 )
 
-private fun forestScheme(dark: Boolean) = if (dark) darkColorScheme(
-    primary = ForestPrimary, onPrimary = ForestOnPrimary,
-    primaryContainer = ForestPrimaryContainer,
-    onPrimaryContainer = ForestOnPrimaryContainer,
-    secondary = ForestSecondary,
+private fun forestScheme(dark: Boolean) = if (dark) darkScheme(
+    primary = Color(0xFF74C69D), secondary = Color(0xFF95D5B2),
+    container = Color(0xFF1B4332), onContainer = Color(0xFFB7E4C7),
 ) else lightColorScheme(
     primary = ForestPrimary, onPrimary = ForestOnPrimary,
     primaryContainer = ForestPrimaryContainer,
@@ -74,11 +100,9 @@ private fun forestScheme(dark: Boolean) = if (dark) darkColorScheme(
     outline = ForestOutline,
 )
 
-private fun sunsetScheme(dark: Boolean) = if (dark) darkColorScheme(
-    primary = SunsetPrimary, onPrimary = SunsetOnPrimary,
-    primaryContainer = SunsetPrimaryContainer,
-    onPrimaryContainer = SunsetOnPrimaryContainer,
-    secondary = SunsetSecondary,
+private fun sunsetScheme(dark: Boolean) = if (dark) darkScheme(
+    primary = Color(0xFFFFB74D), secondary = SunsetSecondary,
+    container = Color(0xFF5A2E00), onContainer = Color(0xFFFFDCC2),
 ) else lightColorScheme(
     primary = SunsetPrimary, onPrimary = SunsetOnPrimary,
     primaryContainer = SunsetPrimaryContainer,
@@ -87,6 +111,44 @@ private fun sunsetScheme(dark: Boolean) = if (dark) darkColorScheme(
     background = SunsetBackground, surface = SunsetSurface,
     surfaceVariant = SunsetSurfaceVariant, onSurface = SunsetOnSurface,
     outline = SunsetOutline,
+)
+
+private fun roseScheme(dark: Boolean) = if (dark) darkScheme(
+    primary = Color(0xFFFF6FA5), secondary = Color(0xFFFF8FB0),
+    container = Color(0xFF5C0030), onContainer = Color(0xFFFFD9E2),
+) else lightColorScheme(
+    primary = Color(0xFFB3005D), onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFFFD9E2), onPrimaryContainer = Color(0xFF3E0021),
+    secondary = Color(0xFFE0608F),
+    background = Color(0xFFFFF8F9), surface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFF6DDE4), onSurface = Color(0xFF1F1A1C),
+    outline = Color(0xFFD8A9B8),
+)
+
+private fun violetScheme(dark: Boolean) = if (dark) darkScheme(
+    primary = Color(0xFFB388FF), secondary = Color(0xFF9C6BFF),
+    container = Color(0xFF3A1A5C), onContainer = Color(0xFFE9DDFF),
+) else lightColorScheme(
+    primary = Color(0xFF6A1B9A), onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFEBDCFF), onPrimaryContainer = Color(0xFF26003E),
+    secondary = Color(0xFF8E5BD0),
+    background = Color(0xFFFBF7FF), surface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFE9DEF2), onSurface = Color(0xFF1C1B1F),
+    outline = Color(0xFFC4B2D6),
+)
+
+// Pure-black OLED-friendly theme — true #000 surfaces, monochrome accent.
+private fun amoledScheme(dark: Boolean) = if (dark) darkScheme(
+    primary = Color(0xFFEDEDED), secondary = Color(0xFFB0B0B0),
+    container = Color(0xFF1C1C1C), onContainer = Color(0xFFEDEDED),
+    background = Color(0xFF000000), surface = Color(0xFF000000),
+) else lightColorScheme(
+    primary = Color(0xFF1A1A1A), onPrimary = Color(0xFFFFFFFF),
+    primaryContainer = Color(0xFFE0E0E0), onPrimaryContainer = Color(0xFF111111),
+    secondary = Color(0xFF555555),
+    background = Color(0xFFFAFAFA), surface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFFE7E7E7), onSurface = Color(0xFF1A1A1A),
+    outline = Color(0xFFC2C2C2),
 )
 
 // ── Resolve MD3 ColorScheme from AppTheme ───────────────────────────────────
@@ -102,6 +164,9 @@ fun resolveColorScheme(appTheme: AppTheme, isDark: Boolean): ColorScheme {
         AppTheme.OCEAN   -> oceanScheme(isDark)
         AppTheme.FOREST  -> forestScheme(isDark)
         AppTheme.SUNSET  -> sunsetScheme(isDark)
+        AppTheme.ROSE    -> roseScheme(isDark)
+        AppTheme.VIOLET  -> violetScheme(isDark)
+        AppTheme.AMOLED  -> amoledScheme(isDark)
     }
 }
 

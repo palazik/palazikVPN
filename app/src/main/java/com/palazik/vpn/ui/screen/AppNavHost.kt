@@ -174,6 +174,7 @@ fun AppNavHost(
             composable(SettingsRoutes.CONNECTION)           { ConnectionSettingsScreen(vm, back) }
             composable(SettingsRoutes.DNS)                  { DnsSettingsScreen(vm, back) }
             composable(SettingsRoutes.ROUTING)              { RoutingSettingsScreen(vm, back) }
+            composable(SettingsRoutes.GEO)                  { GeoFilesSettingsScreen(vm, back) }
             composable(SettingsRoutes.SUBSCRIPTION)         { SubscriptionSettingsScreen(vm, back) }
             composable(SettingsRoutes.SPLIT)                { SplitTunnelSettingsScreen(vm, back) }
             composable(SettingsRoutes.BACKUP)               { BackupSettingsScreen(vm, back) }

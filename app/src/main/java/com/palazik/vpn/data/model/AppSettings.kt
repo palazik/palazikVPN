@@ -33,6 +33,10 @@ data class AppSettings(
     // ── Subscriptions ──────────────────────────────────────────────────────────
     val subscriptionUserAgent: String = "v2rayNG/1.0",
 
+    // ── Custom geo files (#6) — override the bundled geoip.dat/geosite.dat ───────
+    val geoipUrl: String = "",
+    val geositeUrl: String = "",
+
     // ── Routing ────────────────────────────────────────────────────────────────
     val blockAds: Boolean = true,
     val bypassChina: Boolean = false,           // route geosite:cn / geoip:cn direct

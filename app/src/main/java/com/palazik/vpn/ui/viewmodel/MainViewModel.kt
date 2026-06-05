@@ -426,6 +426,26 @@ class MainViewModel @Inject constructor(
         SubscriptionUpdateScheduler.sync(context, repo.settings.value)
     }
 
+    fun generateWarpProfile() {
+        viewModelScope.launch {
+            snack("Setting up Cloudflare WARP…")
+            repo.provisionWarp().fold(
+                onSuccess = { snack("WARP profile added") },
+                onFailure = { snack(it.message ?: "WARP setup failed") },
+            )
+        }
+    }
+
+    fun updateGeoFiles() {
+        viewModelScope.launch {
+            snack("Downloading geo files…")
+            repo.updateGeoFiles().fold(
+                onSuccess = { count -> snack("Updated $count geo file(s) — reconnect to apply") },
+                onFailure = { snack(it.message ?: "Geo update failed") },
+            )
+        }
+    }
+
     private fun syncServiceActiveProfile() {
         palazikVpnService.activeProfile?.let { active ->
             palazikVpnService.activeProfile = repo.profiles.value.firstOrNull { it.id == active.id }

@@ -34,6 +34,8 @@
     <string name="settings_dns_summary">VPN, удалённый и прямой DNS</string>
     <string name="settings_routing">Маршрутизация и приватность</string>
     <string name="settings_routing_summary">Блокировка рекламы, обход Китая, IPv6, аварийный выключатель</string>
+    <string name="settings_geo">Гео-файлы</string>
+    <string name="settings_geo_summary">Обновить geoip / geosite по ссылке</string>
     <string name="settings_subscriptions">Подписки</string>
     <string name="settings_subscriptions_summary">Автообновление и User-Agent</string>
     <string name="settings_split">Раздельное туннелирование</string>

@@ -37,6 +37,8 @@ object AppSettingsCodec {
                     .coerceAtLeast(2L),
                 subscriptionUserAgent = o.optString("subscriptionUserAgent", d.subscriptionUserAgent)
                     .ifBlank { d.subscriptionUserAgent },
+                geoipUrl = o.optString("geoipUrl", d.geoipUrl),
+                geositeUrl = o.optString("geositeUrl", d.geositeUrl),
                 blockAds = o.optBoolean("blockAds", d.blockAds),
                 bypassChina = o.optBoolean("bypassChina", d.bypassChina),
                 customDirectDomains = o.optJSONArray("customDirectDomains")?.toStringList()
@@ -67,6 +69,8 @@ object AppSettingsCodec {
         put("autoUpdateSubscriptions", s.autoUpdateSubscriptions)
         put("subscriptionUpdateIntervalHours", s.subscriptionUpdateIntervalHours)
         put("subscriptionUserAgent", s.subscriptionUserAgent)
+        put("geoipUrl", s.geoipUrl)
+        put("geositeUrl", s.geositeUrl)
         put("blockAds", s.blockAds)
         put("bypassChina", s.bypassChina)
         put("customDirectDomains", JSONArray().apply { s.customDirectDomains.forEach { put(it) } })

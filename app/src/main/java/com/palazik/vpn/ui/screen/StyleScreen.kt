@@ -134,13 +134,7 @@ private fun MiuixStyleScreen(vm: MainViewModel, onBack: () -> Unit) {
             Column(Modifier.padding(vertical = 4.dp)) {
                 AppThemeOptions.forEach { theme ->
                     ArrowPreference(
-                        title = when (theme) {
-                            AppTheme.CYBER   -> "Cyber (Dark-first)"
-                            AppTheme.OCEAN   -> "Ocean"
-                            AppTheme.FOREST  -> "Forest"
-                            AppTheme.SUNSET  -> "Sunset"
-                            AppTheme.DYNAMIC -> "Dynamic (Android 12+)"
-                        },
+                        title = themeLabel(theme),
                         summary = if (ui.appTheme == theme) "Active" else null,
                         onClick = { vm.setAppTheme(theme) },
                     )
@@ -279,15 +273,20 @@ private fun StyleSection(title: String, content: @Composable ColumnScope.() -> U
     }
 }
 
+private fun themeLabel(theme: AppTheme): String = when (theme) {
+    AppTheme.CYBER   -> "Cyber (Dark-first)"
+    AppTheme.OCEAN   -> "Ocean"
+    AppTheme.FOREST  -> "Forest"
+    AppTheme.SUNSET  -> "Sunset"
+    AppTheme.ROSE    -> "Rose"
+    AppTheme.VIOLET  -> "Violet"
+    AppTheme.AMOLED  -> "AMOLED (pure black)"
+    AppTheme.DYNAMIC -> "Dynamic (Android 12+)"
+}
+
 @Composable
 private fun StyleThemeRow(theme: AppTheme, isSelected: Boolean, onClick: () -> Unit) {
-    val label = when (theme) {
-        AppTheme.CYBER   -> "Cyber (Dark-first)"
-        AppTheme.OCEAN   -> "Ocean"
-        AppTheme.FOREST  -> "Forest"
-        AppTheme.SUNSET  -> "Sunset"
-        AppTheme.DYNAMIC -> "Dynamic (Android 12+)"
-    }
+    val label = themeLabel(theme)
     Row(
         Modifier
             .fillMaxWidth()

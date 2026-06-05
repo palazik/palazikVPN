@@ -202,6 +202,10 @@ fun ProfilesScreen(vm: MainViewModel) {
                             importMenuExpanded = false
                             showManual = true
                         },
+                        onWarp = {
+                            importMenuExpanded = false
+                            vm.generateWarpProfile()
+                        },
                     )
                 }
             }
@@ -463,6 +467,7 @@ private fun ImportMenu(
     onCameraQr: () -> Unit,
     onImageQr: () -> Unit,
     onManual: () -> Unit,
+    onWarp: () -> Unit,
 ) {
     DropdownMenu(
         expanded = expanded,
@@ -493,6 +498,11 @@ private fun ImportMenu(
             text = { Text("Manual profile") },
             leadingIcon = { Icon(Icons.Rounded.Edit, null) },
             onClick = onManual,
+        )
+        DropdownMenuItem(
+            text = { Text("Generate WARP") },
+            leadingIcon = { Icon(Icons.Rounded.Cloud, null) },
+            onClick = onWarp,
         )
     }
 }
