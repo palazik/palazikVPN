@@ -387,10 +387,29 @@ fun StartupSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DiagnosticsSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val diagnostics by vm.diagnostics.collectAsState()
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri != null) scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use {
+                        it.write(diagnostics.joinToString("\n").toByteArray())
+                    }
+                }.isSuccess
+            }
+            vm.showSnack(if (ok) "Logs saved" else "Save failed")
+        }
+    }
+
     SettingsScaffold(stringResource(R.string.settings_diagnostics), onBack) {
         SettingsCard {
             if (diagnostics.isEmpty()) {
@@ -403,7 +422,19 @@ fun DiagnosticsSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 }
             }
             Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                OutlinedButton(
+                    onClick = { saveLauncher.launch("palazikvpn-logs.txt") },
+                    enabled = diagnostics.isNotEmpty(),
+                ) {
+                    Icon(Icons.Rounded.SaveAlt, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Save to file")
+                }
                 Button(
                     onClick = { clipboard.setText(AnnotatedString(diagnostics.joinToString("\n"))) },
                     enabled = diagnostics.isNotEmpty(),
@@ -454,6 +485,8 @@ fun LanguageSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val ui by vm.ui.collectAsState()
+    val context = LocalContext.current
     SettingsScaffold(stringResource(R.string.settings_about), onBack) {
         SettingsCard {
             ListItem(
@@ -461,7 +494,40 @@ fun AboutSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                 supportingContent = { Text("V${stringResource(R.string.app_version)} • by palaziks") },
                 leadingContent    = { Icon(Icons.Rounded.Info, null) },
             )
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Button(onClick = { vm.checkForUpdate() }, enabled = !ui.checkingUpdate) {
+                    if (ui.checkingUpdate) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                    } else {
+                        Icon(Icons.Rounded.SystemUpdate, null, Modifier.size(16.dp))
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    Text("Check for updates")
+                }
+            }
         }
+    }
+
+    ui.updateAvailable?.let { info ->
+        AlertDialog(
+            onDismissRequest = { vm.dismissUpdate() },
+            icon  = { Icon(Icons.Rounded.SystemUpdate, null) },
+            title = { Text("Update available") },
+            text  = { Text("Version ${info.version} is available. You're on V${stringResource(R.string.app_version)}.") },
+            confirmButton = {
+                Button(onClick = {
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(info.url))
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
+                    vm.dismissUpdate()
+                }) { Text("Download") }
+            },
+            dismissButton = { TextButton(onClick = { vm.dismissUpdate() }) { Text("Later") } },
+        )
     }
 }
 

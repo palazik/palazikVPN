@@ -12,6 +12,7 @@ import com.palazik.vpn.data.model.*
 import com.palazik.vpn.data.codec.ProfileCodec
 import com.palazik.vpn.data.repository.ProfileRepository
 import com.palazik.vpn.data.repository.SubscriptionUpdateScheduler
+import com.palazik.vpn.data.repository.UpdateInfo
 import com.palazik.vpn.service.XrayConfigBuilder
 import com.palazik.vpn.service.palazikVpnService
 import com.palazik.vpn.data.model.DesignSystem
@@ -44,6 +45,8 @@ data class UiState(
     val shareLink: String?                = null,
     val isUpdatingSubscriptions: Boolean  = false,
     val updatingSubscriptionIds: Set<String> = emptySet(),
+    val checkingUpdate: Boolean           = false,
+    val updateAvailable: UpdateInfo?      = null,
 )
 
 private const val THEME_PREFS       = "palazik_theme"
@@ -435,6 +438,25 @@ class MainViewModel @Inject constructor(
             )
         }
     }
+
+    fun checkForUpdate() {
+        viewModelScope.launch {
+            _ui.update { it.copy(checkingUpdate = true) }
+            val current = runCatching {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            }.getOrNull().orEmpty()
+            repo.checkForUpdate(current).fold(
+                onSuccess = { info ->
+                    if (info != null) _ui.update { it.copy(updateAvailable = info) }
+                    else snack("You're on the latest version")
+                },
+                onFailure = { snack("Update check failed") },
+            )
+            _ui.update { it.copy(checkingUpdate = false) }
+        }
+    }
+
+    fun dismissUpdate() = _ui.update { it.copy(updateAvailable = null) }
 
     fun updateGeoFiles() {
         viewModelScope.launch {

@@ -31,7 +31,7 @@ android {
         minSdk        = 26
         targetSdk     = 36
         versionCode   = 2
-        versionName   = "1.0.1"
+        versionName   = "2.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Only real-device ABIs — dropping x86/x86_64 saves ~36MB from libgojni.so
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }

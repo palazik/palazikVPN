@@ -31,6 +31,8 @@ import javax.inject.Inject
 import javax.inject.Named
 import javax.inject.Singleton
 
+data class UpdateInfo(val version: String, val url: String)
+
 @Singleton
 class ProfileRepository @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -230,6 +232,40 @@ class ProfileRepository @Inject constructor(
     /** Register a free Cloudflare WARP account and add it as a WireGuard profile. */
     suspend fun provisionWarp(): Result<Unit> = withContext(Dispatchers.IO) {
         com.palazik.vpn.data.warp.WarpProvisioner.register(directClient).map { addProfile(it) }
+    }
+
+    /**
+     * Ask GitHub for the latest release and return it if it's newer than [currentVersion],
+     * or null if already up to date.
+     */
+    suspend fun checkForUpdate(currentVersion: String): Result<UpdateInfo?> = withContext(Dispatchers.IO) {
+        runCatching {
+            val req = Request.Builder()
+                .url("https://api.github.com/repos/palazik/palazikVPN/releases/latest")
+                .header("Accept", "application/vnd.github+json")
+                .build()
+            val body = directClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) throw Exception("HTTP ${resp.code}")
+                resp.body?.string()?.takeIf { it.isNotBlank() } ?: throw Exception("Empty response")
+            }
+            val json = JSONObject(body)
+            val tag  = json.optString("tag_name").takeIf { it.isNotBlank() } ?: return@runCatching null
+            val url  = json.optString("html_url").ifBlank { "https://github.com/palazik/palazikVPN/releases" }
+            if (isNewerVersion(tag, currentVersion)) UpdateInfo(tag.trimStart('v', 'V'), url) else null
+        }
+    }
+
+    /** Compare dotted version strings numerically, ignoring a leading "v"/"V". */
+    private fun isNewerVersion(latest: String, current: String): Boolean {
+        fun parts(v: String) = v.trimStart('v', 'V').split('.', '-', '_').mapNotNull { it.toIntOrNull() }
+        val a = parts(latest)
+        val b = parts(current)
+        for (i in 0 until maxOf(a.size, b.size)) {
+            val x = a.getOrElse(i) { 0 }
+            val y = b.getOrElse(i) { 0 }
+            if (x != y) return x > y
+        }
+        return false
     }
 
     // ── Ping ──────────────────────────────────────────────────────────────────

@@ -73,8 +73,8 @@ object WarpProvisioner {
         val pair = generator.generateKeyPair()
         // For X25519 the raw 32-byte key is the trailing 32 bytes of the DER encoding
         // (PKCS8 for the private key, SubjectPublicKeyInfo for the public key).
-        val priv = pair.private.encoded.takeLast(32).toByteArray()
-        val pub  = pair.public.encoded.takeLast(32).toByteArray()
+        val priv = pair.`private`.encoded.takeLast(32).toByteArray()
+        val pub  = pair.`public`.encoded.takeLast(32).toByteArray()
         return base64(priv) to base64(pub)
     }
 

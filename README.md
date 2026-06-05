@@ -1,11 +1,17 @@
 # palazikVPN
 
+[![Release](https://img.shields.io/github/v/release/palazik/palazikVPN?sort=semver&color=00E5FF)](https://github.com/palazik/palazikVPN/releases/latest)
+[![Build](https://github.com/palazik/palazikVPN/actions/workflows/build.yml/badge.svg)](https://github.com/palazik/palazikVPN/actions/workflows/build.yml)
+[![License](https://img.shields.io/github/license/palazik/palazikVPN)](LICENSE)
+![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
+[![Stars](https://img.shields.io/github/stars/palazik/palazikVPN?style=social)](https://github.com/palazik/palazikVPN/stargazers)
+
 A clean, fast, open-source proxy client for Android. Built on Xray (libv2ray) with a
 Jetpack Compose UI, palazikVPN imports your servers, manages subscriptions, and runs a
-full-device tunnel through Android's `VpnService`. No accounts, no telemetry — your
+full-device tunnel through Android's `VpnService`. **No accounts, no telemetry** — your
 configs stay on your device.
 
-> Bring your own servers (or generate a free Cloudflare WARP profile in one tap).
+> Bring your own servers, or generate a free Cloudflare WARP profile in one tap.
 
 ## Highlights
 
@@ -25,6 +31,7 @@ configs stay on your device.
 - Live connection state, duration, and traffic counters
 - Auto-connect on boot (when VPN permission is already granted)
 - Kill switch that blocks traffic until the tunnel is ready
+- In-app update checker against GitHub releases
 
 **Profiles**
 - Import from share links, clipboard, QR (camera or image), or a subscription URL
@@ -45,7 +52,7 @@ configs stay on your device.
 - DNS: VPN / remote / direct servers
 - Geo files: override the bundled `geoip.dat` / `geosite.dat` from a URL
 - Subscriptions: auto-update interval and fetch User-Agent
-- Split tunneling, backup/restore, startup, diagnostics log, and app info
+- Split tunneling, backup/restore, startup, diagnostics log (copy or save to file), and app info
 
 **First run**
 - A short onboarding flow that points new users at importing a config and granting VPN permission
