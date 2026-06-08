@@ -3,8 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>palazikVPN — Open-Source Android VPN Client</title>
-<meta name="description" content="A modern Android VPN client powered by Xray/libv2ray. Import proxy profiles, manage subscriptions, full-device VPN.">
+<title>palazikVPN — Open-Source Android Xray / V2Ray Client</title>
+<meta name="description" content="A modern, open-source Android proxy client powered by Xray/libv2ray. VLESS, VMess, Trojan, Shadowsocks, Hysteria2, WireGuard, AnyTLS, one-tap WARP, subscriptions and a full-device VPN. No accounts, no telemetry.">
+<meta name="keywords" content="xray, v2ray, vless, vmess, reality, trojan, hysteria2, wireguard, anytls, warp, android, vpn, proxy, censorship">
+<meta property="og:title" content="palazikVPN — Open-Source Android Xray Client">
+<meta property="og:description" content="Free, open-source Xray/V2Ray client for Android. Many protocols, one-tap WARP, subscriptions, kill switch. No accounts, no telemetry.">
+<meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Display:wght@400;700&family=Google+Sans+Text:wght@400;500&display=swap" rel="stylesheet">
@@ -169,13 +173,13 @@
       </div>
       <div class="feature-card">
         <div class="feature-icon"><span class="material-icons-round">palette</span></div>
-        <div class="feature-title">Material 3 Themes</div>
-        <p class="feature-desc">Light, dark, dynamic, and custom color themes — including Cyber, Ocean, Forest, and Sunset palettes.</p>
+        <div class="feature-title">Material 3 &amp; Miuix</div>
+        <p class="feature-desc">Two design systems and eight color themes — Cyber, Ocean, Forest, Sunset, Rose, Violet, AMOLED, and dynamic — in English or Russian.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><span class="material-icons-round">alt_route</span></div>
         <div class="feature-title">Split Tunneling</div>
-        <p class="feature-desc">Choose specific apps to bypass the VPN. Keep banking apps on your real IP while everything else stays protected.</p>
+        <p class="feature-desc">Route specific apps around the VPN, or route only selected apps through it. Keep banking on your real IP while everything else stays protected.</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon"><span class="material-icons-round">power_settings_new</span></div>
@@ -192,6 +196,36 @@
         <div class="feature-title">Manual Profile Editor</div>
         <p class="feature-desc">Full-featured editor with field validation, masked secret fields, import preview, and protocol-specific options.</p>
       </div>
+      <div class="feature-card">
+        <div class="feature-icon"><span class="material-icons-round">cloud</span></div>
+        <div class="feature-title">One-Tap WARP</div>
+        <p class="feature-desc">Generate a free Cloudflare WARP profile in a single tap — connect instantly with no server of your own.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><span class="material-icons-round">blur_on</span></div>
+        <div class="feature-title">Anti-DPI Fragment</div>
+        <p class="feature-desc">Per-profile TLS fragmentation splits the handshake to slip past deep packet inspection on censored networks.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><span class="material-icons-round">hub</span></div>
+        <div class="feature-title">Smart Routing</div>
+        <p class="feature-desc">Routing presets, selectable domain strategy, FakeDNS, ad blocking, China bypass, and custom direct/blocked domain lists.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><span class="material-icons-round">shield_moon</span></div>
+        <div class="feature-title">Kill Switch &amp; Leak Guard</div>
+        <p class="feature-desc">Block all traffic until the tunnel is ready, with IPv6 leak protection always on for true full-device privacy.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><span class="material-icons-round">widgets</span></div>
+        <div class="feature-title">Tile &amp; Widget</div>
+        <p class="feature-desc">Toggle the VPN from a Quick Settings tile or a home-screen widget that shows your live connection state.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon"><span class="material-icons-round">system_update</span></div>
+        <div class="feature-title">In-App Updates</div>
+        <p class="feature-desc">Check GitHub releases from inside the app and get prompted when a newer signed build is available.</p>
+      </div>
     </div>
   </div>
 </section>
@@ -205,7 +239,7 @@
           <span class="material-icons-round" style="font-size:14px">cable</span>
           Protocols
         </div>
-        <h2 class="section-title">10 protocols supported</h2>
+        <h2 class="section-title">11 protocols supported</h2>
         <p class="section-desc">Import profiles from any major proxy protocol. palazikVPN decodes, validates, and previews them before connecting.</p>
         <div class="protocols-list">
           <div class="protocol-chip"><span class="material-icons-round">shield</span>VMess</div>
@@ -216,6 +250,7 @@
           <div class="protocol-chip"><span class="material-icons-round">shield</span>WireGuard</div>
           <div class="protocol-chip"><span class="material-icons-round">shield</span>SOCKS5</div>
           <div class="protocol-chip"><span class="material-icons-round">shield</span>TUIC</div>
+          <div class="protocol-chip"><span class="material-icons-round">shield</span>AnyTLS</div>
           <div class="protocol-chip"><span class="material-icons-round">shield</span>XHTTP</div>
           <div class="protocol-chip"><span class="material-icons-round">star</span>palazikVPN Link</div>
         </div>
@@ -346,53 +381,7 @@
           <div class="mock-chip-sm" style="align-self:flex-end">Copy log</div>
         </div>
       </div>
-      <!-- Duplicate set for infinite scroll -->
-      <div class="screen-card">
-        <div class="screen-title">🏠 Home</div>
-        <div class="screen-mock">
-          <div class="mock-circle"><span class="material-icons-round" style="font-size:32px">vpn_key</span></div>
-          <div class="mock-bar accent"></div>
-          <div class="mock-bar sm"></div>
-        </div>
-      </div>
-      <div class="screen-card">
-        <div class="screen-title">📋 Profiles</div>
-        <div class="screen-mock">
-          <div class="mock-list-item"><div class="mock-list-dot"></div><div class="mock-list-text"></div></div>
-          <div class="mock-list-item"><div class="mock-list-dot"></div><div class="mock-list-text"></div></div>
-          <div class="mock-list-item"><div class="mock-list-dot"></div><div class="mock-list-text"></div></div>
-        </div>
-      </div>
-      <div class="screen-card">
-        <div class="screen-title">🔄 Subscriptions</div>
-        <div class="screen-mock">
-          <span class="material-icons-round" style="font-size:40px;color:var(--md-primary)">sync</span>
-          <div class="mock-bar accent" style="height:4px"></div>
-        </div>
-      </div>
-      <div class="screen-card">
-        <div class="screen-title">⚙️ Settings</div>
-        <div class="screen-mock">
-          <div class="mock-chips">
-            <div class="mock-chip-sm">🎨 Cyber</div>
-            <div class="mock-chip-sm">🌊 Ocean</div>
-          </div>
-        </div>
-      </div>
-      <div class="screen-card">
-        <div class="screen-title">🔍 Import Preview</div>
-        <div class="screen-mock">
-          <span class="material-icons-round" style="font-size:36px;color:var(--md-primary)">qr_code_scanner</span>
-          <div class="mock-bar sm"></div>
-        </div>
-      </div>
-      <div class="screen-card">
-        <div class="screen-title">🩺 Diagnostics</div>
-        <div class="screen-mock">
-          <span class="material-icons-round" style="font-size:36px;color:var(--md-secondary)">terminal</span>
-          <div class="mock-bar sm"></div>
-        </div>
-      </div>
+      <!-- The second set is cloned at runtime by main.js for a seamless loop. -->
     </div>
   </div>
 </section>
@@ -463,16 +452,16 @@
       Get palazikVPN
     </div>
     <h2 class="section-title">Ready to get started?</h2>
-    <p class="section-desc">Download the latest APK from GitHub Actions artifacts, or build it yourself with a single Gradle command.</p>
+    <p class="section-desc">Download the latest signed APK from GitHub Releases, or build it yourself with a single Gradle command.</p>
     <div class="download-cards">
       <div class="download-card ripple">
         <span class="download-card-icon">📱</span>
         <div class="download-badge">arm64-v8a / armeabi-v7a / Universal</div>
-        <div class="download-card-title">GitHub Actions APK</div>
-        <div class="download-card-desc">Automatically built by CI on every push. Grab the latest artifact from the Actions tab.</div>
-        <a href="https://github.com/palazik/palazikVPN/actions" target="_blank" rel="noopener noreferrer" class="btn-filled ripple" style="display:inline-flex">
-          <span class="material-icons-round" style="font-size:18px">open_in_new</span>
-          Open Actions
+        <div class="download-card-title">Latest Release</div>
+        <div class="download-card-desc">Signed APKs built by CI for every release. Grab the latest from the Releases page.</div>
+        <a href="https://github.com/palazik/palazikVPN/releases/latest" target="_blank" rel="noopener noreferrer" class="btn-filled ripple" style="display:inline-flex">
+          <span class="material-icons-round" style="font-size:18px">download</span>
+          Download APK
         </a>
       </div>
       <div class="download-card ripple">
@@ -506,7 +495,7 @@
       </div>
       <div class="build-step">
         <div class="step-num">2</div>
-        <div class="step-text"><strong>Prepare wrapper</strong> — <code>gradle wrapper --gradle-version=8.9 && chmod +x gradlew</code></div>
+        <div class="step-text"><strong>Prepare wrapper</strong> — <code>gradle wrapper --gradle-version=9.4.1 && chmod +x gradlew</code></div>
       </div>
       <div class="build-step">
         <div class="step-num">3</div>

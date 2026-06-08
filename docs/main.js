@@ -89,5 +89,7 @@
 (function () {
   const track = document.getElementById('screens-track');
   if (!track) return;
-  // Already duplicated in HTML; pause on hover handled via CSS
+  // Clone the cards so the two halves are identical — the CSS marquee loops with
+  // translateX(-50%), which only looks seamless when the second half matches the first.
+  track.innerHTML += track.innerHTML;
 })();

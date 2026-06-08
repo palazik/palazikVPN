@@ -24,11 +24,12 @@
   --md-elevation-2: 0 1px 2px rgba(0,0,0,.06), 0 2px 6px rgba(0,0,0,.12);
   --md-elevation-3: 0 4px 8px rgba(0,0,0,.10), 0 1px 2px rgba(0,0,0,.06);
 
-  --md-shape-xs:   4px;
-  --md-shape-sm:   8px;
-  --md-shape-md:   12px;
-  --md-shape-lg:   16px;
-  --md-shape-xl:   28px;
+  /* Material 3 Expressive — larger, rounder corners */
+  --md-shape-xs:   8px;
+  --md-shape-sm:   12px;
+  --md-shape-md:   16px;
+  --md-shape-lg:   20px;
+  --md-shape-xl:   32px;
   --md-shape-full: 9999px;
 
   --font-display: 'Google Sans Display', 'Google Sans', sans-serif;
