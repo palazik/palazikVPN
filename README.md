@@ -72,20 +72,30 @@ Kotlin · Jetpack Compose · Material 3 Expressive (+ optional Miuix animations)
 WorkManager · OkHttp · ZXing · Android `VpnService` + Quick Settings tile + home-screen
 widget · Xray via `libv2ray.aar`.
 
-## Building
+## Repository layout
+
+The repo is a monorepo:
+
+```text
+android/   Kotlin / Jetpack Compose app (Gradle project)
+ios/       Swift / SwiftUI app + NEPacketTunnelProvider (XcodeGen project)
+docs/      website (GitHub Pages)
+```
+
+## Building — Android
 
 Some large runtime files are intentionally **not** committed and are fetched at build time:
 
-- `app/libs/libv2ray.aar`
-- `app/src/main/assets/geoip.dat`
-- `app/src/main/assets/geosite.dat`
+- `android/app/libs/libv2ray.aar`
+- `android/app/src/main/assets/geoip.dat`
+- `android/app/src/main/assets/geosite.dat`
 
 ### GitHub Actions (recommended)
 
-The `Build CI` workflow builds debug and release APKs and uploads them as artifacts.
-Run it from the **Actions** tab → **Build CI** → **Run workflow**, where you can also:
+The **Android CI** workflow builds debug and release APKs from `android/` and uploads them as artifacts.
+Run it from the **Actions** tab → **Android CI** → **Run workflow**, where you can also:
 
-- **Publish a GitHub Release** — tick the box and enter a tag (e.g. `v1.0.2`) to attach the release APKs to a new GitHub Release.
+- **Publish a GitHub Release** — tick the box and enter a tag (e.g. `v2.0.2`) to attach the release APKs to a new GitHub Release.
 - Receive per-ABI APKs in Telegram if `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` are set.
 
 The workflow downloads the runtime files, then builds ABI-split APKs (`arm64-v8a`,
@@ -94,6 +104,7 @@ The workflow downloads the runtime files, then builds ABI-split APKs (`arm64-v8a
 ### Local build
 
 ```bash
+cd android
 gradle wrapper --gradle-version=9.4.1
 chmod +x gradlew
 mkdir -p app/libs app/src/main/assets
@@ -108,13 +119,32 @@ curl -fL -o app/src/main/assets/geosite.dat \
 ./gradlew assembleDebug
 ```
 
+## Building — iOS
+
+The iOS app runs Xray-core in a `NEPacketTunnelProvider` via the
+[SwiftyXrayKit](https://github.com/dima-u/SwiftyXrayKit) Swift package (which bundles the
+`LibXray.xcframework` from [XTLS/libXray](https://github.com/XTLS/libXray)). Geo files are
+the same `.dat` files as Android, bundled into the extension.
+
+The **iOS CI** workflow runs on a macOS runner: it installs XcodeGen, generates the Xcode
+project from `ios/project.yml`, builds an **unsigned** `.ipa`, and sends it to the maintainer
+DM via Telegram. To build/run on a real device you need an Apple Developer account (the
+Network Extension entitlement is not available to free accounts) and your own signing.
+
+```bash
+cd ios
+brew install xcodegen
+xcodegen generate
+open palazikVPN.xcodeproj   # set your team + bundle IDs to run on a device
+```
+
 ## Signing
 
 Release builds are signed automatically when credentials are present, and stay unsigned
 otherwise (so a fork without secrets still builds).
 
 - **CI:** set the repo secrets `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. The workflow decodes the keystore to a temp file at build time — it never lives in git.
-- **Local:** create a `keystore.properties` in the project root:
+- **Local:** create a `keystore.properties` in `android/`:
 
   ```properties
   storeFile=/absolute/path/to/release.jks
@@ -150,13 +180,19 @@ receiver (optional auto-connect), and network-state access for underlying-networ
 ## Project structure
 
 ```text
-app/src/main/java/com/palazik/vpn/
+android/app/src/main/java/com/palazik/vpn/
   data/        models, codecs, repository, WARP provisioning, validation
   di/          Hilt modules
   receiver/    boot receiver
   service/     VPN service + Xray config builder
   ui/          activity, screens, theme, locale, viewmodel
   widget/      home-screen widget
+
+ios/
+  App/         SwiftUI app (entry, views, store, VPN manager)
+  PacketTunnel/ NEPacketTunnelProvider running Xray via SwiftyXrayKit
+  Shared/      App Group identifiers shared by both targets
+  project.yml  XcodeGen project spec
 ```
 
 ## License

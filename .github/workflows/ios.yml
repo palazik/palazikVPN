@@ -1,0 +1,106 @@
+name: iOS CI
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'ios/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    # macos-26 carries Xcode 26 + the current iOS SDK.
+    runs-on: macos-26
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      # iOS builds go to the maintainer's DM, not the group. The bot can only DM this
+      # user if they have pressed Start on the bot at least once.
+      PM_CHAT_ID: "6939377982"
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          [ -z "$XCODE" ] && XCODE=/Applications/Xcode.app
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Ensure iOS SDK
+        run: |
+          sudo xcodebuild -runFirstLaunch || true
+          xcodebuild -downloadPlatform iOS || true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Geo files are the same .dat used on Android; bundled into the tunnel extension.
+      - name: Download geo files
+        run: |
+          mkdir -p Resources
+          curl -fL --retry 3 -o Resources/geoip.dat \
+            https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
+          curl -fL --retry 3 -o Resources/geosite.dat \
+            https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: xcodebuild -project palazikVPN.xcodeproj -resolvePackageDependencies
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild \
+            -project palazikVPN.xcodeproj \
+            -scheme palazikVPN \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+      - name: Package IPA
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name "*.app" | head -1)
+          if [ -z "$APP" ]; then echo "❌ No .app produced"; exit 1; fi
+          rm -rf Payload && mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qr palazikVPN-unsigned.ipa Payload
+          ls -lh palazikVPN-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: palazikVPN-ios-unsigned
+          path: ios/palazikVPN-unsigned.ipa
+          retention-days: 30
+
+      - name: Send IPA to Telegram PM
+        if: ${{ env.TELEGRAM_BOT_TOKEN != '' }}
+        run: |
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          CAPTION="*palazikVPN* — iOS (unsigned)
+          Commit: \`${SHORT_SHA}\`
+          Sideload via AltStore/Sideloadly; the VPN needs your own Apple signing + Network Extension entitlement."
+          RESP=$(curl -s -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
+            -F "chat_id=${PM_CHAT_ID}" \
+            -F "document=@palazikVPN-unsigned.ipa" \
+            -F "caption=${CAPTION}" \
+            -F "parse_mode=Markdown")
+          if echo "$RESP" | grep -q '"ok":true'; then
+            echo "✓ Sent IPA to PM"
+          else
+            echo "❌ Telegram failed (did you press Start on the bot?) — $RESP"
+            exit 1
+          fi

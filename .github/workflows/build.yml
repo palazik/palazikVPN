@@ -1,12 +1,13 @@
-name: Build CI
+name: Android CI
 
 on:
   push:
     branches:
       - master
-    # Don't rebuild the APK for website / docs / metadata-only changes.
+    # Don't rebuild the APK for website / iOS / docs / metadata-only changes.
     paths-ignore:
       - 'docs/**'
+      - 'ios/**'
       - '**.md'
       - '.gitignore'
       - 'LICENSE'
@@ -27,6 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    # The Gradle project now lives in android/ — run every shell step from there.
+    defaults:
+      run:
+        working-directory: android
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -76,9 +81,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ runner.os }}-${{ hashFiles('app/src/main/cpp/**') }}-${{ github.run_id }}
+          key: ccache-${{ runner.os }}-${{ hashFiles('android/app/src/main/cpp/**') }}-${{ github.run_id }}
           restore-keys: |
-            ccache-${{ runner.os }}-${{ hashFiles('app/src/main/cpp/**') }}-
+            ccache-${{ runner.os }}-${{ hashFiles('android/app/src/main/cpp/**') }}-
             ccache-${{ runner.os }}-
 
       - name: Configure ccache
@@ -147,7 +152,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: palazikVPN-debug
-          path: app/build/outputs/apk/debug/*.apk
+          path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
       - name: Upload Release APKs to Actions
@@ -156,7 +161,7 @@ jobs:
           # Signed when KEYSTORE_BASE64 (+ passwords) secrets are configured; otherwise
           # AGP still emits *-release-unsigned.apk and this captures both.
           name: palazikVPN-release
-          path: app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/apk/release/*.apk
           retention-days: 30
 
       # ── GitHub Release (manual, opt-in) ──────────────────────────────────────

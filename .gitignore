@@ -1,8 +1,20 @@
-app/src/main/assets/geoip.dat
-app/src/main/assets/geosite.dat
-app/libs/libv2ray.aar
+# ── Android runtime files (downloaded at build time) ──────────────────────
+android/app/src/main/assets/geoip.dat
+android/app/src/main/assets/geosite.dat
+android/app/libs/libv2ray.aar
 
-# Release signing — never commit keystores or their passwords
+# ── iOS runtime files (downloaded at build time) ──────────────────────────
+ios/Frameworks/LibXray.xcframework
+ios/Resources/geoip.dat
+ios/Resources/geosite.dat
+ios/*.xcodeproj
+ios/build/
+ios/Pods/
+ios/.build/
+
+# ── Release signing — never commit keystores or their passwords ───────────
 keystore.properties
 *.jks
 *.keystore
+*.p12
+*.mobileprovision

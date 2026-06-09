@@ -1,0 +1,58 @@
+name: palazikVPN
+options:
+  bundleIdPrefix: com.palazik.vpn
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "2.0.2"
+    CURRENT_PROJECT_VERSION: "3"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    # Unsigned CI builds; replace with your team for a device-installable build.
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+
+packages:
+  SwiftyXrayKit:
+    url: https://github.com/dima-u/SwiftyXrayKit
+    from: "2.0.0"
+
+targets:
+  palazikVPN:
+    type: application
+    platform: iOS
+    sources:
+      - App
+      - Shared
+    info:
+      path: App/Info.plist
+    entitlements:
+      path: App/palazikVPN.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.palazik.vpn
+        INFOPLIST_KEY_CFBundleDisplayName: palazikVPN
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+    dependencies:
+      - target: PacketTunnel
+
+  PacketTunnel:
+    type: app-extension
+    platform: iOS
+    sources:
+      - PacketTunnel
+      - Shared
+      - Resources
+    info:
+      path: PacketTunnel/Info.plist
+    entitlements:
+      path: PacketTunnel/PacketTunnel.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.palazik.vpn.PacketTunnel
+    dependencies:
+      - package: SwiftyXrayKit
+        product: SwiftyXrayKit
