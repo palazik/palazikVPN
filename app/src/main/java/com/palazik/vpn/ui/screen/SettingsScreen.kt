@@ -29,6 +29,7 @@ import com.palazik.vpn.data.model.DesignSystem
 import com.palazik.vpn.data.model.PingMode
 import com.palazik.vpn.data.model.SplitTunnelMode
 import com.palazik.vpn.ui.theme.LocalDesignSystem
+import com.palazik.vpn.ui.theme.miuixSpringScroll
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -94,9 +95,7 @@ private val SettingsGroups = listOf(
 
 @Composable
 fun SettingsScreen(vm: MainViewModel, onNavigate: (String) -> Unit) {
-    val designSystem = LocalDesignSystem.current
-    if (designSystem == DesignSystem.MIUIX) MiuixSettingsHub(onNavigate)
-    else Md3SettingsHub(onNavigate)
+    Md3SettingsHub(onNavigate)
 }
 
 @Composable
@@ -136,6 +135,7 @@ private fun Md3SettingsHub(onNavigate: (String) -> Unit) {
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
+            .miuixSpringScroll()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -183,6 +183,7 @@ private fun SettingsScaffold(
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
+            .miuixSpringScroll()
             .verticalScroll(rememberScrollState()),
     ) {
         Row(

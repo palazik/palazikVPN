@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - master
+    # Don't rebuild the APK for website / docs / metadata-only changes.
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
   workflow_dispatch:
     inputs:
       create_release:

@@ -15,7 +15,7 @@ configs stay on your device.
 
 ## Highlights
 
-- **Two design systems** — Material 3 Expressive (default) or Xiaomi-style Miuix, switchable any time.
+- **Material 3 Expressive UI** — with an optional Miuix-animations toggle for springy, Xiaomi-style list overscroll and animated theme transitions.
 - **One-tap WARP** — generate a free Cloudflare WARP/WireGuard profile so a brand-new user can connect with zero setup (Android 13+).
 - **Broad protocol support** — VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC, WireGuard, AnyTLS, SOCKS5, HTTP, plus REALITY/XTLS and the WS/gRPC/H2/QUIC/XHTTP transports.
 - **Subscriptions** — auto-update on a schedule, custom User-Agent, and live data-usage / expiry parsed from the `Subscription-Userinfo` header.
@@ -47,7 +47,7 @@ configs stay on your device.
 - Data usage and expiry shown per subscription
 
 **Settings**
-- Appearance: design system, dark mode, color themes (Cyber, Ocean, Forest, Sunset, Rose, Violet, AMOLED, Dynamic), and app language (English / Russian)
+- Appearance: dark mode, color themes (Cyber, Ocean, Forest, Sunset, Rose, Violet, AMOLED, Dynamic), a Miuix-animations toggle, and app language (English / Russian)
 - Routing & privacy: presets, domain strategy, FakeDNS, ad block, China bypass, IPv6, kill switch, TLS-fragment params, custom domains
 - DNS: VPN / remote / direct servers
 - Geo files: override the bundled `geoip.dat` / `geosite.dat` from a URL
@@ -68,7 +68,7 @@ links are treated as subscription URLs, not single profiles.
 
 ## Tech stack
 
-Kotlin · Jetpack Compose · Material 3 Expressive + Miuix · Navigation Compose · Hilt ·
+Kotlin · Jetpack Compose · Material 3 Expressive (+ optional Miuix animations) · Navigation Compose · Hilt ·
 WorkManager · OkHttp · ZXing · Android `VpnService` + Quick Settings tile + home-screen
 widget · Xray via `libv2ray.aar`.
 

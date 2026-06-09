@@ -10,7 +10,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.security.KeyPairGenerator
-import java.security.spec.NamedParameterSpec
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -68,8 +67,10 @@ object WarpProvisioner {
 
     /** @return (privateKeyBase64, publicKeyBase64), both raw 32-byte X25519 keys. */
     private fun generateKeyPair(): Pair<String, String> {
-        val generator = KeyPairGenerator.getInstance("XDH")
-        generator.initialize(NamedParameterSpec.X25519)
+        // Select the curve by algorithm name instead of initialize(NamedParameterSpec) —
+        // some Android providers reject the spec with "No AlgorithmParameterSpec classes
+        // are supported". Requesting "X25519" directly fixes the local Generate WARP crash.
+        val generator = KeyPairGenerator.getInstance("X25519")
         val pair = generator.generateKeyPair()
         // For X25519 the raw 32-byte key is the trailing 32 bytes of the DER encoding
         // (PKCS8 for the private key, SubjectPublicKeyInfo for the public key).

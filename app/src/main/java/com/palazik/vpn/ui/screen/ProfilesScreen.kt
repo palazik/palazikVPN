@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import com.palazik.vpn.data.codec.ProfileCodec
 import com.palazik.vpn.data.codec.QrCodec
 import com.palazik.vpn.data.model.*
+import com.palazik.vpn.ui.theme.miuixSpringScroll
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -603,7 +604,7 @@ private fun GroupedProfilesList(
         }
     }
 
-    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyColumn(modifier = Modifier.miuixSpringScroll(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(
             items = flatItems,
             key   = { item ->

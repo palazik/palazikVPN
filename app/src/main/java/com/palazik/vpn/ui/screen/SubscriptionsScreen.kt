@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.palazik.vpn.data.model.Subscription
+import com.palazik.vpn.ui.theme.miuixSpringScroll
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 import java.text.SimpleDateFormat
 import java.util.*
@@ -119,7 +120,7 @@ fun SubscriptionsScreen(vm: MainViewModel) {
                     }
                 }
             } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                LazyColumn(modifier = Modifier.miuixSpringScroll(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(ui.subscriptions, key = { it.id }) { sub ->
                         // Fade only — no slide
                         AnimatedVisibility(

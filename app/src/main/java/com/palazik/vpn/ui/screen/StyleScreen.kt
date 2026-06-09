@@ -28,12 +28,7 @@ private val DesignSystemOpts = DesignSystem.values().toList()
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StyleScreen(vm: MainViewModel, onBack: () -> Unit) {
-    val designSystem = LocalDesignSystem.current
-    if (designSystem == DesignSystem.MIUIX) {
-        MiuixStyleScreen(vm, onBack)
-    } else {
-        Md3StyleScreen(vm, onBack)
-    }
+    Md3StyleScreen(vm, onBack)
 }
 
 // ── MiuiX Style Screen ──────────────────────────────────────────────────────
@@ -179,38 +174,26 @@ private fun Md3StyleScreen(vm: MainViewModel, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
 
-            // ── Design System ────────────────────────────────────────────────
-            StyleSection(title = "Design System") {
-                Text(
-                    "Miuix — Xiaomi HyperOS look & feel.\nM3 Expressive — Material Design 3 Expressive.",
-                    style    = MaterialTheme.typography.bodySmall,
-                    color    = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 12.dp),
-                )
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    DesignSystemOpts.forEachIndexed { idx, ds ->
-                        SegmentedButton(
-                            shape    = SegmentedButtonDefaults.itemShape(idx, DesignSystemOpts.size),
-                            selected = ui.designSystem == ds,
-                            onClick  = { vm.setDesignSystem(ds) },
-                            icon     = {
-                                Icon(
-                                    imageVector = when (ds) {
-                                        DesignSystem.MIUIX -> Icons.Rounded.AutoAwesome
-                                        DesignSystem.MD3   -> Icons.Rounded.Palette
-                                    },
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                            },
-                            label = {
-                                Text(when (ds) {
-                                    DesignSystem.MIUIX -> "Miuix"
-                                    DesignSystem.MD3   -> "M3 Expressive"
-                                })
-                            },
+            // ── Animations ───────────────────────────────────────────────────
+            StyleSection(title = "Animations") {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Miuix animations", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Springy Miuix-style overscroll on lists and animated theme transitions, on top of Material 3.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    Spacer(Modifier.width(12.dp))
+                    Switch(
+                        checked = ui.designSystem == DesignSystem.MIUIX,
+                        onCheckedChange = { vm.setDesignSystem(if (it) DesignSystem.MIUIX else DesignSystem.MD3) },
+                    )
                 }
             }
 

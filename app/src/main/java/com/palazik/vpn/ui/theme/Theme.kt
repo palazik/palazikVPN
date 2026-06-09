@@ -4,12 +4,14 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import com.palazik.vpn.data.model.DesignSystem
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 enum class AppTheme { CYBER, OCEAN, FOREST, SUNSET, ROSE, VIOLET, AMOLED, DYNAMIC }
 enum class DarkModePreference { SYSTEM, ALWAYS_DARK, ALWAYS_LIGHT }
@@ -178,6 +180,18 @@ fun darkPrefToMiuixMode(pref: DarkModePreference) = when (pref) {
     DarkModePreference.ALWAYS_LIGHT -> ColorSchemeMode.Light
 }
 
+/**
+ * Springy Miuix-style overscroll for a scroll container, applied only when the
+ * "Miuix animations" toggle is on (tracked via [LocalDesignSystem]). No-op otherwise,
+ * since [overScrollVertical] returns the receiver unchanged when isEnabled is false.
+ * Place it before `.verticalScroll(...)`; for a LazyColumn pass it as the modifier.
+ */
+@Composable
+fun Modifier.miuixSpringScroll(): Modifier {
+    val enabled = LocalDesignSystem.current == DesignSystem.MIUIX
+    return overScrollVertical(isEnabled = { enabled })
+}
+
 // ── Main theme wrapper ───────────────────────────────────────��───────────────
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
@@ -200,20 +214,22 @@ fun palazikVPNTheme(
         LocalDarkMode     provides darkModePreference,
         LocalDesignSystem provides if (useMiuix) DesignSystem.MIUIX else DesignSystem.MD3,
     ) {
+        // The UI is always Material 3 Expressive. When Miuix animations are enabled we wrap
+        // it in MiuixTheme, which adds Miuix's animated theme/dark-mode transitions and motion
+        // context on top of the same MD3 components.
+        val colorScheme = resolveColorScheme(appTheme, isDark)
         if (useMiuix) {
             val miuixController = remember(darkModePreference) {
                 ThemeController(darkPrefToMiuixMode(darkModePreference))
             }
             MiuixTheme(controller = miuixController) {
-                val colorScheme = resolveColorScheme(appTheme, isDark)
-                MaterialTheme(
+                MaterialExpressiveTheme(
                     colorScheme = colorScheme,
                     typography  = palazikTypography,
                     content     = content,
                 )
             }
         } else {
-            val colorScheme = resolveColorScheme(appTheme, isDark)
             MaterialExpressiveTheme(
                 colorScheme = colorScheme,
                 typography  = palazikTypography,
