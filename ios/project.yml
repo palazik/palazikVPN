@@ -11,7 +11,6 @@ settings:
     MARKETING_VERSION: "2.0.2"
     CURRENT_PROJECT_VERSION: "3"
     TARGETED_DEVICE_FAMILY: "1,2"
-    # Unsigned CI builds; replace with your team for a device-installable build.
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
 
@@ -27,15 +26,14 @@ targets:
     sources:
       - App
       - Shared
-    info:
-      path: App/Info.plist
-    entitlements:
-      path: App/palazikVPN.entitlements
+    # Use the committed Info.plist / entitlements as-is — do NOT let XcodeGen
+    # generate them (that would drop NSExtension + the NE/App-Group entitlements).
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.palazik.vpn
-        INFOPLIST_KEY_CFBundleDisplayName: palazikVPN
-        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/palazikVPN.entitlements
+        GENERATE_INFOPLIST_FILE: NO
     dependencies:
       - target: PacketTunnel
 
@@ -46,13 +44,12 @@ targets:
       - PacketTunnel
       - Shared
       - Resources
-    info:
-      path: PacketTunnel/Info.plist
-    entitlements:
-      path: PacketTunnel/PacketTunnel.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.palazik.vpn.PacketTunnel
+        INFOPLIST_FILE: PacketTunnel/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PacketTunnel/PacketTunnel.entitlements
+        GENERATE_INFOPLIST_FILE: NO
     dependencies:
       - package: SwiftyXrayKit
         product: SwiftyXrayKit
