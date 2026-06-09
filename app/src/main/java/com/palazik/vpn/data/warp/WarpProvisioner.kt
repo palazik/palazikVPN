@@ -80,7 +80,10 @@ object WarpProvisioner {
     }
 
     private fun parseProfile(body: String, privateKey: String): VpnProfile {
-        val config = JSONObject(body).getJSONObject("result").getJSONObject("config")
+        // Depending on the API version, the device config is either at the top level or
+        // wrapped in a "result" object — handle both.
+        val root = JSONObject(body)
+        val config = (root.optJSONObject("result") ?: root).getJSONObject("config")
         val peer = config.getJSONArray("peers").getJSONObject(0)
         val endpointHost = peer.getJSONObject("endpoint").optString("host", "engage.cloudflareclient.com:2408")
         val addresses = config.getJSONObject("interface").getJSONObject("addresses")
