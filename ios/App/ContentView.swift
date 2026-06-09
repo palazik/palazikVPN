@@ -70,12 +70,13 @@ struct HomeView: View {
 // ── Profiles ──────────────────────────────────────────────────────────────────
 
 enum ProfileSheet: Identifiable {
-    case link, new
+    case link, new, scan
     case edit(VpnProfile)
     var id: String {
         switch self {
         case .link: return "link"
         case .new: return "new"
+        case .scan: return "scan"
         case .edit(let p): return "edit-\(p.id)"
         }
     }
@@ -124,6 +125,7 @@ struct ProfilesView: View {
                     Menu {
                         Button { sheet = .new } label: { Label("Add manually", systemImage: "square.and.pencil") }
                         Button { sheet = .link } label: { Label("Paste link", systemImage: "link") }
+                        Button { sheet = .scan } label: { Label("Scan QR", systemImage: "qrcode.viewfinder") }
                         Button { generateWarp() } label: { Label("Generate WARP", systemImage: "cloud") }
                     } label: { Image(systemName: "plus") }
                 }
@@ -133,6 +135,7 @@ struct ProfilesView: View {
                 case .link: linkSheet
                 case .new:  ProfileEditView(profile: VpnProfile(), isNew: true).environmentObject(store)
                 case .edit(let p): ProfileEditView(profile: p, isNew: false).environmentObject(store)
+                case .scan: scanSheet
                 }
             }
         }
@@ -166,6 +169,21 @@ struct ProfilesView: View {
     }
 
     private func resetLink() { linkText = ""; addError = nil; sheet = nil }
+
+    private var scanSheet: some View {
+        NavigationView {
+            QRScannerView { code in
+                if let p = ProfileCodec.decode(code) { store.add(p) }
+                sheet = nil
+            }
+            .ignoresSafeArea()
+            .navigationTitle("Scan QR")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { sheet = nil } }
+            }
+        }
+    }
 
     private func generateWarp() {
         warpBusy = true
@@ -274,6 +292,30 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             Form {
+                Section("Appearance") {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 14) {
+                            ForEach(AppTheme.allCases) { t in
+                                Button {
+                                    store.settings.appTheme = t.rawValue; store.save()
+                                } label: {
+                                    VStack(spacing: 4) {
+                                        Circle().fill(t.accent).frame(width: 34, height: 34)
+                                            .overlay(Circle().stroke(Color.primary,
+                                                     lineWidth: store.settings.appTheme == t.rawValue ? 2.5 : 0))
+                                        Text(t.label).font(.caption2).foregroundColor(.secondary)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    Picker("Dark mode", selection: binding(\.darkMode)) {
+                        ForEach(DarkMode.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    .pickerStyle(.segmented)
+                }
                 Section("Routing") {
                     Picker("Mode", selection: binding(\.routingMode)) {
                         Text("Rule-based").tag(RoutingMode.ruleBased)

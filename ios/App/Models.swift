@@ -101,6 +101,10 @@ struct AppSettings: Codable, Equatable {
     var subscriptionUserAgent: String = "v2rayNG/1.0"
     var geoipUrl: String = ""
     var geositeUrl: String = ""
+
+    // appearance
+    var appTheme: String = "cyber"
+    var darkMode: String = "system"
 }
 
 // ── Subscription ──────────────────────────────────────────────────────────────
