@@ -291,7 +291,9 @@ object XrayConfigBuilder {
             parseReserved(p.wgReserved)?.let { bytes ->
                 put("reserved", JSONArray().apply { bytes.forEach { put(it) } })
             }
-            if (p.wgDns.isNotEmpty()) put("domainStrategy", "UseIPv4")
+            // WireGuard outbound only accepts Force* strategies (NOT UseIP/UseIPv4 like
+            // freedom/routing) — "UseIPv4" makes xray reject the whole config.
+            if (p.wgDns.isNotEmpty()) put("domainStrategy", "ForceIP")
         })
     }
 

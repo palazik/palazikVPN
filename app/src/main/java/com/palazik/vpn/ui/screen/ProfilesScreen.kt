@@ -888,10 +888,14 @@ private fun ProfileCard(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TextButton(onClick = onPing, contentPadding = PaddingValues(horizontal = 8.dp)) {
-                    Icon(Icons.Rounded.NetworkCheck, null, Modifier.size(15.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Ping", style = MaterialTheme.typography.labelMedium)
+                // WireGuard is UDP-only and its address is the local tunnel IP, so a TCP
+                // ping can never succeed — hide the button instead of always showing timeout.
+                if (profile.protocol != Protocol.WIREGUARD) {
+                    TextButton(onClick = onPing, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                        Icon(Icons.Rounded.NetworkCheck, null, Modifier.size(15.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Ping", style = MaterialTheme.typography.labelMedium)
+                    }
                 }
                 Box {
                     IconButton(onClick = { actionsExpanded = true }) {
