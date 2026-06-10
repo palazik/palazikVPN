@@ -135,8 +135,9 @@ struct ProfileEditView: View {
     /// A host/IP field: strips anything that can't appear in a hostname or IP
     /// (spaces, emoji, etc.) while still allowing domain text.
     private func hostField(_ label: String, _ binding: Binding<String>) -> some View {
+        // `/` kept so WireGuard CIDR addresses (10.0.0.2/32) still edit; emoji/spaces stripped.
         let allowed = CharacterSet(charactersIn:
-            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_:[]")
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_:[]/")
         return TextField(label, text: Binding(
             get: { binding.wrappedValue },
             set: { binding.wrappedValue = String($0.unicodeScalars.filter { allowed.contains($0) }) }

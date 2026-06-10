@@ -24,6 +24,8 @@ struct HomeView: View {
     @EnvironmentObject var vpn: VPNManager
     @State private var errorText: String?
 
+    private var accent: Color { (AppTheme(rawValue: store.settings.appTheme) ?? .cyber).accent }
+
     var body: some View {
         NavigationView {
             VStack(spacing: 20) {
@@ -31,9 +33,9 @@ struct HomeView: View {
                 Button(action: toggle) {
                     ZStack {
                         Circle()
-                            .fill(vpn.isConnected ? Color.green : Color.accentColor)
+                            .fill(vpn.isConnected ? Color.green : accent)
                             .frame(width: 168, height: 168)
-                            .shadow(color: (vpn.isConnected ? Color.green : Color.accentColor).opacity(0.4), radius: 24)
+                            .shadow(color: (vpn.isConnected ? Color.green : accent).opacity(0.4), radius: 24)
                         Image(systemName: "power").font(.system(size: 60, weight: .bold)).foregroundColor(.white)
                     }
                 }
@@ -97,39 +99,18 @@ struct ProfilesView: View {
     var body: some View {
         NavigationView {
             List {
-                ForEach(store.profiles) { p in
-                    Button { sheet = .edit(p) } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(p.name).foregroundColor(.primary)
-                                Text("\(p.proto.rawValue) · \(p.address):\(p.port)")
-                                    .font(.caption2).foregroundColor(.secondary).lineLimit(1)
-                            }
-                            Spacer()
-                            if p.latencyMs >= 0 {
-                                Text("\(p.latencyMs)ms").font(.caption2)
-                                    .foregroundColor(p.latencyMs < 300 ? .green : .orange)
-                            }
-                            if store.activeId == p.id {
-                                Image(systemName: "checkmark.circle.fill").foregroundColor(.accentColor)
-                            }
-                        }
-                    }
-                    .swipeActions(edge: .leading) {
-                        Button("Active") { store.setActive(p) }.tint(.accentColor)
-                    }
-                    .contextMenu {
-                        Button { store.setActive(p) } label: { Label("Set active", systemImage: "checkmark.circle") }
-                        Button { sheet = .edit(p) } label: { Label("Edit", systemImage: "pencil") }
-                        if p.proto != .wireguard {
-                            Button { ping(p) } label: { Label("Ping", systemImage: "speedometer") }
-                        }
-                        Button { store.duplicate(p) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
-                        Button { UIPasteboard.general.string = ProfileCodec.encodeNative(p) } label: { Label("Copy link", systemImage: "doc.on.doc") }
-                        Button(role: .destructive) { store.remove(p) } label: { Label("Delete", systemImage: "trash") }
+                // Manual profiles, then one section per subscription — so it's clear which
+                // profile came from which sub (like the Android grouped list).
+                if !manualProfiles.isEmpty {
+                    Section("Manual") {
+                        ForEach(manualProfiles) { profileRow($0) }
                     }
                 }
-                .onDelete { idx in idx.map { store.profiles[$0] }.forEach(store.remove) }
+                ForEach(subsWithProfiles) { sub in
+                    Section("\(sub.name) · \(profiles(for: sub).count)") {
+                        ForEach(profiles(for: sub)) { profileRow($0) }
+                    }
+                }
             }
             .overlay {
                 if store.profiles.isEmpty {
@@ -161,6 +142,45 @@ struct ProfilesView: View {
                 case .scan: scanSheet
                 }
             }
+        }
+    }
+
+    private var manualProfiles: [VpnProfile] { store.profiles.filter { $0.subscriptionId == nil } }
+    private func profiles(for sub: Subscription) -> [VpnProfile] { store.profiles.filter { $0.subscriptionId == sub.id } }
+    private var subsWithProfiles: [Subscription] { store.subscriptions.filter { !profiles(for: $0).isEmpty } }
+
+    /// One profile row: tap to activate, with an always-visible "⋯" action menu.
+    @ViewBuilder private func profileRow(_ p: VpnProfile) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(p.name).foregroundColor(.primary)
+                Text("\(p.proto.rawValue) · \(p.address):\(p.port)")
+                    .font(.caption2).foregroundColor(.secondary).lineLimit(1)
+            }
+            Spacer()
+            if p.latencyMs >= 0 {
+                Text("\(p.latencyMs)ms").font(.caption2)
+                    .foregroundColor(p.latencyMs < 300 ? .green : .orange)
+            }
+            if store.activeId == p.id {
+                Image(systemName: "checkmark.circle.fill").foregroundColor(.accentColor)
+            }
+            Menu {
+                Button { sheet = .edit(p) } label: { Label("Edit", systemImage: "pencil") }
+                if p.proto != .wireguard {
+                    Button { ping(p) } label: { Label("Ping", systemImage: "speedometer") }
+                }
+                Button { store.duplicate(p) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                Button { UIPasteboard.general.string = ProfileCodec.encodeNative(p) } label: { Label("Copy link", systemImage: "doc.on.doc") }
+                Button(role: .destructive) { store.remove(p) } label: { Label("Delete", systemImage: "trash") }
+            } label: {
+                Image(systemName: "ellipsis.circle").font(.title3).foregroundColor(.secondary)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { store.setActive(p) }
+        .swipeActions {
+            Button(role: .destructive) { store.remove(p) } label: { Label("Delete", systemImage: "trash") }
         }
     }
 
@@ -244,26 +264,32 @@ struct SubscriptionsView: View {
         NavigationView {
             List {
                 ForEach(store.subscriptions) { sub in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(sub.name).font(.headline)
-                        Text("\(sub.profileCount) profiles").font(.caption).foregroundColor(.secondary)
-                        if sub.hasUsageInfo {
-                            Text(usageText(sub)).font(.caption2).foregroundColor(.secondary)
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(sub.name).font(.headline)
+                            Text("\(sub.profileCount) profiles").font(.caption).foregroundColor(.secondary)
+                            if sub.hasUsageInfo {
+                                Text(usageText(sub)).font(.caption2).foregroundColor(.secondary)
+                            }
+                            if sub.hasExpiry {
+                                Text(expiryText(sub)).font(.caption2).foregroundColor(.secondary)
+                            }
                         }
-                        if sub.hasExpiry {
-                            Text(expiryText(sub)).font(.caption2).foregroundColor(.secondary)
+                        Spacer()
+                        // Visible refresh + menu — no long-press needed.
+                        Button { refresh(sub) } label: { Image(systemName: "arrow.clockwise") }
+                            .buttonStyle(.borderless)
+                        Menu {
+                            Button { refresh(sub) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                            Button(role: .destructive) { store.removeSubscription(sub) } label: { Label("Delete", systemImage: "trash") }
+                        } label: {
+                            Image(systemName: "ellipsis.circle").font(.title3).foregroundColor(.secondary)
                         }
                     }
-                    .swipeActions(edge: .leading) {
-                        Button { refresh(sub) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
-                            .tint(.accentColor)
-                    }
-                    .contextMenu {
-                        Button { refresh(sub) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                    .swipeActions {
                         Button(role: .destructive) { store.removeSubscription(sub) } label: { Label("Delete", systemImage: "trash") }
                     }
                 }
-                .onDelete { idx in idx.forEach { store.removeSubscription(store.subscriptions[$0]) } }
             }
             .overlay {
                 if store.subscriptions.isEmpty {
