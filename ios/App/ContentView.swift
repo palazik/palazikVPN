@@ -3,6 +3,8 @@ import NetworkExtension
 import UIKit
 
 struct ContentView: View {
+    @EnvironmentObject var store: ProfileStore
+
     var body: some View {
         TabView {
             HomeView().tabItem { Label("Home", systemImage: "bolt.fill") }
@@ -10,6 +12,8 @@ struct ContentView: View {
             SubscriptionsView().tabItem { Label("Subs", systemImage: "arrow.triangle.2.circlepath") }
             SettingsView().tabItem { Label("Settings", systemImage: "gearshape") }
         }
+        // Reactive tint so theme changes apply live across all tabs.
+        .tint((AppTheme(rawValue: store.settings.appTheme) ?? .cyber).accent)
     }
 }
 
@@ -44,6 +48,7 @@ struct HomeView: View {
             }
             .frame(maxWidth: .infinity)
             .navigationTitle("palazikVPN")
+            .navigationBarTitleDisplayMode(.inline)
         }
     }
 
@@ -101,6 +106,10 @@ struct ProfilesView: View {
                                     .font(.caption2).foregroundColor(.secondary).lineLimit(1)
                             }
                             Spacer()
+                            if p.latencyMs >= 0 {
+                                Text("\(p.latencyMs)ms").font(.caption2)
+                                    .foregroundColor(p.latencyMs < 300 ? .green : .orange)
+                            }
                             if store.activeId == p.id {
                                 Image(systemName: "checkmark.circle.fill").foregroundColor(.accentColor)
                             }
@@ -108,6 +117,16 @@ struct ProfilesView: View {
                     }
                     .swipeActions(edge: .leading) {
                         Button("Active") { store.setActive(p) }.tint(.accentColor)
+                    }
+                    .contextMenu {
+                        Button { store.setActive(p) } label: { Label("Set active", systemImage: "checkmark.circle") }
+                        Button { sheet = .edit(p) } label: { Label("Edit", systemImage: "pencil") }
+                        if p.proto != .wireguard {
+                            Button { ping(p) } label: { Label("Ping", systemImage: "speedometer") }
+                        }
+                        Button { store.duplicate(p) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
+                        Button { UIPasteboard.general.string = ProfileCodec.encodeNative(p) } label: { Label("Copy link", systemImage: "doc.on.doc") }
+                        Button(role: .destructive) { store.remove(p) } label: { Label("Delete", systemImage: "trash") }
                     }
                 }
                 .onDelete { idx in idx.map { store.profiles[$0] }.forEach(store.remove) }
@@ -121,6 +140,10 @@ struct ProfilesView: View {
             }
             .navigationTitle("Profiles")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { pingAll() } label: { Image(systemName: "speedometer") }
+                        .disabled(store.profiles.isEmpty)
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
                         Button { sheet = .new } label: { Label("Add manually", systemImage: "square.and.pencil") }
@@ -195,6 +218,17 @@ struct ProfilesView: View {
             }
         }
     }
+
+    private func ping(_ p: VpnProfile) {
+        Task {
+            let ms = await Pinger.tcp(host: p.address, port: p.port)
+            await MainActor.run { store.setLatency(p.id, ms) }
+        }
+    }
+
+    private func pingAll() {
+        for p in store.profiles where p.proto != .wireguard { ping(p) }
+    }
 }
 
 // ── Subscriptions ──────────────────────────────────────────────────────────────
@@ -216,18 +250,34 @@ struct SubscriptionsView: View {
                         if sub.hasUsageInfo {
                             Text(usageText(sub)).font(.caption2).foregroundColor(.secondary)
                         }
+                        if sub.hasExpiry {
+                            Text(expiryText(sub)).font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                    .swipeActions(edge: .leading) {
+                        Button { refresh(sub) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                            .tint(.accentColor)
+                    }
+                    .contextMenu {
+                        Button { refresh(sub) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                        Button(role: .destructive) { store.removeSubscription(sub) } label: { Label("Delete", systemImage: "trash") }
                     }
                 }
-                .onDelete { idx in idx.forEach { removeSub(store.subscriptions[$0]) } }
+                .onDelete { idx in idx.forEach { store.removeSubscription(store.subscriptions[$0]) } }
             }
             .overlay {
                 if store.subscriptions.isEmpty {
                     Text("No subscriptions.\nTap + to add a URL.")
                         .multilineTextAlignment(.center).foregroundColor(.secondary)
                 }
+                if busy { ProgressView("Updating…") }
             }
             .navigationTitle("Subscriptions")
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button { updateAll() } label: { Image(systemName: "arrow.clockwise") }
+                        .disabled(store.subscriptions.isEmpty || busy)
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button { showAdd = true } label: { Image(systemName: "plus") }
                 }
@@ -257,6 +307,19 @@ struct SubscriptionsView: View {
         return t
     }
 
+    private func expiryText(_ s: Subscription) -> String {
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let days = (s.expireEpochSec * 1000 - nowMs) / 86_400_000
+        return days < 0 ? "Expired" : "Expires in \(days)d"
+    }
+
+    private func refresh(_ sub: Subscription) { Task { await store.refresh(sub) } }
+
+    private func updateAll() {
+        busy = true
+        Task { await store.updateAll(); await MainActor.run { busy = false } }
+    }
+
     private func addSub() {
         busy = true
         var sub = Subscription(name: name.isEmpty ? "Subscription" : name, url: url)
@@ -276,108 +339,200 @@ struct SubscriptionsView: View {
             }
         }
     }
-
-    private func removeSub(_ sub: Subscription) {
-        store.subscriptions.removeAll { $0.id == sub.id }
-        store.profiles.removeAll { $0.subscriptionId == sub.id }
-        store.save()
-    }
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
-struct SettingsView: View {
-    @EnvironmentObject var store: ProfileStore
+extension ProfileStore {
+    func binding<T>(_ kp: WritableKeyPath<AppSettings, T>) -> Binding<T> {
+        Binding(get: { self.settings[keyPath: kp] },
+                set: { self.settings[keyPath: kp] = $0; self.save() })
+    }
+    /// Edits a [String] setting as a comma-separated text field.
+    func listBinding(_ kp: WritableKeyPath<AppSettings, [String]>) -> Binding<String> {
+        Binding(
+            get: { self.settings[keyPath: kp].joined(separator: ", ") },
+            set: {
+                self.settings[keyPath: kp] = $0
+                    .split(whereSeparator: { $0 == "," || $0 == "\n" })
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                self.save()
+            }
+        )
+    }
+}
 
+struct SettingsView: View {
     var body: some View {
         NavigationView {
-            Form {
-                Section("Appearance") {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 14) {
-                            ForEach(AppTheme.allCases) { t in
-                                Button {
-                                    store.settings.appTheme = t.rawValue; store.save()
-                                } label: {
-                                    VStack(spacing: 4) {
-                                        Circle().fill(t.accent).frame(width: 34, height: 34)
-                                            .overlay(Circle().stroke(Color.primary,
-                                                     lineWidth: store.settings.appTheme == t.rawValue ? 2.5 : 0))
-                                        Text(t.label).font(.caption2).foregroundColor(.secondary)
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.vertical, 4)
-                    }
-                    Picker("Dark mode", selection: binding(\.darkMode)) {
-                        ForEach(DarkMode.allCases) { Text($0.label).tag($0.rawValue) }
-                    }
-                    .pickerStyle(.segmented)
-                }
-                Section("Routing") {
-                    Picker("Mode", selection: binding(\.routingMode)) {
-                        Text("Rule-based").tag(RoutingMode.ruleBased)
-                        Text("Global").tag(RoutingMode.global)
-                        Text("Bypass LAN").tag(RoutingMode.bypassLan)
-                    }
-                    Picker("Domain strategy", selection: binding(\.domainStrategy)) {
-                        ForEach(DomainStrategy.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    Toggle("Block ads", isOn: binding(\.blockAds))
-                    Toggle("Bypass China", isOn: binding(\.bypassChina))
-                    Toggle("FakeDNS", isOn: binding(\.enableFakeDns))
-                    Toggle("Route IPv6", isOn: binding(\.enableIpv6))
-                }
-                Section("DNS") {
-                    TextField("Remote DNS", text: binding(\.remoteDns)).autocorrectionDisabled()
-                    TextField("Direct DNS", text: binding(\.directDns)).autocorrectionDisabled()
-                }
-                Section("Custom domains") {
-                    TextField("Direct (comma separated)", text: listBinding(\.customDirectDomains)).autocorrectionDisabled()
-                    TextField("Blocked (comma separated)", text: listBinding(\.customBlockedDomains)).autocorrectionDisabled()
-                }
-                Section("Anti-DPI fragment") {
-                    TextField("Packets", text: binding(\.fragmentPackets)).autocorrectionDisabled()
-                    TextField("Length", text: binding(\.fragmentLength)).autocorrectionDisabled()
-                    TextField("Interval", text: binding(\.fragmentInterval)).autocorrectionDisabled()
-                }
-                Section("Geo files") {
-                    TextField("geoip.dat URL", text: binding(\.geoipUrl)).autocorrectionDisabled()
-                    TextField("geosite.dat URL", text: binding(\.geositeUrl)).autocorrectionDisabled()
-                }
-                Section("Subscriptions") {
-                    TextField("User-Agent", text: binding(\.subscriptionUserAgent)).autocorrectionDisabled()
-                }
-                Section("About") {
-                    HStack { Text("Version"); Spacer(); Text("2.0.2").foregroundColor(.secondary) }
-                    HStack { Text("Engine"); Spacer(); Text("Xray / SwiftyXrayKit").foregroundColor(.secondary) }
-                }
+            List {
+                NavigationLink { AppearanceSettings() } label: { Label("Appearance", systemImage: "paintbrush") }
+                NavigationLink { RoutingSettings() } label: { Label("Routing & Privacy", systemImage: "arrow.triangle.branch") }
+                NavigationLink { DnsSettings() } label: { Label("DNS", systemImage: "network") }
+                NavigationLink { AntiDpiSettings() } label: { Label("Anti-DPI & Geo", systemImage: "shield.lefthalf.filled") }
+                NavigationLink { SubscriptionSettings() } label: { Label("Subscriptions", systemImage: "arrow.triangle.2.circlepath") }
+                NavigationLink { BackupSettings() } label: { Label("Backup", systemImage: "externaldrive") }
+                NavigationLink { AboutSettings() } label: { Label("About", systemImage: "info.circle") }
             }
             .navigationTitle("Settings")
         }
     }
+}
 
-    private func binding<T>(_ keyPath: WritableKeyPath<AppSettings, T>) -> Binding<T> {
-        Binding(
-            get: { store.settings[keyPath: keyPath] },
-            set: { store.settings[keyPath: keyPath] = $0; store.save() }
-        )
+struct AppearanceSettings: View {
+    @EnvironmentObject var store: ProfileStore
+    var body: some View {
+        Form {
+            Section("Color theme") {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 14) {
+                        ForEach(AppTheme.allCases) { t in
+                            Button {
+                                store.settings.appTheme = t.rawValue; store.save()
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Circle().fill(t.swatch).frame(width: 34, height: 34)
+                                        .overlay(Circle().stroke(Color.primary,
+                                                 lineWidth: store.settings.appTheme == t.rawValue ? 2.5 : 1)
+                                                 .opacity(t == .amoled ? 1 : (store.settings.appTheme == t.rawValue ? 1 : 0)))
+                                    Text(t.label).font(.caption2).foregroundColor(.secondary)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            }
+            Section("Dark mode") {
+                Picker("Dark mode", selection: store.binding(\.darkMode)) {
+                    ForEach(DarkMode.allCases) { Text($0.label).tag($0.rawValue) }
+                }
+                .pickerStyle(.segmented)
+            }
+        }
+        .navigationTitle("Appearance")
+    }
+}
+
+struct RoutingSettings: View {
+    @EnvironmentObject var store: ProfileStore
+    var body: some View {
+        Form {
+            Picker("Mode", selection: store.binding(\.routingMode)) {
+                Text("Rule-based").tag(RoutingMode.ruleBased)
+                Text("Global").tag(RoutingMode.global)
+                Text("Bypass LAN").tag(RoutingMode.bypassLan)
+            }
+            Picker("Domain strategy", selection: store.binding(\.domainStrategy)) {
+                ForEach(DomainStrategy.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            Toggle("Block ads", isOn: store.binding(\.blockAds))
+            Toggle("Bypass China", isOn: store.binding(\.bypassChina))
+            Toggle("FakeDNS", isOn: store.binding(\.enableFakeDns))
+            Toggle("Route IPv6", isOn: store.binding(\.enableIpv6))
+            Section("Custom domains") {
+                TextField("Direct (comma separated)", text: store.listBinding(\.customDirectDomains)).autocorrectionDisabled()
+                TextField("Blocked (comma separated)", text: store.listBinding(\.customBlockedDomains)).autocorrectionDisabled()
+            }
+        }
+        .navigationTitle("Routing & Privacy")
+    }
+}
+
+struct DnsSettings: View {
+    @EnvironmentObject var store: ProfileStore
+    var body: some View {
+        Form {
+            TextField("Remote DNS", text: store.binding(\.remoteDns)).autocorrectionDisabled().textInputAutocapitalization(.never)
+            TextField("Direct DNS", text: store.binding(\.directDns)).autocorrectionDisabled().textInputAutocapitalization(.never)
+        }
+        .navigationTitle("DNS")
+    }
+}
+
+struct AntiDpiSettings: View {
+    @EnvironmentObject var store: ProfileStore
+    @State private var geoBusy = false
+    @State private var geoMsg: String?
+
+    var body: some View {
+        Form {
+            Section("TLS fragment") {
+                TextField("Packets", text: store.binding(\.fragmentPackets)).autocorrectionDisabled()
+                TextField("Length", text: store.binding(\.fragmentLength)).autocorrectionDisabled()
+                TextField("Interval", text: store.binding(\.fragmentInterval)).autocorrectionDisabled()
+            }
+            Section(header: Text("Geo files"), footer: Text("Set both URLs to override the bundled geoip/geosite. Reconnect to apply.")) {
+                TextField("geoip.dat URL", text: store.binding(\.geoipUrl)).autocorrectionDisabled().textInputAutocapitalization(.never)
+                TextField("geosite.dat URL", text: store.binding(\.geositeUrl)).autocorrectionDisabled().textInputAutocapitalization(.never)
+                Button { updateGeo() } label: {
+                    HStack { Text("Update geo files"); if geoBusy { Spacer(); ProgressView() } }
+                }
+                .disabled(store.settings.geoipUrl.isEmpty || store.settings.geositeUrl.isEmpty || geoBusy)
+                if let geoMsg { Text(geoMsg).font(.caption).foregroundColor(.secondary) }
+            }
+        }
+        .navigationTitle("Anti-DPI & Geo")
     }
 
-    /// Edits a [String] setting as a comma-separated text field.
-    private func listBinding(_ keyPath: WritableKeyPath<AppSettings, [String]>) -> Binding<String> {
-        Binding(
-            get: { store.settings[keyPath: keyPath].joined(separator: ", ") },
-            set: {
-                store.settings[keyPath: keyPath] = $0
-                    .split(whereSeparator: { $0 == "," || $0 == "\n" })
-                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                    .filter { !$0.isEmpty }
-                store.save()
+    private func updateGeo() {
+        geoBusy = true; geoMsg = nil
+        Task {
+            let ok = await GeoManager.update(store.settings)
+            await MainActor.run { geoBusy = false; geoMsg = ok ? "Updated — reconnect to apply" : "Download failed" }
+        }
+    }
+}
+
+struct BackupSettings: View {
+    @EnvironmentObject var store: ProfileStore
+    @State private var importText = ""
+    @State private var msg: String?
+
+    var body: some View {
+        Form {
+            Section(header: Text("Export"), footer: Text("Copies every profile as share links.")) {
+                Button("Copy all profiles") {
+                    UIPasteboard.general.string = store.profiles.map { ProfileCodec.encodeNative($0) }.joined(separator: "\n")
+                    msg = "Copied \(store.profiles.count) profiles"
+                }
+                .disabled(store.profiles.isEmpty)
             }
-        )
+            Section(header: Text("Import"), footer: Text("Paste share links, one per line.")) {
+                TextEditor(text: $importText).frame(height: 120).autocorrectionDisabled()
+                Button("Import") {
+                    let parsed = ProfileCodec.decodeSubscriptionBody(importText)
+                    parsed.forEach { store.add($0) }
+                    msg = "Imported \(parsed.count)"; importText = ""
+                }
+                .disabled(importText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            if let msg { Text(msg).font(.caption).foregroundColor(.secondary) }
+        }
+        .navigationTitle("Backup")
+    }
+}
+
+struct SubscriptionSettings: View {
+    @EnvironmentObject var store: ProfileStore
+    var body: some View {
+        Form {
+            TextField("User-Agent", text: store.binding(\.subscriptionUserAgent)).autocorrectionDisabled().textInputAutocapitalization(.never)
+        }
+        .navigationTitle("Subscriptions")
+    }
+}
+
+struct AboutSettings: View {
+    var body: some View {
+        Form {
+            HStack { Text("Version"); Spacer(); Text("2.0.2").foregroundColor(.secondary) }
+            HStack { Text("Engine"); Spacer(); Text("Xray / SwiftyXrayKit").foregroundColor(.secondary) }
+            HStack { Text("Author"); Spacer(); Text("palaziks").foregroundColor(.secondary) }
+        }
+        .navigationTitle("About")
     }
 }
 

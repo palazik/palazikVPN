@@ -25,11 +25,11 @@ struct ProfileEditView: View {
                     Picker("Protocol", selection: $profile.proto) {
                         ForEach(ProxyProtocol.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
-                    field("Address", $profile.address)
+                    hostField("Address", $profile.address)
                     HStack {
                         Text("Port")
                         Spacer()
-                        TextField("443", value: $profile.port, formatter: NumberFormatter())
+                        TextField("443", text: portBinding)
                             .keyboardType(.numberPad).multilineTextAlignment(.trailing)
                     }
                 }
@@ -130,6 +130,27 @@ struct ProfileEditView: View {
 
     private func secureField(_ label: String, _ binding: Binding<String>) -> some View {
         SecureField(label, text: binding)
+    }
+
+    /// A host/IP field: strips anything that can't appear in a hostname or IP
+    /// (spaces, emoji, etc.) while still allowing domain text.
+    private func hostField(_ label: String, _ binding: Binding<String>) -> some View {
+        let allowed = CharacterSet(charactersIn:
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_:[]")
+        return TextField(label, text: Binding(
+            get: { binding.wrappedValue },
+            set: { binding.wrappedValue = String($0.unicodeScalars.filter { allowed.contains($0) }) }
+        ))
+        .keyboardType(.URL)
+        .autocorrectionDisabled().textInputAutocapitalization(.never)
+    }
+
+    /// Port as a digits-only string bound to the Int field.
+    private var portBinding: Binding<String> {
+        Binding(
+            get: { String(profile.port) },
+            set: { profile.port = Int($0.filter { $0.isNumber }.prefix(5)) ?? 0 }
+        )
     }
 
     private func save() {

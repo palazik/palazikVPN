@@ -54,9 +54,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         return settings
     }
 
-    /// geoip.dat / geosite.dat are bundled into this extension's Resources.
+    /// Prefer user-downloaded geo files in the shared container; fall back to the geo
+    /// files bundled in this extension's Resources.
     private func geoDir() -> URL {
-        Bundle.main.resourceURL ?? Bundle.main.bundleURL
+        let fm = FileManager.default
+        if let shared = fm.containerURL(forSecurityApplicationGroupIdentifier: AppGroup.id)?
+            .appendingPathComponent("geo", isDirectory: true),
+           fm.fileExists(atPath: shared.appendingPathComponent("geoip.dat").path),
+           fm.fileExists(atPath: shared.appendingPathComponent("geosite.dat").path) {
+            return shared
+        }
+        return Bundle.main.resourceURL ?? Bundle.main.bundleURL
     }
 
     private func finalConfigURL() -> URL {

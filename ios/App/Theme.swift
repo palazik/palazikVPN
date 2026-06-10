@@ -6,6 +6,7 @@ enum AppTheme: String, CaseIterable, Identifiable {
     case cyber, ocean, forest, sunset, rose, violet, amoled, system
     var id: String { rawValue }
 
+    /// App tint used for controls.
     var accent: Color {
         switch self {
         case .cyber:  return Color(red: 0.00, green: 0.90, blue: 1.00)
@@ -14,9 +15,15 @@ enum AppTheme: String, CaseIterable, Identifiable {
         case .sunset: return Color(red: 1.00, green: 0.48, blue: 0.10)
         case .rose:   return Color(red: 0.70, green: 0.00, blue: 0.36)
         case .violet: return Color(red: 0.42, green: 0.11, blue: 0.60)
-        case .amoled: return Color(white: 0.92)
+        // AMOLED forces a pure-black scheme; a light accent stays readable on black.
+        case .amoled: return Color(white: 0.85)
         case .system: return .blue
         }
+    }
+
+    /// Color shown in the picker swatch (AMOLED reads as black, matching its name).
+    var swatch: Color {
+        self == .amoled ? .black : accent
     }
 
     var label: String {

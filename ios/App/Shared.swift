@@ -49,6 +49,60 @@ final class ProfileStore: ObservableObject {
         if let i = profiles.firstIndex(where: { $0.id == p.id }) { profiles[i] = p; save() }
     }
 
+    func duplicate(_ p: VpnProfile) {
+        var copy = p
+        copy.id = UUID().uuidString
+        copy.name = p.name + " Copy"
+        copy.subscriptionId = nil
+        copy.latencyMs = -1
+        profiles.append(copy)
+        save()
+    }
+
+    func setLatency(_ id: String, _ ms: Int) {
+        if let i = profiles.firstIndex(where: { $0.id == id }) { profiles[i].latencyMs = ms; save() }
+    }
+
+    // ── Subscriptions ──────────────────────────────────────────────────────────
+
+    func addSubscription(_ sub: Subscription) {
+        subscriptions.append(sub)
+        save()
+    }
+
+    func removeSubscription(_ sub: Subscription) {
+        subscriptions.removeAll { $0.id == sub.id }
+        profiles.removeAll { $0.subscriptionId == sub.id }
+        if activeProfile == nil { activeId = profiles.first?.id }
+        save()
+    }
+
+    /// Re-fetch a subscription: replace its profiles, refresh usage/expiry.
+    func refresh(_ sub: Subscription) async {
+        let result = await SubscriptionService.fetch(sub, settings: settings)
+        guard !result.profiles.isEmpty else { return }
+        await MainActor.run {
+            // keep the active profile's id stable if it still exists by fingerprint
+            profiles.removeAll { $0.subscriptionId == sub.id }
+            let fresh = result.profiles.map { p -> VpnProfile in var c = p; c.subscriptionId = sub.id; return c }
+            profiles.append(contentsOf: fresh)
+            if let i = subscriptions.firstIndex(where: { $0.id == sub.id }) {
+                subscriptions[i].profileCount = fresh.count
+                subscriptions[i].lastUpdated = Date().timeIntervalSince1970
+                if let u = result.usage {
+                    subscriptions[i].uploadBytes = u.upload; subscriptions[i].downloadBytes = u.download
+                    subscriptions[i].totalBytes = u.total; subscriptions[i].expireEpochSec = u.expire
+                }
+            }
+            if activeProfile == nil { activeId = profiles.first?.id }
+            save()
+        }
+    }
+
+    func updateAll() async {
+        for sub in subscriptions { await refresh(sub) }
+    }
+
     /// Build the active profile's Xray config and write it where the extension reads it.
     /// Returns false if there is no active profile.
     @discardableResult
