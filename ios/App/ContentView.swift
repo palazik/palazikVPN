@@ -165,11 +165,13 @@ struct ProfilesView: View {
             if store.activeId == p.id {
                 Image(systemName: "checkmark.circle.fill").foregroundColor(.accentColor)
             }
+            // Ping is its own visible button (WireGuard is UDP/local — no ping).
+            if p.proto != .wireguard {
+                Button { ping(p) } label: { Image(systemName: "speedometer").font(.title3) }
+                    .buttonStyle(.borderless).foregroundColor(.secondary)
+            }
             Menu {
                 Button { sheet = .edit(p) } label: { Label("Edit", systemImage: "pencil") }
-                if p.proto != .wireguard {
-                    Button { ping(p) } label: { Label("Ping", systemImage: "speedometer") }
-                }
                 Button { store.duplicate(p) } label: { Label("Duplicate", systemImage: "plus.square.on.square") }
                 Button { UIPasteboard.general.string = ProfileCodec.encodeNative(p) } label: { Label("Copy link", systemImage: "doc.on.doc") }
                 Button(role: .destructive) { store.remove(p) } label: { Label("Delete", systemImage: "trash") }
@@ -265,27 +267,30 @@ struct SubscriptionsView: View {
             List {
                 ForEach(store.subscriptions) { sub in
                     HStack(spacing: 10) {
-                        VStack(alignment: .leading, spacing: 4) {
+                        VStack(alignment: .leading, spacing: 8) {
                             Text(sub.name).font(.headline)
-                            Text("\(sub.profileCount) profiles").font(.caption).foregroundColor(.secondary)
-                            if sub.hasUsageInfo {
-                                Text(usageText(sub)).font(.caption2).foregroundColor(.secondary)
-                            }
-                            if sub.hasExpiry {
-                                Text(expiryText(sub)).font(.caption2).foregroundColor(.secondary)
+                            // Android-style chips.
+                            HStack(spacing: 6) {
+                                Chip("\(sub.profileCount) profiles", systemImage: "rectangle.stack", tint: .accentColor)
+                                if sub.hasUsageInfo {
+                                    Chip(usageText(sub), systemImage: "chart.bar.fill", tint: .purple)
+                                }
+                                if sub.hasExpiry {
+                                    Chip(expiryText(sub), systemImage: "clock", tint: expiryTint(sub))
+                                }
                             }
                         }
                         Spacer()
-                        // Visible refresh + menu — no long-press needed.
-                        Button { refresh(sub) } label: { Image(systemName: "arrow.clockwise") }
-                            .buttonStyle(.borderless)
+                        // Visible refresh button (not duplicated in the menu).
+                        Button { refresh(sub) } label: { Image(systemName: "arrow.clockwise").font(.title3) }
+                            .buttonStyle(.borderless).foregroundColor(.secondary)
                         Menu {
-                            Button { refresh(sub) } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                             Button(role: .destructive) { store.removeSubscription(sub) } label: { Label("Delete", systemImage: "trash") }
                         } label: {
                             Image(systemName: "ellipsis.circle").font(.title3).foregroundColor(.secondary)
                         }
                     }
+                    .padding(.vertical, 2)
                     .swipeActions {
                         Button(role: .destructive) { store.removeSubscription(sub) } label: { Label("Delete", systemImage: "trash") }
                     }
@@ -333,10 +338,21 @@ struct SubscriptionsView: View {
         return t
     }
 
-    private func expiryText(_ s: Subscription) -> String {
+    private func expiryDays(_ s: Subscription) -> Int64 {
         let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        let days = (s.expireEpochSec * 1000 - nowMs) / 86_400_000
-        return days < 0 ? "Expired" : "Expires in \(days)d"
+        return (s.expireEpochSec * 1000 - nowMs) / 86_400_000
+    }
+
+    private func expiryText(_ s: Subscription) -> String {
+        let days = expiryDays(s)
+        return days < 0 ? "Expired" : "\(days)d left"
+    }
+
+    private func expiryTint(_ s: Subscription) -> Color {
+        let days = expiryDays(s)
+        if days < 0 { return .red }
+        if days <= 7 { return .orange }
+        return .secondary
     }
 
     private func refresh(_ sub: Subscription) { Task { await store.refresh(sub) } }
@@ -559,6 +575,28 @@ struct AboutSettings: View {
             HStack { Text("Author"); Spacer(); Text("palaziks").foregroundColor(.secondary) }
         }
         .navigationTitle("About")
+    }
+}
+
+/// Small rounded pill used for subscription stats (mirrors the Android chips).
+struct Chip: View {
+    let text: String
+    var systemImage: String?
+    var tint: Color
+
+    init(_ text: String, systemImage: String? = nil, tint: Color = .secondary) {
+        self.text = text; self.systemImage = systemImage; self.tint = tint
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if let systemImage { Image(systemName: systemImage).font(.system(size: 9, weight: .semibold)) }
+            Text(text).font(.caption2).fontWeight(.medium)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 3)
+        .background(tint.opacity(0.15))
+        .foregroundColor(tint)
+        .clipShape(Capsule())
     }
 }
 
