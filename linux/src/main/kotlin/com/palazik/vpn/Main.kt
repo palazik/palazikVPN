@@ -36,11 +36,22 @@ fun main(args: Array<String>) {
     // Never leave a TUN device / system proxy behind, whatever way we exit.
     Runtime.getRuntime().addShutdownHook(Thread { VpnController.shutdown() })
 
+    // Skiko vsyncs to 60 fps on many Linux setups regardless of the monitor.
+    // Detect the real refresh rate and lift the cap for high-Hz displays.
+    val maxHz = runCatching {
+        java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices
+            .maxOfOrNull { it.displayMode.refreshRate } ?: 0
+    }.getOrDefault(0)
+    if (maxHz > 60) {
+        System.setProperty("skiko.vsync.enabled", "false")
+        System.setProperty("skiko.fps.limit", maxHz.toString())
+    }
+
     application {
         val vm = remember { MainViewModel() }
         val ui by vm.ui.collectAsState()
         val vpnState = ui.vpnState
-        val windowState = rememberWindowState(width = 480.dp, height = 860.dp)
+        val windowState = rememberWindowState(width = 540.dp, height = 940.dp)
         var windowVisible by remember { mutableStateOf(true) }
 
         LaunchedEffect(Unit) {
@@ -80,7 +91,16 @@ fun main(args: Array<String>) {
             title = "palazikVPN",
             icon = painterResource("icon.png"),
         ) {
-            CompositionLocalProvider(LocalStrings provides strings) {
+            // Desktop runs at 1.0 density by default, which reads small next to a phone
+            // UI — scale everything up a notch.
+            val baseDensity = androidx.compose.ui.platform.LocalDensity.current
+            CompositionLocalProvider(
+                LocalStrings provides strings,
+                androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
+                    baseDensity.density * 1.12f,
+                    baseDensity.fontScale,
+                ),
+            ) {
                 palazikVPNTheme(
                     appTheme           = ui.appTheme,
                     darkModePreference = ui.darkMode,

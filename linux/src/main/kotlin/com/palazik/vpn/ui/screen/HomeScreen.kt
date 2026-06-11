@@ -300,6 +300,19 @@ fun HomeScreen(vm: MainViewModel) {
             }
         }
 
+        // ── Connection mode (Proxy / TUN) ─────────────────────────────────────
+        ModeSelector(
+            tunMode = ui.settings.tunMode,
+            enabled = vpnState == VpnState.DISCONNECTED || vpnState == VpnState.ERROR,
+            onSelect = { tun ->
+                if (vpnState == VpnState.DISCONNECTED || vpnState == VpnState.ERROR) {
+                    vm.updateAppSettings(ui.settings.copy(tunMode = tun))
+                } else {
+                    vm.showSnack("Disconnect before switching mode")
+                }
+            },
+        )
+
         AnimatedVisibility(
             visible = vpnState == VpnState.ERROR,
             enter = fadeIn(tween(200)) + expandVertically(),
@@ -360,6 +373,52 @@ fun HomeScreen(vm: MainViewModel) {
                 }
             }
         }
+    }
+}
+
+/**
+ * Proxy / TUN switch on the home screen. Proxy needs no root; TUN captures the whole
+ * device via tun2socks (pkexec prompt on connect). Applies to the next connection.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ModeSelector(
+    tunMode: Boolean,
+    enabled: Boolean,
+    onSelect: (Boolean) -> Unit,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        SingleChoiceSegmentedButtonRow(Modifier.widthIn(min = 280.dp)) {
+            SegmentedButton(
+                shape = SegmentedButtonDefaults.itemShape(0, 2),
+                selected = !tunMode,
+                onClick = { onSelect(false) },
+                icon = {},
+                label = {
+                    Icon(Icons.Rounded.SwapHoriz, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Proxy")
+                },
+            )
+            SegmentedButton(
+                shape = SegmentedButtonDefaults.itemShape(1, 2),
+                selected = tunMode,
+                onClick = { onSelect(true) },
+                icon = {},
+                label = {
+                    Icon(Icons.Rounded.VpnLock, null, Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("TUN")
+                },
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (tunMode) "Full-device tunnel via tun2socks (asks for root)"
+            else "System proxy — SOCKS 10808 / HTTP 10809, no root",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.6f),
+        )
     }
 }
 

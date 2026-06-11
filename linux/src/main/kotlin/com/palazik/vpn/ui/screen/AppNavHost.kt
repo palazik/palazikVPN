@@ -134,8 +134,8 @@ fun AppNavHost(vm: MainViewModel) {
                         shape = CircleShape,
                     ) {
                         Row(
-                            Modifier.padding(5.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            Modifier.padding(6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             tabs.forEach { screen ->
@@ -210,7 +210,7 @@ private fun NavPill(
         label = "nav_content_${screen.route}",
     )
     val width by animateDpAsState(
-        targetValue = if (selected) 104.dp else 44.dp,
+        targetValue = if (selected) 132.dp else 56.dp,
         animationSpec = tween(220, easing = EaseOutQuart),
         label = "nav_width_${screen.route}",
     )
@@ -220,14 +220,14 @@ private fun NavPill(
         color = container,
         contentColor = content,
         shape = CircleShape,
-        modifier = Modifier.size(width = width, height = 44.dp),
+        modifier = Modifier.size(width = width, height = 56.dp),
     ) {
         Row(
-            Modifier.padding(horizontal = 12.dp),
+            Modifier.padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
-            Icon(screen.icon, label, Modifier.size(20.dp))
+            Icon(screen.icon, label, Modifier.size(24.dp))
             AnimatedContent(
                 targetState = selected,
                 transitionSpec = { fadeIn(tween(120)) togetherWith fadeOut(tween(80)) },
@@ -236,8 +236,8 @@ private fun NavPill(
                 if (show) {
                     Text(
                         label,
-                        Modifier.padding(start = 7.dp),
-                        style = MaterialTheme.typography.labelMedium,
+                        Modifier.padding(start = 8.dp),
+                        style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         softWrap = false,
