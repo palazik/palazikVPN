@@ -419,9 +419,9 @@ fun DiagnosticsSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
                         scope.launch {
                             val ok = withContext(Dispatchers.IO) {
                                 runCatching {
-                                    saveFileDialog("palazikvpn-logs.txt")
-                                        ?.writeText(diagnostics.joinToString("\n"))
-                                        != null
+                                    val target = saveFileDialog("palazikvpn-logs.txt")
+                                    target?.writeText(diagnostics.joinToString("\n"))
+                                    target != null
                                 }.getOrDefault(false)
                             }
                             vm.showSnack(if (ok) "Logs saved" else "Save failed")
