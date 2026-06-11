@@ -36,6 +36,16 @@ fun main(args: Array<String>) {
     // Never leave a TUN device / system proxy behind, whatever way we exit.
     Runtime.getRuntime().addShutdownHook(Thread { VpnController.shutdown() })
 
+    // Renderer override for setups where the OpenGL context fails (e.g. hybrid
+    // NVIDIA through XWayland): PALAZIKVPN_RENDER=software|opengl. Without it,
+    // Skiko tries OpenGL and falls back to software rendering automatically.
+    System.getenv("PALAZIKVPN_RENDER")?.let { render ->
+        when (render.lowercase()) {
+            "software" -> System.setProperty("skiko.renderApi", "SOFTWARE")
+            "opengl"   -> System.setProperty("skiko.renderApi", "OPENGL")
+        }
+    }
+
     // Skiko vsyncs to 60 fps on many Linux setups regardless of the monitor.
     // Detect the real refresh rate and lift the cap for high-Hz displays.
     val maxHz = runCatching {
@@ -65,27 +75,39 @@ fun main(args: Array<String>) {
         val strings = stringsFor(ui.language)
 
         // Tray — the desktop stand-in for the persistent notification, QS tile and widget.
-        Tray(
-            icon = painterResource("icon.png"),
-            tooltip = "palazikVPN — ${vpnState.name}",
-            onAction = { windowVisible = true },
-            menu = {
-                Item(
-                    if (vpnState == VpnState.CONNECTED || vpnState == VpnState.CONNECTING)
-                        strings.disconnect else strings.connect,
-                    onClick = { vm.toggleVpn() },
-                )
-                Item(if (windowVisible) "Hide" else "Show", onClick = { windowVisible = !windowVisible })
-                Separator()
-                Item("Quit", onClick = {
-                    VpnController.shutdown()
-                    exitApplication()
-                })
-            },
-        )
+        // AWT has no tray on native Wayland (Hyprland etc.), so guard it: without a tray,
+        // closing the window must quit instead of stranding an unreachable process.
+        val traySupported = remember { androidx.compose.ui.window.isTraySupported }
+        if (traySupported) {
+            Tray(
+                icon = painterResource("icon.png"),
+                tooltip = "palazikVPN — ${vpnState.name}",
+                onAction = { windowVisible = true },
+                menu = {
+                    Item(
+                        if (vpnState == VpnState.CONNECTED || vpnState == VpnState.CONNECTING)
+                            strings.disconnect else strings.connect,
+                        onClick = { vm.toggleVpn() },
+                    )
+                    Item(if (windowVisible) "Hide" else "Show", onClick = { windowVisible = !windowVisible })
+                    Separator()
+                    Item("Quit", onClick = {
+                        VpnController.shutdown()
+                        exitApplication()
+                    })
+                },
+            )
+        }
 
         Window(
-            onCloseRequest = { windowVisible = false },  // close to tray, like a foreground service
+            onCloseRequest = {
+                if (traySupported) {
+                    windowVisible = false   // close to tray, like a foreground service
+                } else {
+                    VpnController.shutdown()
+                    exitApplication()
+                }
+            },
             state = windowState,
             visible = windowVisible,
             title = "palazikVPN",

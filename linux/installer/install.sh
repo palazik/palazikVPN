@@ -13,6 +13,10 @@ APP_DIR=/opt/palazikVPN
 BIN_LINK=/usr/local/bin/palazikvpn
 DESKTOP=/usr/share/applications/palazikvpn.desktop
 
+# Root's umask can be 077 — everything we install must stay world-readable,
+# otherwise app launchers get "Permission denied" on the .desktop file.
+umask 022
+
 echo "→ Installing palazikVPN to $APP_DIR"
 rm -rf "$APP_DIR"
 mkdir -p /opt
@@ -38,6 +42,7 @@ Terminal=false
 Categories=Network;
 MimeType=x-scheme-handler/palazikvpn;x-scheme-handler/vmess;x-scheme-handler/vless;x-scheme-handler/ss;x-scheme-handler/trojan;x-scheme-handler/hysteria2;x-scheme-handler/wireguard;x-scheme-handler/socks5;x-scheme-handler/tuic;x-scheme-handler/anytls;x-scheme-handler/xhttp;x-scheme-handler/httpproxy;
 EOF
+chmod 644 "$DESKTOP"
 update-desktop-database /usr/share/applications 2>/dev/null || true
 
 echo "→ Writing uninstaller: $APP_DIR/uninstall.sh"
