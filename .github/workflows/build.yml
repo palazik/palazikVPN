@@ -4,10 +4,13 @@ on:
   push:
     branches:
       - master
-    # Don't rebuild the APK for website / iOS / docs / metadata-only changes.
+    # Don't rebuild the APK for website / iOS / Linux / docs / metadata-only changes.
     paths-ignore:
       - 'docs/**'
       - 'ios/**'
+      - 'linux/**'
+      - '.github/workflows/linux.yml'
+      - '.github/workflows/ios.yml'
       - '**.md'
       - '.gitignore'
       - 'LICENSE'

@@ -4,11 +4,13 @@
 [![Build](https://github.com/palazik/palazikVPN/actions/workflows/build.yml/badge.svg)](https://github.com/palazik/palazikVPN/actions/workflows/build.yml)
 [![License](https://img.shields.io/github/license/palazik/palazikVPN)](LICENSE)
 ![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-x64-FCC624?logo=linux&logoColor=black)
 [![Stars](https://img.shields.io/github/stars/palazik/palazikVPN?style=social)](https://github.com/palazik/palazikVPN/stargazers)
 
-A clean, fast, open-source proxy client for Android. Built on Xray (libv2ray) with a
-Jetpack Compose UI, palazikVPN imports your servers, manages subscriptions, and runs a
-full-device tunnel through Android's `VpnService`. **No accounts, no telemetry** — your
+A clean, fast, open-source proxy client for Android, iOS and Linux. Built on Xray with a
+Jetpack Compose UI (Compose for Desktop on Linux), palazikVPN imports your servers,
+manages subscriptions, and runs a full-device tunnel — through Android's `VpnService`,
+iOS's Network Extension, or tun2socks on Linux. **No accounts, no telemetry** — your
 configs stay on your device.
 
 > Bring your own servers, or generate a free Cloudflare WARP profile in one tap.
@@ -79,6 +81,7 @@ The repo is a monorepo:
 ```text
 android/   Kotlin / Jetpack Compose app (Gradle project)
 ios/       Swift / SwiftUI app + NEPacketTunnelProvider (XcodeGen project)
+linux/     Kotlin / Compose for Desktop app (Gradle project)
 docs/      website (GitHub Pages)
 ```
 
@@ -138,6 +141,62 @@ xcodegen generate
 open palazikVPN.xcodeproj   # set your team + bundle IDs to run on a device
 ```
 
+## Building — Linux
+
+The Linux app is a direct port of the Android app: the same Compose UI (Compose for
+Desktop), the same data layer, codecs and Xray config builder. Instead of `libv2ray.aar`
+it runs the official [Xray-core](https://github.com/XTLS/Xray-core) binary as a child
+process, with two connection modes:
+
+- **Proxy mode** (default, no root) — local SOCKS5 `127.0.0.1:10808` / HTTP `127.0.0.1:10809`,
+  with the desktop system proxy (GNOME/KDE) applied automatically while connected.
+- **TUN mode** (full-device, like Android's `VpnService`) — creates a `palazik0` TUN device
+  via [tun2socks](https://github.com/xjasonlyu/tun2socks), routes everything through it,
+  bypasses the proxy server, handles DNS (systemd-resolved or resolv.conf), prevents IPv6
+  leaks, and supports a kill switch. Privilege is requested per-connection with `pkexec`.
+
+The **Linux CI** workflow downloads the Gradle wrapper jar, geo files, the Xray core and
+tun2socks, builds a self-contained app image (bundled Java runtime — no dependencies to
+install), uploads `palazikVPN-linux-x64.tar.gz` as an artifact, and sends it to the
+maintainer DM via Telegram (split into 48 MB parts when it exceeds the bot's 50 MB cap —
+reassemble with `cat palazikVPN-linux-x64.tar.gz.part* > palazikVPN-linux-x64.tar.gz`).
+
+### Install (Arch Linux)
+
+```bash
+# from the CI artifact / Telegram parts
+cat palazikVPN-linux-x64.tar.gz.part* > palazikVPN-linux-x64.tar.gz   # only if it arrived in parts
+sudo tar -C /opt -xzf palazikVPN-linux-x64.tar.gz
+sudo ln -sf /opt/palazikVPN/bin/palazikVPN /usr/local/bin/palazikvpn
+
+# optional: desktop entry
+cat | sudo tee /usr/share/applications/palazikvpn.desktop <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=palazikVPN
+Exec=/opt/palazikVPN/bin/palazikVPN
+Icon=/opt/palazikVPN/lib/palazikVPN.png
+Categories=Network;
+EOF
+
+palazikvpn   # run it
+```
+
+TUN mode additionally needs `polkit` (for the `pkexec` prompt), which every desktop
+install already has. xray, tun2socks and the geo files are bundled inside the app image;
+if you delete them, the app falls back to `~/.local/share/palazikVPN/bin` and `$PATH`
+(e.g. `pacman -S xray`).
+
+### Platform notes vs Android
+
+- The tray icon replaces the persistent notification / Quick Settings tile / widget
+  (closing the window keeps the VPN running in the tray).
+- "Auto-connect on boot" becomes an XDG autostart entry (`--autoconnect` on login).
+- Per-app split tunneling is an Android-kernel feature with no Linux equivalent in this
+  architecture — use Proxy mode and point individual apps at the local proxy instead.
+- QR import works from image files (no camera capture); QR export works the same.
+- The Dynamic (Material You) theme is Android-12-only; all other themes are identical.
+
 ## Signing
 
 Release builds are signed automatically when credentials are present, and stay unsigned
@@ -193,6 +252,13 @@ ios/
   PacketTunnel/ NEPacketTunnelProvider running Xray via SwiftyXrayKit
   Shared/      App Group identifiers shared by both targets
   project.yml  XcodeGen project spec
+
+linux/src/main/kotlin/com/palazik/vpn/
+  compat/      android.net.Uri / android.util.Base64 / SharedPreferences shims
+  data/        models, codecs, repository, WARP provisioning, validation (ported 1:1)
+  service/     xray process controller, TUN manager (pkexec + tun2socks),
+               system proxy, autostart, Xray config builder
+  ui/          screens, theme, i18n (EN/RU), viewmodel — same Compose UI as Android
 ```
 
 ## License
