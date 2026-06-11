@@ -17,6 +17,9 @@ echo "→ Installing palazikVPN to $APP_DIR"
 rm -rf "$APP_DIR"
 mkdir -p /opt
 cp -r ./palazikVPN "$APP_DIR"
+# The CI staging dir is created by mktemp (mode 700) — without this, /opt/palazikVPN
+# ends up unreadable for normal users and the launcher "is not an executable file".
+chmod -R a+rX "$APP_DIR"
 chmod +x "$APP_DIR/bin/palazikVPN"
 
 echo "→ Creating command: palazikvpn"

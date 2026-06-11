@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      PIXELDRAIN_API_KEY: ${{ secrets.PIXELDRAIN_API_KEY }}
       # Linux builds go to the maintainer's DM, not the group (same as iOS). The bot
       # can only DM this user if they have pressed Start on the bot at least once.
       PM_CHAT_ID: "6939377982"
@@ -94,6 +95,28 @@ jobs:
             "palazikVPN Linux installer" ./install.sh
           ls -lh palazikVPN-linux-x64-installer.run
 
+      # Full-size downloads without Telegram's 50 MB cap. Links land in GITHUB_ENV
+      # and are included in the Telegram messages below.
+      - name: Upload to Pixeldrain
+        if: ${{ env.PIXELDRAIN_API_KEY != '' }}
+        run: |
+          upload() {
+            curl -sf -T "$1" -u ":${PIXELDRAIN_API_KEY}" "https://pixeldrain.com/api/file/" \
+              | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4
+          }
+          INSTALLER_ID=$(upload palazikVPN-linux-x64-installer.run) || true
+          TARGZ_ID=$(upload palazikVPN-linux-x64.tar.gz) || true
+          if [ -n "$INSTALLER_ID" ]; then
+            echo "PIXELDRAIN_INSTALLER_URL=https://pixeldrain.com/u/${INSTALLER_ID}" >> "$GITHUB_ENV"
+            echo "✓ Installer: https://pixeldrain.com/u/${INSTALLER_ID}"
+          else
+            echo "❌ Pixeldrain installer upload failed"; exit 1
+          fi
+          if [ -n "$TARGZ_ID" ]; then
+            echo "PIXELDRAIN_TARGZ_URL=https://pixeldrain.com/u/${TARGZ_ID}" >> "$GITHUB_ENV"
+            echo "✓ tar.gz: https://pixeldrain.com/u/${TARGZ_ID}"
+          fi
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -130,10 +153,18 @@ jobs:
           SIZE=$(stat -c%s "$FILE")
           LIMIT=$((49 * 1024 * 1024))
 
+          LINKS=""
+          if [ -n "${PIXELDRAIN_INSTALLER_URL:-}" ]; then
+            LINKS="
+          Installer: ${PIXELDRAIN_INSTALLER_URL}"
+            [ -n "${PIXELDRAIN_TARGZ_URL:-}" ] && LINKS="${LINKS}
+          Portable: ${PIXELDRAIN_TARGZ_URL}"
+          fi
+
           if [ "$SIZE" -le "$LIMIT" ]; then
             send_doc "$FILE" "*palazikVPN* — Linux x64 installer
           Commit: \`${SHORT_SHA}\`
-          Install: \`sh ${FILE}\`"
+          Install: \`sh ${FILE}\`${LINKS}"
           else
             split -b 48M -d "$FILE" "${FILE}.part"
             PARTS=$(ls ${FILE}.part* | wc -l)
@@ -144,4 +175,10 @@ jobs:
           Reassemble: \`cat ${FILE}.part* > ${FILE}\` then install: \`sh ${FILE}\`"
               i=$((i + 1))
             done
+            if [ -n "$LINKS" ]; then
+              curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+                -d "chat_id=${PM_CHAT_ID}" \
+                --data-urlencode "text=*palazikVPN* — Linux x64 (\`${SHORT_SHA}\`) single-file downloads:${LINKS}" \
+                -d "parse_mode=Markdown" > /dev/null && echo "✓ Sent Pixeldrain links"
+            fi
           fi
