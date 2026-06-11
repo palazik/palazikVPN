@@ -157,29 +157,35 @@ process, with two connection modes:
 
 The **Linux CI** workflow downloads the Gradle wrapper jar, geo files, the Xray core and
 tun2socks, builds a self-contained app image (bundled Java runtime — no dependencies to
-install), uploads `palazikVPN-linux-x64.tar.gz` as an artifact, and sends it to the
-maintainer DM via Telegram (split into 48 MB parts when it exceeds the bot's 50 MB cap —
-reassemble with `cat palazikVPN-linux-x64.tar.gz.part* > palazikVPN-linux-x64.tar.gz`).
+install), packages both a portable `palazikVPN-linux-x64.tar.gz` and a self-extracting
+installer `palazikVPN-linux-x64-installer.run`, uploads them as artifacts, and sends the
+installer to the maintainer DM via Telegram (split into 48 MB parts when it exceeds the
+bot's 50 MB cap — reassemble with
+`cat palazikVPN-linux-x64-installer.run.part* > palazikVPN-linux-x64-installer.run`).
 
-### Install (Arch Linux)
+### Install (Arch Linux & any distro)
 
 ```bash
-# from the CI artifact / Telegram parts
-cat palazikVPN-linux-x64.tar.gz.part* > palazikVPN-linux-x64.tar.gz   # only if it arrived in parts
+# if it arrived from Telegram in parts:
+cat palazikVPN-linux-x64-installer.run.part* > palazikVPN-linux-x64-installer.run
+
+sh palazikVPN-linux-x64-installer.run   # asks for sudo, installs to /opt/palazikVPN
+palazikvpn                              # run it (also in your app launcher)
+```
+
+The installer creates the `palazikvpn` command, a desktop entry that also registers the
+`vmess://`, `vless://`, `ss://`, … deep-link handlers (click a share link in the browser to
+import it, like Android), and an uninstaller:
+
+```bash
+sudo /opt/palazikVPN/uninstall.sh       # profiles/settings in ~/.config/palazikVPN are kept
+```
+
+Prefer no installer? Use the portable archive instead:
+
+```bash
 sudo tar -C /opt -xzf palazikVPN-linux-x64.tar.gz
-sudo ln -sf /opt/palazikVPN/bin/palazikVPN /usr/local/bin/palazikvpn
-
-# optional: desktop entry
-cat | sudo tee /usr/share/applications/palazikvpn.desktop <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=palazikVPN
-Exec=/opt/palazikVPN/bin/palazikVPN
-Icon=/opt/palazikVPN/lib/palazikVPN.png
-Categories=Network;
-EOF
-
-palazikvpn   # run it
+/opt/palazikVPN/bin/palazikVPN
 ```
 
 TUN mode additionally needs `polkit` (for the `pkexec` prompt), which every desktop

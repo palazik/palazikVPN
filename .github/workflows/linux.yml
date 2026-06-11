@@ -76,14 +76,31 @@ jobs:
         run: |
           APP_DIR=$(find build/compose/binaries -maxdepth 3 -type d -name "palazikVPN" | head -1)
           if [ -z "$APP_DIR" ]; then echo "❌ No app image produced"; exit 1; fi
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
           tar -C "$(dirname "$APP_DIR")" -czf palazikVPN-linux-x64.tar.gz "$(basename "$APP_DIR")"
           ls -lh palazikVPN-linux-x64.tar.gz
 
-      - name: Upload artifact
+      # Self-extracting installer: extracts the app image and runs installer/install.sh
+      # (installs to /opt, creates the `palazikvpn` command, desktop entry with
+      # proxy-scheme deep links, and an uninstaller).
+      - name: Build installer (.run)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q makeself
+          STAGE=$(mktemp -d)
+          cp -r "$APP_DIR" "$STAGE/palazikVPN"
+          install -m 755 installer/install.sh "$STAGE/install.sh"
+          makeself --gzip "$STAGE" palazikVPN-linux-x64-installer.run \
+            "palazikVPN Linux installer" ./install.sh
+          ls -lh palazikVPN-linux-x64-installer.run
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: palazikVPN-linux-x64
-          path: linux/palazikVPN-linux-x64.tar.gz
+          path: |
+            linux/palazikVPN-linux-x64.tar.gz
+            linux/palazikVPN-linux-x64-installer.run
           retention-days: 30
 
       # Telegram bots cap uploads at 50 MB — a bundled-JRE app image usually exceeds
@@ -109,22 +126,22 @@ jobs:
           }
 
           SHORT_SHA="${GITHUB_SHA:0:7}"
-          FILE=palazikVPN-linux-x64.tar.gz
+          FILE=palazikVPN-linux-x64-installer.run
           SIZE=$(stat -c%s "$FILE")
           LIMIT=$((49 * 1024 * 1024))
 
           if [ "$SIZE" -le "$LIMIT" ]; then
-            send_doc "$FILE" "*palazikVPN* — Linux x64
+            send_doc "$FILE" "*palazikVPN* — Linux x64 installer
           Commit: \`${SHORT_SHA}\`
-          Extract and run \`bin/palazikVPN\` (see README for Arch install)."
+          Install: \`sh ${FILE}\`"
           else
             split -b 48M -d "$FILE" "${FILE}.part"
             PARTS=$(ls ${FILE}.part* | wc -l)
             i=1
             for PART in ${FILE}.part*; do
-              send_doc "$PART" "*palazikVPN* — Linux x64 (part ${i}/${PARTS})
+              send_doc "$PART" "*palazikVPN* — Linux x64 installer (part ${i}/${PARTS})
           Commit: \`${SHORT_SHA}\`
-          Reassemble: \`cat ${FILE}.part* > ${FILE}\`"
+          Reassemble: \`cat ${FILE}.part* > ${FILE}\` then install: \`sh ${FILE}\`"
               i=$((i + 1))
             done
           fi
