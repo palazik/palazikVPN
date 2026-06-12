@@ -172,7 +172,13 @@ fun AppNavHost(vm: MainViewModel) {
                         containerColor = MaterialTheme.colorScheme.surface,
                         modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp),
                     ) {
-                        Spacer(Modifier.height(12.dp))
+                        Spacer(Modifier.height(8.dp))
+                        androidx.compose.foundation.Image(
+                            painter = androidx.compose.ui.res.painterResource("icon.png"),
+                            contentDescription = "palazikVPN",
+                            modifier = Modifier.size(44.dp),
+                        )
+                        Spacer(Modifier.height(20.dp))
                         tabs.forEach { screen ->
                             NavigationRailItem(
                                 selected = currentRoute == screen.route,

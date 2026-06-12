@@ -88,7 +88,7 @@ object TunManager {
             nohup "${tun2socks.absolutePath}" \
               -device "tun://${'$'}TUN" \
               -proxy "socks5://127.0.0.1:${XrayConfigBuilder.SOCKS_PORT}" \
-              -loglevel warning \
+              -loglevel warn \
               > "${'$'}RUN/tun2socks.log" 2>&1 &
             echo ${'$'}! > "${'$'}RUN/tun2socks.pid"
 

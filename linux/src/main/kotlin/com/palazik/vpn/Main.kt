@@ -46,16 +46,18 @@ fun main(args: Array<String>) {
         }
     }
 
-    // Skiko vsyncs to 60 fps on many Linux setups regardless of the monitor.
-    // Detect the real refresh rate and lift the cap for high-Hz displays.
+    // Skiko vsyncs to 60 fps on many Linux setups regardless of the monitor, and
+    // XWayland often reports 60/unknown for high-Hz panels — so don't trust the
+    // detected rate as a cap. Disable vsync and let frames pace to the detected
+    // rate, a generous default, or PALAZIKVPN_FPS.
     val maxHz = runCatching {
         java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices
             .maxOfOrNull { it.displayMode.refreshRate } ?: 0
     }.getOrDefault(0)
-    if (maxHz > 60) {
-        System.setProperty("skiko.vsync.enabled", "false")
-        System.setProperty("skiko.fps.limit", maxHz.toString())
-    }
+    val fps = System.getenv("PALAZIKVPN_FPS")?.toIntOrNull()
+        ?: if (maxHz > 60) maxHz else 165
+    System.setProperty("skiko.vsync.enabled", "false")
+    System.setProperty("skiko.fps.limit", fps.toString())
 
     application {
         val vm = remember { MainViewModel() }

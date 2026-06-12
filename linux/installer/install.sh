@@ -32,6 +32,13 @@ echo "→ Creating command: palazikvpn"
 rm -f "$BIN_LINK"
 cat > "$BIN_LINK" <<EOF
 #!/bin/bash
+# GUI apps can't run as root (the X/Wayland server refuses the connection).
+# TUN mode requests root by itself via pkexec — no sudo needed.
+if [ "\$(id -u)" -eq 0 ]; then
+  echo "Do not run palazikvpn with sudo — start it as your normal user."
+  echo "TUN mode will ask for authorization on its own (pkexec)."
+  exit 1
+fi
 # NVIDIA's GLX usually cannot create a context under XWayland (hybrid laptops),
 # which drops the app to slow software rendering. Prefer Mesa there — override
 # by exporting __GLX_VENDOR_LIBRARY_NAME yourself if needed.
