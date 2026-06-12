@@ -91,7 +91,9 @@ jobs:
           STAGE=$(mktemp -d)
           cp -r "$APP_DIR" "$STAGE/palazikVPN"
           install -m 755 installer/install.sh "$STAGE/install.sh"
-          makeself --gzip "$STAGE" palazikVPN-linux-x64-installer.run \
+          # xz compresses the bundled runtime far better than gzip — smaller
+          # download and fewer Telegram parts.
+          makeself --xz --complevel 9 "$STAGE" palazikVPN-linux-x64-installer.run \
             "palazikVPN Linux installer" ./install.sh
           ls -lh palazikVPN-linux-x64-installer.run
 
@@ -175,27 +177,14 @@ jobs:
           COMMIT_MSG=$(printf '%s' "${RAW_COMMIT_MSG:-$(git -C "$GITHUB_WORKSPACE" log -1 --pretty=%B)}" | tr -d '`')
 
           ZIP=palazikVPN-linux-x64-installer.zip
-          zip -q -j "$ZIP" palazikVPN-linux-x64-installer.run
+          zip -q -9 -j "$ZIP" palazikVPN-linux-x64-installer.run
           SIZE=$(stat -c%s "$ZIP")
           LIMIT=$((49 * 1024 * 1024))
 
-          LINKS=""
-          if [ -n "${PIXELDRAIN_INSTALLER_URL:-}" ]; then
-            LINKS="
-          Installer: ${PIXELDRAIN_INSTALLER_URL}"
-            [ -n "${PIXELDRAIN_TARGZ_URL:-}" ] && LINKS="${LINKS}
-          Portable: ${PIXELDRAIN_TARGZ_URL}"
-          fi
-
-          if [ "$SIZE" -le "$LIMIT" ]; then
-            CAPTION="*palazikVPN* — Linux x64 installer
-          Branch: \`${{ github.ref_name }}\`
-          Commit: \`${SHORT_SHA}\`
-          Install: unzip, then \`sh palazikVPN-linux-x64-installer.run\`
-          Run: [#${{ github.run_number }}](${RUN_URL})${LINKS}"
-            # Captions are hard-capped at 1024 chars: include the commit message
-            # when it fits, otherwise send it as separate message(s) below.
-            WITH_MSG="${CAPTION}
+          # Append the commit message (as a code block) to a caption when the
+          # 1024-char cap allows; returns via the CAPTION/COMMIT_MSG globals.
+          merge_commit_msg() {
+            local WITH_MSG="${CAPTION}
           \`\`\`
           ${COMMIT_MSG}
           \`\`\`"
@@ -203,22 +192,59 @@ jobs:
               CAPTION="$WITH_MSG"
               COMMIT_MSG=""
             fi
-            send_doc "$ZIP" "$CAPTION"
-          else
-            split -b 48M -d "$ZIP" "${ZIP}.part"
-            PARTS=$(ls ${ZIP}.part* | wc -l)
-            i=1
-            for PART in ${ZIP}.part*; do
-              send_doc "$PART" "*palazikVPN* — Linux x64 installer (part ${i}/${PARTS})
+          }
+
+          if [ "$SIZE" -le "$LIMIT" ]; then
+            CAPTION="*palazikVPN* — Linux x64 installer
           Branch: \`${{ github.ref_name }}\`
           Commit: \`${SHORT_SHA}\`
-          Reassemble: \`cat ${ZIP}.part* > ${ZIP}\`, unzip, then \`sh palazikVPN-linux-x64-installer.run\`"
+          Install: unzip, then \`sh palazikVPN-linux-x64-installer.run\`
+          Run: [#${{ github.run_number }}](${RUN_URL})"
+            merge_commit_msg
+            send_doc "$ZIP" "$CAPTION"
+          else
+            # One single message for all parts: a media-group "album" of documents.
+            split -b 48M -d "$ZIP" "${ZIP}.part"
+            CAPTION="*palazikVPN* — Linux x64 installer
+          Branch: \`${{ github.ref_name }}\`
+          Commit: \`${SHORT_SHA}\`
+          Reassemble: \`cat ${ZIP}.part* > ${ZIP}\`, unzip, then \`sh palazikVPN-linux-x64-installer.run\`
+          Run: [#${{ github.run_number }}](${RUN_URL})"
+            merge_commit_msg
+            CAPTION_JSON=$(printf '%s' "$CAPTION" | jq -Rs .)
+
+            FILE_ARGS=()
+            MEDIA="["
+            i=0
+            PARTS=$(ls ${ZIP}.part* | wc -l)
+            for PART in ${ZIP}.part*; do
               i=$((i + 1))
+              [ "$i" -gt 1 ] && MEDIA="${MEDIA},"
+              if [ "$i" -eq "$PARTS" ]; then
+                # The album caption lives on the last item.
+                MEDIA="${MEDIA}{\"type\":\"document\",\"media\":\"attach://f${i}\",\"caption\":${CAPTION_JSON},\"parse_mode\":\"Markdown\"}"
+              else
+                MEDIA="${MEDIA}{\"type\":\"document\",\"media\":\"attach://f${i}\"}"
+              fi
+              FILE_ARGS+=(-F "f${i}=@${PART}")
             done
-            send_text "*palazikVPN* — Linux x64 (\`${SHORT_SHA}\`) [#${{ github.run_number }}](${RUN_URL})${LINKS}"
+            MEDIA="${MEDIA}]"
+
+            RESP=$(curl -s -X POST \
+              "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMediaGroup" \
+              -F "chat_id=${TG_CHAT_ID}" \
+              -F "message_thread_id=${TG_TOPIC_ID}" \
+              -F "media=${MEDIA}" \
+              "${FILE_ARGS[@]}")
+            if echo "$RESP" | grep -q '"ok":true'; then
+              echo "✓ Sent ${PARTS} parts as one media group"
+            else
+              echo "❌ Telegram failed — $RESP"
+              exit 1
+            fi
           fi
 
-          # Full commit message (when it didn't fit in the caption) as
+          # Only commit messages too big for any caption end up here, as
           # code-formatted message(s) — sendMessage allows 4096 chars.
           while [ -n "$COMMIT_MSG" ]; do
             CHUNK="${COMMIT_MSG:0:3800}"
