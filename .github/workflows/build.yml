@@ -14,6 +14,13 @@ on:
       - '**.md'
       - '.gitignore'
       - 'LICENSE'
+  # Called by release.yml — builds without spamming Telegram.
+  workflow_call:
+    inputs:
+      skip_telegram:
+        description: "Skip the Telegram delivery step"
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       create_release:
@@ -182,7 +189,7 @@ jobs:
 
       # ── Telegram ────────────────────────────────────────────────────────────
       - name: Send release APK to Telegram
-        if: ${{ env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
+        if: ${{ env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' && inputs.skip_telegram != true }}
         env:
           # Passed via env (not shell interpolation) so quotes/backslashes in the
           # commit message can't break or inject into the script.

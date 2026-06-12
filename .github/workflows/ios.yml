@@ -7,6 +7,13 @@ on:
     paths:
       - 'ios/**'
       - '.github/workflows/ios.yml'
+  # Called by release.yml — builds without spamming Telegram.
+  workflow_call:
+    inputs:
+      skip_telegram:
+        description: "Skip the Telegram delivery step"
+        type: boolean
+        default: false
   workflow_dispatch:
 
 jobs:
@@ -86,7 +93,7 @@ jobs:
           retention-days: 30
 
       - name: Send IPA to Telegram group
-        if: ${{ env.TELEGRAM_BOT_TOKEN != '' }}
+        if: ${{ env.TELEGRAM_BOT_TOKEN != '' && inputs.skip_telegram != true }}
         env:
           # Passed via env (not shell interpolation) so quotes/backslashes in the
           # commit message can't break or inject into the script.
