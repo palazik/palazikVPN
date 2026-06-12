@@ -16,9 +16,9 @@ jobs:
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       PIXELDRAIN_API_KEY: ${{ secrets.PIXELDRAIN_API_KEY }}
-      # Linux builds go to the maintainer's DM, not the group (same as iOS). The bot
-      # can only DM this user if they have pressed Start on the bot at least once.
-      PM_CHAT_ID: "6939377982"
+      # Linux builds go to the project group, into its Linux topic.
+      TG_CHAT_ID: "-1003536010950"
+      TG_TOPIC_ID: "145"
     defaults:
       run:
         working-directory: linux
@@ -126,31 +126,54 @@ jobs:
             linux/palazikVPN-linux-x64-installer.run
           retention-days: 30
 
-      # Telegram bots cap uploads at 50 MB — a bundled-JRE app image usually exceeds
-      # that, so the archive is split into 48 MB parts when needed
-      # (reassemble with: cat palazikVPN-linux-x64.tar.gz.part* > palazikVPN-linux-x64.tar.gz).
-      - name: Send build to Telegram PM
+      # Telegram bots cap uploads at 50 MB and captions at 1024 chars. The installer
+      # is zipped, split into 48 MB parts when needed (reassemble with:
+      # cat palazikVPN-linux-x64-installer.zip.part* > palazikVPN-linux-x64-installer.zip),
+      # and the FULL commit message goes as separate code-formatted message(s).
+      - name: Send build to Telegram group
         if: ${{ env.TELEGRAM_BOT_TOKEN != '' }}
+        env:
+          # Passed via env (not shell interpolation) so quotes/backslashes in the
+          # commit message can't break or inject into the script.
+          RAW_COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           send_doc() {
             local FILE="$1" CAPTION="$2"
             RESP=$(curl -s -X POST \
               "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
-              -F "chat_id=${PM_CHAT_ID}" \
+              -F "chat_id=${TG_CHAT_ID}" \
+              -F "message_thread_id=${TG_TOPIC_ID}" \
               -F "document=@${FILE}" \
               -F "caption=${CAPTION}" \
               -F "parse_mode=Markdown")
             if echo "$RESP" | grep -q '"ok":true'; then
               echo "✓ Sent ${FILE}"
             else
-              echo "❌ Telegram failed (did you press Start on the bot?) — $RESP"
+              echo "❌ Telegram failed — $RESP"
               exit 1
             fi
           }
 
+          send_text() {
+            RESP=$(curl -s -X POST \
+              "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TG_CHAT_ID}" \
+              -d "message_thread_id=${TG_TOPIC_ID}" \
+              --data-urlencode "text=$1" \
+              -d "parse_mode=Markdown")
+            if echo "$RESP" | grep -q '"ok":true'; then
+              echo "✓ Sent message"
+            else
+              echo "⚠ Message send failed — $RESP"
+            fi
+          }
+
           SHORT_SHA="${GITHUB_SHA:0:7}"
-          FILE=palazikVPN-linux-x64-installer.run
-          SIZE=$(stat -c%s "$FILE")
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          ZIP=palazikVPN-linux-x64-installer.zip
+          zip -q -j "$ZIP" palazikVPN-linux-x64-installer.run
+          SIZE=$(stat -c%s "$ZIP")
           LIMIT=$((49 * 1024 * 1024))
 
           LINKS=""
@@ -161,24 +184,36 @@ jobs:
           Portable: ${PIXELDRAIN_TARGZ_URL}"
           fi
 
+          # Caption stays short and fixed-size — the commit message is sent
+          # separately below so the 1024-char caption limit can never trip.
           if [ "$SIZE" -le "$LIMIT" ]; then
-            send_doc "$FILE" "*palazikVPN* — Linux x64 installer
+            send_doc "$ZIP" "*palazikVPN* — Linux x64 installer
+          Branch: \`${{ github.ref_name }}\`
           Commit: \`${SHORT_SHA}\`
-          Install: \`sh ${FILE}\`${LINKS}"
+          Install: unzip, then \`sh palazikVPN-linux-x64-installer.run\`
+          Run: [#${{ github.run_number }}](${RUN_URL})${LINKS}"
           else
-            split -b 48M -d "$FILE" "${FILE}.part"
-            PARTS=$(ls ${FILE}.part* | wc -l)
+            split -b 48M -d "$ZIP" "${ZIP}.part"
+            PARTS=$(ls ${ZIP}.part* | wc -l)
             i=1
-            for PART in ${FILE}.part*; do
+            for PART in ${ZIP}.part*; do
               send_doc "$PART" "*palazikVPN* — Linux x64 installer (part ${i}/${PARTS})
+          Branch: \`${{ github.ref_name }}\`
           Commit: \`${SHORT_SHA}\`
-          Reassemble: \`cat ${FILE}.part* > ${FILE}\` then install: \`sh ${FILE}\`"
+          Reassemble: \`cat ${ZIP}.part* > ${ZIP}\`, unzip, then \`sh palazikVPN-linux-x64-installer.run\`"
               i=$((i + 1))
             done
-            if [ -n "$LINKS" ]; then
-              curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-                -d "chat_id=${PM_CHAT_ID}" \
-                --data-urlencode "text=*palazikVPN* — Linux x64 (\`${SHORT_SHA}\`) single-file downloads:${LINKS}" \
-                -d "parse_mode=Markdown" > /dev/null && echo "✓ Sent Pixeldrain links"
-            fi
+            send_text "*palazikVPN* — Linux x64 (\`${SHORT_SHA}\`) [#${{ github.run_number }}](${RUN_URL})${LINKS}"
           fi
+
+          # Full commit message as code-formatted message(s) — sendMessage allows
+          # 4096 chars; chunk longer messages. Backticks inside the message would
+          # close the code block, so strip them.
+          COMMIT_MSG=$(printf '%s' "${RAW_COMMIT_MSG:-$(git -C "$GITHUB_WORKSPACE" log -1 --pretty=%B)}" | tr -d '`')
+          while [ -n "$COMMIT_MSG" ]; do
+            CHUNK="${COMMIT_MSG:0:3800}"
+            COMMIT_MSG="${COMMIT_MSG:3800}"
+            send_text "\`\`\`
+          ${CHUNK}
+          \`\`\`"
+          done

@@ -158,16 +158,18 @@ process, with two connection modes:
 The **Linux CI** workflow downloads the Gradle wrapper jar, geo files, the Xray core and
 tun2socks, builds a self-contained app image (bundled Java runtime — no dependencies to
 install), packages both a portable `palazikVPN-linux-x64.tar.gz` and a self-extracting
-installer `palazikVPN-linux-x64-installer.run`, uploads them as artifacts, and sends the
-installer to the maintainer DM via Telegram (split into 48 MB parts when it exceeds the
-bot's 50 MB cap — reassemble with
-`cat palazikVPN-linux-x64-installer.run.part* > palazikVPN-linux-x64-installer.run`).
+installer `palazikVPN-linux-x64-installer.run`, uploads them as artifacts, uploads both
+to Pixeldrain, and sends the zipped installer to the project Telegram group (split into
+48 MB parts when it exceeds the bot's 50 MB cap — reassemble with
+`cat palazikVPN-linux-x64-installer.zip.part* > palazikVPN-linux-x64-installer.zip`),
+followed by the full commit message as a code block.
 
 ### Install (Arch Linux & any distro)
 
 ```bash
 # if it arrived from Telegram in parts:
-cat palazikVPN-linux-x64-installer.run.part* > palazikVPN-linux-x64-installer.run
+cat palazikVPN-linux-x64-installer.zip.part* > palazikVPN-linux-x64-installer.zip
+unzip palazikVPN-linux-x64-installer.zip
 
 sh palazikVPN-linux-x64-installer.run   # asks for sudo, installs to /opt/palazikVPN
 palazikvpn                              # run it (also in your app launcher)
@@ -269,4 +271,4 @@ linux/src/main/kotlin/com/palazik/vpn/
 
 ## License
 
-See [LICENSE](LICENSE).
+GPL-3.0 — see [LICENSE](LICENSE).
