@@ -25,9 +25,22 @@ cp -r ./palazikVPN "$APP_DIR"
 # ends up unreadable for normal users and the launcher "is not an executable file".
 chmod -R a+rX "$APP_DIR"
 chmod +x "$APP_DIR/bin/palazikVPN"
+# jpackage strips exec bits from bundled app resources — restore them for the cores.
+find "$APP_DIR" -type f \( -name xray -o -name tun2socks \) -exec chmod 755 {} +
 
 echo "→ Creating command: palazikvpn"
-ln -sf "$APP_DIR/bin/palazikVPN" "$BIN_LINK"
+rm -f "$BIN_LINK"
+cat > "$BIN_LINK" <<EOF
+#!/bin/bash
+# NVIDIA's GLX usually cannot create a context under XWayland (hybrid laptops),
+# which drops the app to slow software rendering. Prefer Mesa there — override
+# by exporting __GLX_VENDOR_LIBRARY_NAME yourself if needed.
+if [ -n "\$WAYLAND_DISPLAY" ] && [ -z "\${__GLX_VENDOR_LIBRARY_NAME:-}" ]; then
+  export __GLX_VENDOR_LIBRARY_NAME=mesa
+fi
+exec "$APP_DIR/bin/palazikVPN" "\$@"
+EOF
+chmod 755 "$BIN_LINK"
 
 ICON="$APP_DIR/lib/palazikVPN.png"
 echo "→ Creating desktop entry"
@@ -36,7 +49,7 @@ cat > "$DESKTOP" <<EOF
 Type=Application
 Name=palazikVPN
 Comment=Open-source Xray proxy client
-Exec=$APP_DIR/bin/palazikVPN %u
+Exec=$BIN_LINK %u
 Icon=$ICON
 Terminal=false
 Categories=Network;

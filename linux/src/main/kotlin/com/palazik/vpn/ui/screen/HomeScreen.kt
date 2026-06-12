@@ -377,10 +377,10 @@ fun HomeScreen(vm: MainViewModel) {
 }
 
 /**
- * Proxy / TUN switch on the home screen. Proxy needs no root; TUN captures the whole
- * device via tun2socks (pkexec prompt on connect). Applies to the next connection.
+ * Proxy / TUN switch on the home screen — animated pills matching the nav bar style.
+ * Proxy needs no root; TUN captures the whole device via tun2socks (pkexec prompt on
+ * connect). Applies to the next connection.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ModeSelector(
     tunMode: Boolean,
@@ -388,37 +388,87 @@ private fun ModeSelector(
     onSelect: (Boolean) -> Unit,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        SingleChoiceSegmentedButtonRow(Modifier.widthIn(min = 280.dp)) {
-            SegmentedButton(
-                shape = SegmentedButtonDefaults.itemShape(0, 2),
-                selected = !tunMode,
-                onClick = { onSelect(false) },
-                icon = {},
-                label = {
-                    Icon(Icons.Rounded.SwapHoriz, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Proxy")
-                },
-            )
-            SegmentedButton(
-                shape = SegmentedButtonDefaults.itemShape(1, 2),
-                selected = tunMode,
-                onClick = { onSelect(true) },
-                icon = {},
-                label = {
-                    Icon(Icons.Rounded.VpnLock, null, Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("TUN")
-                },
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        ) {
+            Row(
+                Modifier.padding(5.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                ModePill("Proxy", Icons.Rounded.SwapHoriz, selected = !tunMode, enabled = enabled) { onSelect(false) }
+                ModePill("TUN", Icons.Rounded.VpnLock, selected = tunMode, enabled = enabled) { onSelect(true) }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        AnimatedContent(
+            targetState = tunMode,
+            transitionSpec = {
+                fadeIn(tween(220)) + slideInVertically(tween(220)) { it / 3 } togetherWith
+                    fadeOut(tween(140)) + slideOutVertically(tween(140)) { -it / 3 }
+            },
+            label = "mode_caption",
+        ) { tun ->
+            Text(
+                if (tun) "Full-device tunnel via tun2socks (asks for root)"
+                else "System proxy — SOCKS 10808 / HTTP 10809, no root",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.6f),
             )
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            if (tunMode) "Full-device tunnel via tun2socks (asks for root)"
-            else "System proxy — SOCKS 10808 / HTTP 10809, no root",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.6f),
-        )
+    }
+}
+
+@Composable
+private fun ModePill(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val container by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        animationSpec = tween(250),
+        label = "mode_container_$label",
+    )
+    val content by animateColorAsState(
+        targetValue = if (selected) MaterialTheme.colorScheme.onPrimary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+        animationSpec = tween(250),
+        label = "mode_content_$label",
+    )
+    val pillScale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.96f,
+        animationSpec = spring(Spring.DampingRatioMediumBouncy, Spring.StiffnessMediumLow),
+        label = "mode_scale_$label",
+    )
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = CircleShape,
+        color = container,
+        contentColor = content,
+        modifier = Modifier.scale(pillScale),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(icon, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            AnimatedVisibility(
+                visible = selected,
+                enter = fadeIn(tween(200)) + expandHorizontally(tween(220)),
+                exit = fadeOut(tween(120)) + shrinkHorizontally(tween(160)),
+            ) {
+                Row {
+                    Spacer(Modifier.width(6.dp))
+                    Icon(Icons.Rounded.Check, null, Modifier.size(15.dp))
+                }
+            }
+        }
     }
 }
 

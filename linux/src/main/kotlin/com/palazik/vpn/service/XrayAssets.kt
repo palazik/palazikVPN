@@ -28,7 +28,18 @@ object XrayAssets {
     private fun findBinary(name: String): File? {
         AppDirs.bundledResourcesDir?.let { dir ->
             val f = File(dir, name)
-            if (f.isFile) return f.also { it.setExecutable(true) }
+            if (f.isFile) {
+                // jpackage strips exec bits from bundled resources, and the install
+                // lives in root-owned /opt where we can't chmod. Self-heal by copying
+                // into the user's data dir and making that executable.
+                if (f.canExecute() || f.setExecutable(true)) return f
+                val local = File(AppDirs.binDir, name)
+                runCatching {
+                    if (!local.isFile || local.length() != f.length()) f.copyTo(local, overwrite = true)
+                    local.setExecutable(true)
+                }
+                if (local.canExecute()) return local
+            }
         }
         File(AppDirs.binDir, name).takeIf { it.isFile }?.let { return it.also { f -> f.setExecutable(true) } }
         val path = System.getenv("PATH") ?: return null

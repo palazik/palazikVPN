@@ -61,7 +61,8 @@ fun main(args: Array<String>) {
         val vm = remember { MainViewModel() }
         val ui by vm.ui.collectAsState()
         val vpnState = ui.vpnState
-        val windowState = rememberWindowState(width = 540.dp, height = 940.dp)
+        // Wide enough for the desktop navigation rail layout by default.
+        val windowState = rememberWindowState(width = 1040.dp, height = 860.dp)
         var windowVisible by remember { mutableStateOf(true) }
 
         LaunchedEffect(Unit) {

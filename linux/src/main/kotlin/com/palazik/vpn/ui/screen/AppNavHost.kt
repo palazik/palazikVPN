@@ -12,10 +12,16 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.List
@@ -25,6 +31,8 @@ import androidx.compose.material.icons.rounded.Subscriptions
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -113,79 +121,116 @@ fun AppNavHost(vm: MainViewModel) {
     }
 
     val currentRoute = nav.current
-    // Hide the bottom bar on settings sub-screens (Style + settings/*)
-    val showBottomBar = currentRoute != Screen.Style.route && !currentRoute.startsWith("settings/")
+    // Hide the nav on settings sub-screens (Style + settings/*)
+    val showNav = currentRoute != Screen.Style.route && !currentRoute.startsWith("settings/")
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(snackState) },
-        bottomBar = {
-            if (showBottomBar) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.surface,
-                        contentColor = MaterialTheme.colorScheme.onSurface,
-                        shadowElevation = 8.dp,
-                        shape = CircleShape,
+    BoxWithConstraints {
+        // Desktop-style layout (like Hiddify): a left navigation rail when the window
+        // is wide, the floating pill bar at the bottom when narrow.
+        val wide = maxWidth >= 760.dp
+
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            snackbarHost = { SnackbarHost(snackState) },
+            bottomBar = {
+                if (showNav && !wide) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        Row(
-                            Modifier.padding(6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            shadowElevation = 8.dp,
+                            shape = CircleShape,
                         ) {
-                            tabs.forEach { screen ->
-                                NavPill(
-                                    screen = screen,
-                                    label = screen.label(strings),
-                                    selected = currentRoute == screen.route,
-                                    onClick = { nav.navigate(screen.route) },
-                                )
+                            Row(
+                                Modifier.padding(6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                tabs.forEach { screen ->
+                                    NavPill(
+                                        screen = screen,
+                                        label = screen.label(strings),
+                                        selected = currentRoute == screen.route,
+                                        onClick = { nav.navigate(screen.route) },
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
-        },
-    ) { innerPadding ->
-        val back: () -> Unit = { nav.popBackStack() }
-        AnimatedContent(
-            targetState = currentRoute,
-            modifier = Modifier.padding(innerPadding),
-            transitionSpec = {
-                if (nav.lastOpWasPop) {
-                    (fadeIn(tween(180, easing = EaseOutQuart)) +
-                        slideInHorizontally(tween(180, easing = EaseOutQuart)) { -it / 14 }) togetherWith
-                        (fadeOut(tween(140)) + slideOutHorizontally(tween(140)) { it / 14 })
-                } else {
-                    (fadeIn(tween(180, easing = EaseOutQuart)) +
-                        slideInHorizontally(tween(180, easing = EaseOutQuart)) { it / 14 }) togetherWith
-                        (fadeOut(tween(140)) + slideOutHorizontally(tween(140)) { -it / 14 })
-                }
             },
-            label = "nav_host",
-        ) { route ->
-            when (route) {
-                Screen.Home.route          -> HomeScreen(vm)
-                Screen.Profiles.route      -> ProfilesScreen(vm)
-                Screen.Subscriptions.route -> SubscriptionsScreen(vm)
-                Screen.Settings.route      -> SettingsScreen(vm, onNavigate = { nav.navigate(it) })
-                Screen.Style.route               -> StyleScreen(vm, onBack = back)
-                SettingsRoutes.LANGUAGE          -> LanguageSettingsScreen(vm, back)
-                SettingsRoutes.CONNECTION        -> ConnectionSettingsScreen(vm, back)
-                SettingsRoutes.DNS               -> DnsSettingsScreen(vm, back)
-                SettingsRoutes.ROUTING           -> RoutingSettingsScreen(vm, back)
-                SettingsRoutes.GEO               -> GeoFilesSettingsScreen(vm, back)
-                SettingsRoutes.SUBSCRIPTION      -> SubscriptionSettingsScreen(vm, back)
-                SettingsRoutes.BACKUP            -> BackupSettingsScreen(vm, back)
-                SettingsRoutes.STARTUP           -> StartupSettingsScreen(vm, back)
-                SettingsRoutes.DIAGNOSTICS       -> DiagnosticsSettingsScreen(vm, back)
-                SettingsRoutes.ABOUT             -> AboutSettingsScreen(vm, back)
-                else                             -> HomeScreen(vm)
+        ) { innerPadding ->
+            val back: () -> Unit = { nav.popBackStack() }
+            Row(Modifier.padding(innerPadding).fillMaxSize()) {
+                if (showNav && wide) {
+                    NavigationRail(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.fillMaxHeight().padding(vertical = 8.dp),
+                    ) {
+                        Spacer(Modifier.height(12.dp))
+                        tabs.forEach { screen ->
+                            NavigationRailItem(
+                                selected = currentRoute == screen.route,
+                                onClick = { nav.navigate(screen.route) },
+                                icon = { Icon(screen.icon, screen.label(strings), Modifier.size(26.dp)) },
+                                label = {
+                                    Text(
+                                        screen.label(strings),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                },
+                                modifier = Modifier.padding(vertical = 6.dp),
+                            )
+                        }
+                    }
+                }
+                AnimatedContent(
+                    targetState = currentRoute,
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    transitionSpec = {
+                        if (nav.lastOpWasPop) {
+                            (fadeIn(tween(180, easing = EaseOutQuart)) +
+                                slideInHorizontally(tween(180, easing = EaseOutQuart)) { -it / 14 }) togetherWith
+                                (fadeOut(tween(140)) + slideOutHorizontally(tween(140)) { it / 14 })
+                        } else {
+                            (fadeIn(tween(180, easing = EaseOutQuart)) +
+                                slideInHorizontally(tween(180, easing = EaseOutQuart)) { it / 14 }) togetherWith
+                                (fadeOut(tween(140)) + slideOutHorizontally(tween(140)) { -it / 14 })
+                        }
+                    },
+                    label = "nav_host",
+                ) { route ->
+                    // Keep content at a readable width on big windows instead of
+                    // stretching phone-designed screens edge to edge.
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                        Box(Modifier.widthIn(max = 760.dp).fillMaxHeight()) {
+                            when (route) {
+                                Screen.Home.route          -> HomeScreen(vm)
+                                Screen.Profiles.route      -> ProfilesScreen(vm)
+                                Screen.Subscriptions.route -> SubscriptionsScreen(vm)
+                                Screen.Settings.route      -> SettingsScreen(vm, onNavigate = { nav.navigate(it) })
+                                Screen.Style.route               -> StyleScreen(vm, onBack = back)
+                                SettingsRoutes.LANGUAGE          -> LanguageSettingsScreen(vm, back)
+                                SettingsRoutes.CONNECTION        -> ConnectionSettingsScreen(vm, back)
+                                SettingsRoutes.DNS               -> DnsSettingsScreen(vm, back)
+                                SettingsRoutes.ROUTING           -> RoutingSettingsScreen(vm, back)
+                                SettingsRoutes.GEO               -> GeoFilesSettingsScreen(vm, back)
+                                SettingsRoutes.SUBSCRIPTION      -> SubscriptionSettingsScreen(vm, back)
+                                SettingsRoutes.BACKUP            -> BackupSettingsScreen(vm, back)
+                                SettingsRoutes.STARTUP           -> StartupSettingsScreen(vm, back)
+                                SettingsRoutes.DIAGNOSTICS       -> DiagnosticsSettingsScreen(vm, back)
+                                SettingsRoutes.ABOUT             -> AboutSettingsScreen(vm, back)
+                                else                             -> HomeScreen(vm)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
