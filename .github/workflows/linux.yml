@@ -151,7 +151,7 @@ jobs:
               -F "message_thread_id=${TG_TOPIC_ID}" \
               -F "document=@${FILE}" \
               -F "caption=${CAPTION}" \
-              -F "parse_mode=Markdown")
+              -F "parse_mode=HTML")
             if echo "$RESP" | grep -q '"ok":true'; then
               echo "✓ Sent ${FILE}"
             else
@@ -166,7 +166,7 @@ jobs:
               -d "chat_id=${TG_CHAT_ID}" \
               -d "message_thread_id=${TG_TOPIC_ID}" \
               --data-urlencode "text=$1" \
-              -d "parse_mode=Markdown")
+              -d "parse_mode=HTML")
             if echo "$RESP" | grep -q '"ok":true'; then
               echo "✓ Sent message"
             else
@@ -177,21 +177,21 @@ jobs:
           SHORT_SHA="${GITHUB_SHA:0:7}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          # Backticks inside the message would close the code block — strip them.
-          COMMIT_MSG=$(printf '%s' "${RAW_COMMIT_MSG:-$(git -C "$GITHUB_WORKSPACE" log -1 --pretty=%B)}" | tr -d '`')
+          # HTML parse mode: predictable, and the commit message survives intact
+          # inside <pre> once &/</> are escaped (legacy Markdown chokes on _ * [).
+          esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+          COMMIT_MSG="${RAW_COMMIT_MSG:-$(git -C "$GITHUB_WORKSPACE" log -1 --pretty=%B)}"
 
           ZIP=palazikVPN-linux-x64-installer.zip
           zip -q -9 -j "$ZIP" palazikVPN-linux-x64-installer.run
           SIZE=$(stat -c%s "$ZIP")
+          ZIP_SIZE=$(du -h "$ZIP" | cut -f1)
           LIMIT=$((49 * 1024 * 1024))
 
           # Append the commit message (as a code block) to a caption when the
           # 1024-char cap allows; returns via the CAPTION/COMMIT_MSG globals.
           merge_commit_msg() {
-            local WITH_MSG="${CAPTION}
-          \`\`\`
-          ${COMMIT_MSG}
-          \`\`\`"
+            local WITH_MSG="${CAPTION}"$'\n'"<pre>$(esc "$COMMIT_MSG")</pre>"
             if [ "${#WITH_MSG}" -le 1000 ]; then
               CAPTION="$WITH_MSG"
               COMMIT_MSG=""
@@ -199,21 +199,25 @@ jobs:
           }
 
           if [ "$SIZE" -le "$LIMIT" ]; then
-            CAPTION="*palazikVPN* — Linux x64 installer
-          Branch: \`${{ github.ref_name }}\`
-          Commit: \`${SHORT_SHA}\`
-          Install: unzip, then \`sh palazikVPN-linux-x64-installer.run\`
-          Run: [#${{ github.run_number }}](${RUN_URL})"
+            CAPTION=$(printf '%s\n' \
+              "<b>palazikVPN</b> — Linux x64 installer" \
+              "Branch: <code>${{ github.ref_name }}</code>" \
+              "Commit: <code>${SHORT_SHA}</code>" \
+              "File: <code>${ZIP}</code> ${ZIP_SIZE}" \
+              "Install: unzip, then <code>sh palazikVPN-linux-x64-installer.run</code>" \
+              "Run: <a href=\"${RUN_URL}\">#${{ github.run_number }}</a>")
             merge_commit_msg
             send_doc "$ZIP" "$CAPTION"
           else
             # One single message for all parts: a media-group "album" of documents.
             split -b 48M -d "$ZIP" "${ZIP}.part"
-            CAPTION="*palazikVPN* — Linux x64 installer
-          Branch: \`${{ github.ref_name }}\`
-          Commit: \`${SHORT_SHA}\`
-          Reassemble: \`cat ${ZIP}.part* > ${ZIP}\`, unzip, then \`sh palazikVPN-linux-x64-installer.run\`
-          Run: [#${{ github.run_number }}](${RUN_URL})"
+            CAPTION=$(printf '%s\n' \
+              "<b>palazikVPN</b> — Linux x64 installer" \
+              "Branch: <code>${{ github.ref_name }}</code>" \
+              "Commit: <code>${SHORT_SHA}</code>" \
+              "File: <code>${ZIP}</code> ${ZIP_SIZE}" \
+              "Install: <code>cat ${ZIP}.part* &gt; ${ZIP}</code>, unzip, then <code>sh palazikVPN-linux-x64-installer.run</code>" \
+              "Run: <a href=\"${RUN_URL}\">#${{ github.run_number }}</a>")
             merge_commit_msg
             CAPTION_JSON=$(printf '%s' "$CAPTION" | jq -Rs .)
 
@@ -245,7 +249,7 @@ jobs:
               i=$((i + 1))
               [ "$i" -gt 1 ] && MEDIA="${MEDIA},"
               if [ "$i" -eq "$PARTS" ]; then
-                MEDIA="${MEDIA}{\"type\":\"document\",\"media\":\"${FID}\",\"caption\":${CAPTION_JSON},\"parse_mode\":\"Markdown\"}"
+                MEDIA="${MEDIA}{\"type\":\"document\",\"media\":\"${FID}\",\"caption\":${CAPTION_JSON},\"parse_mode\":\"HTML\"}"
               else
                 MEDIA="${MEDIA}{\"type\":\"document\",\"media\":\"${FID}\"}"
               fi
@@ -274,9 +278,7 @@ jobs:
           # Only commit messages too big for any caption end up here, as
           # code-formatted message(s) — sendMessage allows 4096 chars.
           while [ -n "$COMMIT_MSG" ]; do
-            CHUNK="${COMMIT_MSG:0:3800}"
-            COMMIT_MSG="${COMMIT_MSG:3800}"
-            send_text "\`\`\`
-          ${CHUNK}
-          \`\`\`"
+            CHUNK="$(esc "${COMMIT_MSG:0:3500}")"
+            COMMIT_MSG="${COMMIT_MSG:3500}"
+            send_text "<pre>${CHUNK}</pre>"
           done

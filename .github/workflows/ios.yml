@@ -93,21 +93,27 @@ jobs:
           RAW_COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           SHORT_SHA="${GITHUB_SHA:0:7}"
-          # Backticks inside the message would close the code block — strip them.
-          COMMIT_MSG=$(printf '%s' "${RAW_COMMIT_MSG:-$(git log -1 --pretty=%B)}" | tr -d '`')
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          # HTML parse mode: predictable, and the commit message survives intact
+          # inside <pre> once &/</> are escaped (legacy Markdown chokes on _ * [).
+          esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+          COMMIT_MSG="${RAW_COMMIT_MSG:-$(git log -1 --pretty=%B)}"
 
-          CAPTION="*palazikVPN* — iOS (unsigned)
-          Branch: \`${{ github.ref_name }}\`
-          Commit: \`${SHORT_SHA}\`
-          Sideload via AltStore/Sideloadly; the VPN needs your own Apple signing + Network Extension entitlement."
+          IPA_SIZE=$(du -h palazikVPN-unsigned.ipa | cut -f1 | tr -d ' ')
+
+          # Same layout as the Android release message.
+          CAPTION=$(printf '%s\n' \
+            "<b>palazikVPN</b> — iOS (unsigned)" \
+            "Branch: <code>${{ github.ref_name }}</code>" \
+            "Commit: <code>${SHORT_SHA}</code>" \
+            "IPA: <code>palazikVPN-unsigned.ipa</code> ${IPA_SIZE}" \
+            "Run: <a href=\"${RUN_URL}\">#${{ github.run_number }}</a>" \
+            "Sideload via AltStore/Sideloadly; the VPN needs your own Apple signing + Network Extension entitlement.")
 
           # Captions are hard-capped at 1024 chars: include the commit message
           # (as a code block) when it fits, otherwise send it right after as its
           # own message(s) — sendMessage allows 4096 chars.
-          WITH_MSG="${CAPTION}
-          \`\`\`
-          ${COMMIT_MSG}
-          \`\`\`"
+          WITH_MSG="${CAPTION}"$'\n'"<pre>$(esc "$COMMIT_MSG")</pre>"
           if [ "${#WITH_MSG}" -le 1000 ]; then
             CAPTION="$WITH_MSG"
             COMMIT_MSG=""
@@ -119,7 +125,7 @@ jobs:
             -F "message_thread_id=${TG_TOPIC_ID}" \
             -F "document=@palazikVPN-unsigned.ipa" \
             -F "caption=${CAPTION}" \
-            -F "parse_mode=Markdown")
+            -F "parse_mode=HTML")
           if echo "$RESP" | grep -q '"ok":true'; then
             echo "✓ Sent IPA to group"
           else
@@ -130,16 +136,14 @@ jobs:
           # Full commit message (when it didn't fit in the caption) as
           # code-formatted message(s).
           while [ -n "$COMMIT_MSG" ]; do
-            CHUNK="${COMMIT_MSG:0:3800}"
-            COMMIT_MSG="${COMMIT_MSG:3800}"
+            CHUNK="$(esc "${COMMIT_MSG:0:3500}")"
+            COMMIT_MSG="${COMMIT_MSG:3500}"
             MSG_RESP=$(curl -s -X POST \
               "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
               -d "chat_id=${TG_CHAT_ID}" \
               -d "message_thread_id=${TG_TOPIC_ID}" \
-              --data-urlencode "text=\`\`\`
-          ${CHUNK}
-          \`\`\`" \
-              -d "parse_mode=Markdown")
+              --data-urlencode "text=<pre>${CHUNK}</pre>" \
+              -d "parse_mode=HTML")
             if echo "$MSG_RESP" | grep -q '"ok":true'; then
               echo "✓ Sent commit message chunk"
             else

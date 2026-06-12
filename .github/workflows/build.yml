@@ -191,8 +191,10 @@ jobs:
           SHORT_SHA="${{ github.sha }}"
           SHORT_SHA="${SHORT_SHA:0:7}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          # Backticks inside the message would close the code block — strip them.
-          COMMIT_MSG=$(printf '%s' "${RAW_COMMIT_MSG:-$(git log -1 --pretty=%B)}" | tr -d '`')
+          # HTML parse mode: predictable, and the commit message survives intact
+          # inside <pre> once &/</> are escaped (legacy Markdown chokes on _ * [).
+          esc() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; }
+          COMMIT_MSG="${RAW_COMMIT_MSG:-$(git log -1 --pretty=%B)}"
 
           # Prefer arm64 (~40MB), well under Telegram's 50MB limit.
           # Fall back to armeabi-v7a, then universal as last resort.
@@ -224,19 +226,17 @@ jobs:
           SIGNED_NOTE="signed"
           case "$APK_NAME" in *unsigned*) SIGNED_NOTE="unsigned" ;; esac
 
-          CAPTION="*palazikVPN* — Release (${SIGNED_NOTE})
-          Branch: \`${{ github.ref_name }}\`
-          Commit: \`${SHORT_SHA}\`
-          APK: \`${APK_NAME}\` ${SIZE_NOTE}
-          Run: [#${{ github.run_number }}](${RUN_URL})"
+          CAPTION=$(printf '%s\n' \
+            "<b>palazikVPN</b> — Release (${SIGNED_NOTE})" \
+            "Branch: <code>${{ github.ref_name }}</code>" \
+            "Commit: <code>${SHORT_SHA}</code>" \
+            "APK: <code>${APK_NAME}</code> ${SIZE_NOTE}" \
+            "Run: <a href=\"${RUN_URL}\">#${{ github.run_number }}</a>")
 
           # Captions are hard-capped at 1024 chars: include the commit message
           # (as a code block) when it fits, otherwise send it right after as its
           # own message(s) — sendMessage allows 4096 chars.
-          WITH_MSG="${CAPTION}
-          \`\`\`
-          ${COMMIT_MSG}
-          \`\`\`"
+          WITH_MSG="${CAPTION}"$'\n'"<pre>$(esc "$COMMIT_MSG")</pre>"
           if [ "${#WITH_MSG}" -le 1000 ]; then
             CAPTION="$WITH_MSG"
             COMMIT_MSG=""
@@ -249,7 +249,7 @@ jobs:
             -F "chat_id=${TELEGRAM_CHAT_ID}"
             -F "document=@${SEND_FILE}"
             -F "caption=${CAPTION}"
-            -F "parse_mode=Markdown"
+            -F "parse_mode=HTML"
           )
           if [ -n "${TELEGRAM_TOPIC_ID}" ]; then
             CURL_ARGS+=(-F "message_thread_id=${TELEGRAM_TOPIC_ID}")
@@ -267,17 +267,15 @@ jobs:
           # Full commit message as code-formatted follow-up message(s) —
           # sendMessage allows 4096 chars; chunk longer messages.
           while [ -n "$COMMIT_MSG" ]; do
-            CHUNK="${COMMIT_MSG:0:3800}"
-            COMMIT_MSG="${COMMIT_MSG:3800}"
+            CHUNK="$(esc "${COMMIT_MSG:0:3500}")"
+            COMMIT_MSG="${COMMIT_MSG:3500}"
             MSG_ARGS=(
               -s
               -X POST
               "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
               -d "chat_id=${TELEGRAM_CHAT_ID}"
-              --data-urlencode "text=\`\`\`
-          ${CHUNK}
-          \`\`\`"
-              -d "parse_mode=Markdown"
+              --data-urlencode "text=<pre>${CHUNK}</pre>"
+              -d "parse_mode=HTML"
             )
             if [ -n "${TELEGRAM_TOPIC_ID}" ]; then
               MSG_ARGS+=(-d "message_thread_id=${TELEGRAM_TOPIC_ID}")
