@@ -19,6 +19,10 @@ jobs:
       # Linux builds go to the same project group as Android, into the Linux topic.
       TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       TG_TOPIC_ID: "145"
+      # Staging DM for multi-part uploads: Telegram caps one request at 50 MB, so
+      # parts are uploaded here one by one, then posted to the group as a single
+      # media-group message by file_id (and the staging messages get deleted).
+      TG_STAGING_CHAT_ID: "6939377982"
     defaults:
       run:
         working-directory: linux
@@ -213,35 +217,58 @@ jobs:
             merge_commit_msg
             CAPTION_JSON=$(printf '%s' "$CAPTION" | jq -Rs .)
 
-            FILE_ARGS=()
+            # Step 1: upload each part to the staging DM (one request each stays
+            # under the 50 MB per-request cap) and collect file_ids.
+            FILE_IDS=()
+            STAGE_MSG_IDS=()
+            for PART in ${ZIP}.part*; do
+              RESP=$(curl -s -X POST \
+                "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
+                -F "chat_id=${TG_STAGING_CHAT_ID}" \
+                -F "document=@${PART}" \
+                -F "disable_notification=true")
+              if ! echo "$RESP" | grep -q '"ok":true'; then
+                echo "❌ Staging upload failed (press Start on the bot once) — $RESP"
+                exit 1
+              fi
+              FILE_IDS+=("$(echo "$RESP" | jq -r '.result.document.file_id')")
+              STAGE_MSG_IDS+=("$(echo "$RESP" | jq -r '.result.message_id')")
+              echo "✓ Staged ${PART}"
+            done
+
+            # Step 2: post all parts to the group as ONE media-group message,
+            # referencing the uploaded file_ids (caption lives on the last item).
+            PARTS=${#FILE_IDS[@]}
             MEDIA="["
             i=0
-            PARTS=$(ls ${ZIP}.part* | wc -l)
-            for PART in ${ZIP}.part*; do
+            for FID in "${FILE_IDS[@]}"; do
               i=$((i + 1))
               [ "$i" -gt 1 ] && MEDIA="${MEDIA},"
               if [ "$i" -eq "$PARTS" ]; then
-                # The album caption lives on the last item.
-                MEDIA="${MEDIA}{\"type\":\"document\",\"media\":\"attach://f${i}\",\"caption\":${CAPTION_JSON},\"parse_mode\":\"Markdown\"}"
+                MEDIA="${MEDIA}{\"type\":\"document\",\"media\":\"${FID}\",\"caption\":${CAPTION_JSON},\"parse_mode\":\"Markdown\"}"
               else
-                MEDIA="${MEDIA}{\"type\":\"document\",\"media\":\"attach://f${i}\"}"
+                MEDIA="${MEDIA}{\"type\":\"document\",\"media\":\"${FID}\"}"
               fi
-              FILE_ARGS+=(-F "f${i}=@${PART}")
             done
             MEDIA="${MEDIA}]"
 
             RESP=$(curl -s -X POST \
               "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMediaGroup" \
-              -F "chat_id=${TG_CHAT_ID}" \
-              -F "message_thread_id=${TG_TOPIC_ID}" \
-              -F "media=${MEDIA}" \
-              "${FILE_ARGS[@]}")
+              -d "chat_id=${TG_CHAT_ID}" \
+              -d "message_thread_id=${TG_TOPIC_ID}" \
+              --data-urlencode "media=${MEDIA}")
             if echo "$RESP" | grep -q '"ok":true'; then
-              echo "✓ Sent ${PARTS} parts as one media group"
+              echo "✓ Sent ${PARTS} parts as one media-group message"
             else
               echo "❌ Telegram failed — $RESP"
               exit 1
             fi
+
+            # Step 3: clean the staging DM.
+            for MID in "${STAGE_MSG_IDS[@]}"; do
+              curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/deleteMessage" \
+                -d "chat_id=${TG_STAGING_CHAT_ID}" -d "message_id=${MID}" > /dev/null
+            done
           fi
 
           # Only commit messages too big for any caption end up here, as
