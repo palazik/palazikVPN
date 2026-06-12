@@ -4,16 +4,9 @@ on:
   push:
     branches:
       - master
-    # Don't rebuild the APK for website / iOS / Linux / docs / metadata-only changes.
-    paths-ignore:
-      - 'docs/**'
-      - 'ios/**'
-      - 'linux/**'
-      - '.github/workflows/linux.yml'
-      - '.github/workflows/ios.yml'
-      - '**.md'
-      - '.gitignore'
-      - 'LICENSE'
+    paths:
+      - 'android/**'
+      - '.github/workflows/build.yml'
   # Called by release.yml — builds without spamming Telegram.
   workflow_call:
     inputs:
@@ -22,22 +15,11 @@ on:
         type: boolean
         default: false
   workflow_dispatch:
-    inputs:
-      create_release:
-        description: "Publish a GitHub Release with the built APKs"
-        type: boolean
-        default: false
-      tag_name:
-        description: "Release tag, e.g. v1.0.2 (required when publishing a release)"
-        type: string
-        default: ""
 
 jobs:
   build:
     name: Build APK
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     # The Gradle project now lives in android/ — run every shell step from there.
     defaults:
       run:
@@ -173,19 +155,6 @@ jobs:
           name: palazikVPN-release
           path: android/app/build/outputs/apk/release/*.apk
           retention-days: 30
-
-      # ── GitHub Release (manual, opt-in) ──────────────────────────────────────
-      # Only on a manual run with "Publish a GitHub Release" ticked and a tag filled in.
-      - name: Publish GitHub Release
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.create_release && inputs.tag_name != '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${{ inputs.tag_name }}" \
-            --target "${{ github.sha }}" \
-            --title "${{ inputs.tag_name }}" \
-            --generate-notes \
-            app/build/outputs/apk/release/*.apk
 
       # ── Telegram ────────────────────────────────────────────────────────────
       - name: Send release APK to Telegram

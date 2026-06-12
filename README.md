@@ -95,11 +95,12 @@ Some large runtime files are intentionally **not** committed and are fetched at 
 
 ### GitHub Actions (recommended)
 
-The **Android CI** workflow builds debug and release APKs from `android/` and uploads them as artifacts.
-Run it from the **Actions** tab → **Android CI** → **Run workflow**, where you can also:
+The **Android CI** workflow builds debug and release APKs from `android/` and uploads them as artifacts
+(run it from the **Actions** tab → **Android CI** → **Run workflow**). Per-ABI APKs are delivered to
+Telegram when `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` are set.
 
-- **Publish a GitHub Release** — tick the box and enter a tag (e.g. `v2.0.2`) to attach the release APKs to a new GitHub Release.
-- Receive per-ABI APKs in Telegram if `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` are set.
+To publish a GitHub Release, use the **Release** workflow instead: it builds Android, iOS and Linux
+in one run (Telegram delivery skipped) and attaches all artifacts to a release with your tag.
 
 The workflow downloads the runtime files, then builds ABI-split APKs (`arm64-v8a`,
 `armeabi-v7a`) plus a universal APK.
