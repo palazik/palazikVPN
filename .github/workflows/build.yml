@@ -248,8 +248,8 @@ jobs:
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument"
             -F "chat_id=${TELEGRAM_CHAT_ID}"
             -F "document=@${SEND_FILE}"
-            -F "caption=${CAPTION}"
-            -F "parse_mode=HTML"
+            --form-string "caption=${CAPTION}"
+            --form-string "parse_mode=HTML"
           )
           if [ -n "${TELEGRAM_TOPIC_ID}" ]; then
             CURL_ARGS+=(-F "message_thread_id=${TELEGRAM_TOPIC_ID}")

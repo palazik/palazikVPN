@@ -124,8 +124,8 @@ jobs:
             -F "chat_id=${TG_CHAT_ID}" \
             -F "message_thread_id=${TG_TOPIC_ID}" \
             -F "document=@palazikVPN-unsigned.ipa" \
-            -F "caption=${CAPTION}" \
-            -F "parse_mode=HTML")
+            --form-string "caption=${CAPTION}" \
+            --form-string "parse_mode=HTML")
           if echo "$RESP" | grep -q '"ok":true'; then
             echo "✓ Sent IPA to group"
           else
