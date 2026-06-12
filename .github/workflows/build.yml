@@ -224,14 +224,23 @@ jobs:
           SIGNED_NOTE="signed"
           case "$APK_NAME" in *unsigned*) SIGNED_NOTE="unsigned" ;; esac
 
-          # Captions are hard-capped at 1024 chars, so the commit message is NOT
-          # part of the caption — it is sent right after as its own message
-          # (4096-char limit, chunked when longer), formatted as a code block.
           CAPTION="*palazikVPN* — Release (${SIGNED_NOTE})
           Branch: \`${{ github.ref_name }}\`
           Commit: \`${SHORT_SHA}\`
           APK: \`${APK_NAME}\` ${SIZE_NOTE}
           Run: [#${{ github.run_number }}](${RUN_URL})"
+
+          # Captions are hard-capped at 1024 chars: include the commit message
+          # (as a code block) when it fits, otherwise send it right after as its
+          # own message(s) — sendMessage allows 4096 chars.
+          WITH_MSG="${CAPTION}
+          \`\`\`
+          ${COMMIT_MSG}
+          \`\`\`"
+          if [ "${#WITH_MSG}" -le 1000 ]; then
+            CAPTION="$WITH_MSG"
+            COMMIT_MSG=""
+          fi
 
           CURL_ARGS=(
             -s

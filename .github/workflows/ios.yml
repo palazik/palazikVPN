@@ -16,9 +16,9 @@ jobs:
     runs-on: macos-26
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      # iOS builds go to the maintainer's DM, not the group. The bot can only DM this
-      # user if they have pressed Start on the bot at least once.
-      PM_CHAT_ID: "6939377982"
+      # iOS builds go to the same project group as Android, into the iOS topic.
+      TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TG_TOPIC_ID: "126"
     defaults:
       run:
         working-directory: ios
@@ -85,22 +85,64 @@ jobs:
           path: ios/palazikVPN-unsigned.ipa
           retention-days: 30
 
-      - name: Send IPA to Telegram PM
+      - name: Send IPA to Telegram group
         if: ${{ env.TELEGRAM_BOT_TOKEN != '' }}
+        env:
+          # Passed via env (not shell interpolation) so quotes/backslashes in the
+          # commit message can't break or inject into the script.
+          RAW_COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           SHORT_SHA="${GITHUB_SHA:0:7}"
+          # Backticks inside the message would close the code block — strip them.
+          COMMIT_MSG=$(printf '%s' "${RAW_COMMIT_MSG:-$(git log -1 --pretty=%B)}" | tr -d '`')
+
           CAPTION="*palazikVPN* — iOS (unsigned)
+          Branch: \`${{ github.ref_name }}\`
           Commit: \`${SHORT_SHA}\`
           Sideload via AltStore/Sideloadly; the VPN needs your own Apple signing + Network Extension entitlement."
+
+          # Captions are hard-capped at 1024 chars: include the commit message
+          # (as a code block) when it fits, otherwise send it right after as its
+          # own message(s) — sendMessage allows 4096 chars.
+          WITH_MSG="${CAPTION}
+          \`\`\`
+          ${COMMIT_MSG}
+          \`\`\`"
+          if [ "${#WITH_MSG}" -le 1000 ]; then
+            CAPTION="$WITH_MSG"
+            COMMIT_MSG=""
+          fi
+
           RESP=$(curl -s -X POST \
             "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendDocument" \
-            -F "chat_id=${PM_CHAT_ID}" \
+            -F "chat_id=${TG_CHAT_ID}" \
+            -F "message_thread_id=${TG_TOPIC_ID}" \
             -F "document=@palazikVPN-unsigned.ipa" \
             -F "caption=${CAPTION}" \
             -F "parse_mode=Markdown")
           if echo "$RESP" | grep -q '"ok":true'; then
-            echo "✓ Sent IPA to PM"
+            echo "✓ Sent IPA to group"
           else
-            echo "❌ Telegram failed (did you press Start on the bot?) — $RESP"
+            echo "❌ Telegram failed — $RESP"
             exit 1
           fi
+
+          # Full commit message (when it didn't fit in the caption) as
+          # code-formatted message(s).
+          while [ -n "$COMMIT_MSG" ]; do
+            CHUNK="${COMMIT_MSG:0:3800}"
+            COMMIT_MSG="${COMMIT_MSG:3800}"
+            MSG_RESP=$(curl -s -X POST \
+              "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TG_CHAT_ID}" \
+              -d "message_thread_id=${TG_TOPIC_ID}" \
+              --data-urlencode "text=\`\`\`
+          ${CHUNK}
+          \`\`\`" \
+              -d "parse_mode=Markdown")
+            if echo "$MSG_RESP" | grep -q '"ok":true'; then
+              echo "✓ Sent commit message chunk"
+            else
+              echo "⚠ Commit message send failed — $MSG_RESP"
+            fi
+          done
