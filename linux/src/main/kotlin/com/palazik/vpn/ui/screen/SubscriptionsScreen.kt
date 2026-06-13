@@ -336,9 +336,13 @@ private fun SubscriptionCard(
                     }
                 }
                 if (sub.hasExpiry) {
-                    val daysLeft = ((sub.expireEpochSec * 1000 - System.currentTimeMillis()) / 86_400_000L)
-                    val expiring = daysLeft in 0L..7L
-                    val expired  = daysLeft < 0
+                    // Base "expired" on the raw remaining time, not the day count — integer
+                    // division truncates toward zero, so a sub that lapsed within the last 24h
+                    // would otherwise read "0 d" (and a non-expired colour) instead of "Expired".
+                    val remainingMs = sub.expireEpochSec * 1000 - System.currentTimeMillis()
+                    val expired  = remainingMs < 0
+                    val daysLeft = remainingMs / 86_400_000L
+                    val expiring = !expired && daysLeft in 0L..7L
                     val tint = when {
                         expired  -> MaterialTheme.colorScheme.error
                         expiring -> MaterialTheme.colorScheme.tertiary

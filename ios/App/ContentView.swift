@@ -338,20 +338,24 @@ struct SubscriptionsView: View {
         return t
     }
 
+    // Raw remaining time. "Expired" is decided on this, not on the day count below —
+    // integer division truncates toward zero, so a sub that lapsed within the last 24h
+    // would otherwise read "0d left" (and a non-expired tint) instead of "Expired".
+    private func expiryRemainingMs(_ s: Subscription) -> Int64 {
+        s.expireEpochSec * 1000 - Int64(Date().timeIntervalSince1970 * 1000)
+    }
+
     private func expiryDays(_ s: Subscription) -> Int64 {
-        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
-        return (s.expireEpochSec * 1000 - nowMs) / 86_400_000
+        expiryRemainingMs(s) / 86_400_000
     }
 
     private func expiryText(_ s: Subscription) -> String {
-        let days = expiryDays(s)
-        return days < 0 ? "Expired" : "\(days)d left"
+        expiryRemainingMs(s) < 0 ? "Expired" : "\(expiryDays(s))d left"
     }
 
     private func expiryTint(_ s: Subscription) -> Color {
-        let days = expiryDays(s)
-        if days < 0 { return .red }
-        if days <= 7 { return .orange }
+        if expiryRemainingMs(s) < 0 { return .red }
+        if expiryDays(s) <= 7 { return .orange }
         return .secondary
     }
 

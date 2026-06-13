@@ -49,6 +49,14 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         let ipv4 = NEIPv4Settings(addresses: ["198.18.0.1"], subnetMasks: ["255.255.255.0"])
         ipv4.includedRoutes = [NEIPv4Route.default()]
         settings.ipv4Settings = ipv4
+
+        // Claim the full IPv6 default route too. Without it, IPv6 traffic on a dual-stack
+        // network bypasses the tunnel and leaks the real address (Android does the same by
+        // always routing ::/0 into its TUN). Xray resolves/handles or drops it per its config.
+        let ipv6 = NEIPv6Settings(addresses: ["fd66:6ca7:14e7::1"], networkPrefixLengths: [126])
+        ipv6.includedRoutes = [NEIPv6Route.default()]
+        settings.ipv6Settings = ipv6
+
         settings.dnsSettings = NEDNSSettings(servers: ["1.1.1.1", "8.8.8.8"])
         settings.mtu = 1500
         return settings
