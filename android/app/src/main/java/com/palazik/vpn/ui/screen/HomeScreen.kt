@@ -16,10 +16,23 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Matrix
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.graphics.shapes.CornerRounding
+import androidx.graphics.shapes.Morph
+import androidx.graphics.shapes.RoundedPolygon
+import androidx.graphics.shapes.circle
+import androidx.graphics.shapes.star
+import androidx.graphics.shapes.toPath
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.palazik.vpn.data.model.VpnState
@@ -113,6 +126,10 @@ fun HomeScreen(
         animationSpec = tween(400),
         label = "btn_color",
     )
+
+    // M3 Expressive shape morph: the connect button relaxes from a 12-lobed "cookie"
+    // (disconnected) into a clean circle (connected), animated on every state change.
+    val connectShape = rememberConnectButtonShape(isConnected)
 
     Column(
         modifier = Modifier
@@ -215,7 +232,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .size(164.dp)
                     .scale(buttonScale),
-                shape  = CircleShape,
+                shape  = connectShape,
                 colors = ButtonDefaults.buttonColors(containerColor = buttonContainerColor),
                 elevation = ButtonDefaults.buttonElevation(
                     defaultElevation = if (isConnected) 20.dp else 4.dp,
@@ -569,3 +586,43 @@ private fun formatDuration(ms: Long): String {
 
 private fun CubicBezierEasing.toAnimationSpec(durationMs: Int) =
     tween<Float>(durationMs, easing = this)
+
+// ── Expressive connect-button shape morph ────────────────────────────────────
+// Builds a Morph between a soft 12-lobed cookie (disconnected) and a 24-gon circle
+// (connected) — both normalised to a unit circle centred at the origin so the matrix
+// in [MorphPolygonShape] maps them straight onto the button bounds. Vertex counts match
+// (star 12/radius → 24 points, circle → 24) so the in-between frames stay clean.
+@Composable
+private fun rememberConnectButtonShape(isConnected: Boolean): Shape {
+    val cookie = remember {
+        RoundedPolygon.star(
+            numVerticesPerRadius = 12,
+            radius = 1f,
+            innerRadius = 0.9f,
+            rounding = CornerRounding(radius = 0.5f),
+        )
+    }
+    val circle = remember { RoundedPolygon.circle(numVertices = 24, radius = 1f) }
+    val morph  = remember { Morph(start = cookie, end = circle) }
+    val progress by animateFloatAsState(
+        targetValue   = if (isConnected) 1f else 0f,
+        animationSpec = spring(Spring.DampingRatioLowBouncy, Spring.StiffnessLow),
+        label         = "connect_morph",
+    )
+    return remember(progress) { MorphPolygonShape(morph, progress) }
+}
+
+private class MorphPolygonShape(
+    private val morph: Morph,
+    private val percentage: Float,
+) : Shape {
+    private val matrix = Matrix()
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        matrix.reset()
+        matrix.scale(size.width / 2f, size.height / 2f)
+        matrix.translate(1f, 1f)
+        val path = morph.toPath(progress = percentage).asComposePath()
+        path.transform(matrix)
+        return Outline.Generic(path)
+    }
+}
