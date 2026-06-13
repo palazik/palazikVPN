@@ -215,17 +215,13 @@ fun HomeScreen(vm: MainViewModel) {
                     )
             )
 
-            // M3 Expressive-style shape morph: cookie (disconnected) → circle (connected),
-            // matching the Android connect button. Hand-built so it needs no graphics-shapes dep.
-            val connectShape = rememberConnectButtonShape(isConnected)
-
             // Main button
             Button(
                 onClick  = { vm.toggleVpn() },
                 modifier = Modifier
                     .size(164.dp)
                     .scale(buttonScale),
-                shape  = connectShape,
+                shape  = CircleShape,
                 colors = ButtonDefaults.buttonColors(containerColor = buttonContainerColor),
                 elevation = ButtonDefaults.buttonElevation(
                     defaultElevation = if (isConnected) 20.dp else 4.dp,
@@ -689,21 +685,9 @@ private fun formatDuration(ms: Long): String {
 private fun CubicBezierEasing.toAnimationSpec(durationMs: Int) =
     tween<Float>(durationMs, easing = this)
 
-// ── Expressive connect-button shape morph ────────────────────────────────────
-// The Android app uses androidx.graphics.shapes (Morph + MaterialShapes.Cookie); that
-// library isn't on the desktop Compose classpath, so we reproduce the same look with a
-// hand-built Shape on plain Compose Path: a 12-lobed scalloped circle whose lobes flatten
-// to a clean circle as progress goes 0 (disconnected) → 1 (connected).
-@Composable
-private fun rememberConnectButtonShape(isConnected: Boolean): Shape {
-    val progress by animateFloatAsState(
-        targetValue   = if (isConnected) 1f else 0f,
-        animationSpec = spring(Spring.DampingRatioLowBouncy, Spring.StiffnessLow),
-        label         = "connect_morph",
-    )
-    return remember(progress) { CookieCircleShape(progress) }
-}
-
+// ── Expressive cookie shape (empty-state icon containers) ────────────────────
+// A 12-lobed scalloped circle, built on plain Compose Path so it needs no graphics-shapes
+// dependency on the desktop target. `progress` 0 = full cookie, 1 = plain circle.
 internal class CookieCircleShape(
     private val progress: Float,
     private val lobes: Int = 12,
