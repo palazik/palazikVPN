@@ -8,7 +8,7 @@ plugins {
 
 group = "com.palazik"
 // Keep in sync with android app_version (jpackage needs plain MAJOR.MINOR.PATCH)
-version = "2.0.2"
+version = "2.0.3"
 
 kotlin {
     jvmToolchain(21)

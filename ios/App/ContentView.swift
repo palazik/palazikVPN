@@ -574,7 +574,7 @@ struct SubscriptionSettings: View {
 struct AboutSettings: View {
     var body: some View {
         Form {
-            HStack { Text("Version"); Spacer(); Text("2.0.2").foregroundColor(.secondary) }
+            HStack { Text("Version"); Spacer(); Text("2.0.3").foregroundColor(.secondary) }
             HStack { Text("Engine"); Spacer(); Text("Xray / SwiftyXrayKit").foregroundColor(.secondary) }
             HStack { Text("Author"); Spacer(); Text("palaziks").foregroundColor(.secondary) }
         }

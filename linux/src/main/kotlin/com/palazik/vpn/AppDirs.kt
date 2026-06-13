@@ -5,7 +5,7 @@ import java.io.File
 /** XDG-style application directories. */
 object AppDirs {
 
-    const val APP_VERSION = "2.0.2"
+    const val APP_VERSION = "2.0.3"
 
     val configDir: File by lazy {
         val xdg = System.getenv("XDG_CONFIG_HOME")?.takeIf { it.isNotBlank() }

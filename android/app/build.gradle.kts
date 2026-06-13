@@ -30,8 +30,8 @@ android {
         applicationId = "com.palazik.vpn"
         minSdk        = 26
         targetSdk     = 36
-        versionCode   = 3
-        versionName   = "2.0.2"
+        versionCode   = 4
+        versionName   = "2.0.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Only real-device ABIs — dropping x86/x86_64 saves ~36MB from libgojni.so
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
