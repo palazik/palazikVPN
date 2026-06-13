@@ -2,6 +2,7 @@ package com.palazik.vpn.ui.screen
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -32,7 +34,7 @@ private fun formatBytes(bytes: Long): String {
     return String.format(Locale.US, "%.1f %s", value, units[exp - 1])
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SubscriptionsScreen(vm: MainViewModel) {
     val ui by vm.ui.collectAsState()
@@ -84,6 +86,13 @@ fun SubscriptionsScreen(vm: MainViewModel) {
             }
         }
 
+        // Material 3 Expressive wavy progress bar — visible while subscriptions refresh.
+        AnimatedVisibility(visible = ui.isUpdatingSubscriptions) {
+            LinearWavyProgressIndicator(
+                Modifier.fillMaxWidth().padding(top = 10.dp),
+            )
+        }
+
         Spacer(Modifier.height(12.dp))
 
         AnimatedContent(
@@ -94,11 +103,20 @@ fun SubscriptionsScreen(vm: MainViewModel) {
             if (isEmpty) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Rounded.Subscriptions, null,
-                            Modifier.size(72.dp),
-                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                        )
+                        // Material 3 Expressive shape — icon inside a Cookie9Sided container.
+                        Box(
+                            Modifier
+                                .size(112.dp)
+                                .clip(MaterialShapes.Cookie9Sided.toShape())
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Rounded.Subscriptions, null,
+                                Modifier.size(54.dp),
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                            )
+                        }
                         Spacer(Modifier.height(16.dp))
                         Text(
                             "No subscriptions yet",

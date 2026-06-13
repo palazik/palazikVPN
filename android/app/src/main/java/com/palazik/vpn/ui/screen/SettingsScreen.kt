@@ -483,7 +483,7 @@ fun LanguageSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun AboutSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsState()
@@ -499,7 +499,9 @@ fun AboutSettingsScreen(vm: MainViewModel, onBack: () -> Unit) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Button(onClick = { vm.checkForUpdate() }, enabled = !ui.checkingUpdate) {
                     if (ui.checkingUpdate) {
-                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                        // Material 3 Expressive loading indicator — morphing-polygon loader,
+                        // the recommended replacement for the indeterminate spinner.
+                        LoadingIndicator(Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
                     } else {
                         Icon(Icons.Rounded.SystemUpdate, null, Modifier.size(16.dp))
                     }
