@@ -14,16 +14,26 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.palazik.vpn.data.model.VpnState
 import com.palazik.vpn.ui.i18n.LocalStrings
 import com.palazik.vpn.ui.viewmodel.MainViewModel
 import java.text.DecimalFormat
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
 
 private val EaseInOutSine = CubicBezierEasing(0.37f, 0f, 0.63f, 1f)
 private val EaseOutBack   = CubicBezierEasing(0.34f, 1.56f, 0.64f, 1f)
@@ -205,13 +215,17 @@ fun HomeScreen(vm: MainViewModel) {
                     )
             )
 
+            // M3 Expressive-style shape morph: cookie (disconnected) → circle (connected),
+            // matching the Android connect button. Hand-built so it needs no graphics-shapes dep.
+            val connectShape = rememberConnectButtonShape(isConnected)
+
             // Main button
             Button(
                 onClick  = { vm.toggleVpn() },
                 modifier = Modifier
                     .size(164.dp)
                     .scale(buttonScale),
-                shape  = CircleShape,
+                shape  = connectShape,
                 colors = ButtonDefaults.buttonColors(containerColor = buttonContainerColor),
                 elevation = ButtonDefaults.buttonElevation(
                     defaultElevation = if (isConnected) 20.dp else 4.dp,
@@ -674,3 +688,44 @@ private fun formatDuration(ms: Long): String {
 
 private fun CubicBezierEasing.toAnimationSpec(durationMs: Int) =
     tween<Float>(durationMs, easing = this)
+
+// ── Expressive connect-button shape morph ────────────────────────────────────
+// The Android app uses androidx.graphics.shapes (Morph + MaterialShapes.Cookie); that
+// library isn't on the desktop Compose classpath, so we reproduce the same look with a
+// hand-built Shape on plain Compose Path: a 12-lobed scalloped circle whose lobes flatten
+// to a clean circle as progress goes 0 (disconnected) → 1 (connected).
+@Composable
+private fun rememberConnectButtonShape(isConnected: Boolean): Shape {
+    val progress by animateFloatAsState(
+        targetValue   = if (isConnected) 1f else 0f,
+        animationSpec = spring(Spring.DampingRatioLowBouncy, Spring.StiffnessLow),
+        label         = "connect_morph",
+    )
+    return remember(progress) { CookieCircleShape(progress) }
+}
+
+internal class CookieCircleShape(
+    private val progress: Float,
+    private val lobes: Int = 12,
+    private val maxAmplitude: Float = 0.07f,
+) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val cx    = size.width / 2f
+        val cy    = size.height / 2f
+        val baseR = min(size.width, size.height) / 2f
+        // Lobe depth shrinks to 0 as we approach a full circle. r stays <= baseR so the
+        // shape always fits the button bounds.
+        val amp   = maxAmplitude * (1f - progress.coerceIn(0f, 1f))
+        val path  = Path()
+        val steps = lobes * 12
+        for (i in 0..steps) {
+            val angle = i.toFloat() / steps * 2f * PI.toFloat()
+            val r = baseR * (1f - amp) + baseR * amp * cos(lobes * angle)
+            val x = cx + r * cos(angle)
+            val y = cy + r * sin(angle)
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        path.close()
+        return Outline.Generic(path)
+    }
+}

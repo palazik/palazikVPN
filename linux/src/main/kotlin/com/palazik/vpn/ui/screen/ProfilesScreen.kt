@@ -3,6 +3,7 @@ package com.palazik.vpn.ui.screen
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -235,11 +237,20 @@ fun ProfilesScreen(vm: MainViewModel) {
             if (isEmpty) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Rounded.VpnKey, null,
-                            Modifier.size(72.dp),
-                            tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
-                        )
+                        // Expressive cookie-shaped container (matches the Android empty state).
+                        Box(
+                            Modifier
+                                .size(112.dp)
+                                .clip(CookieCircleShape(0f))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Rounded.VpnKey, null,
+                                Modifier.size(54.dp),
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                            )
+                        }
                         Spacer(Modifier.height(16.dp))
                         Text(
                             "No profiles yet",
