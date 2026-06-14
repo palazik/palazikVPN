@@ -26,6 +26,17 @@ configs stay on your device.
 - **Anti-DPI** — per-profile TLS fragmentation with configurable packet sizes.
 - **Privacy** — kill switch (lockdown), IPv6 leak protection, and a per-profile mux toggle.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/home.jpg"      width="24%" alt="Home — connected, with live traffic stats" />
+  <img src="docs/screenshots/profiles.jpg"  width="24%" alt="Profiles grouped by subscription, with per-server ping" />
+  <img src="docs/screenshots/protocols.jpg" width="24%" alt="Add a profile — VLESS, VMess, Trojan, Hysteria2, WireGuard, TUIC, AnyTLS and more" />
+  <img src="docs/screenshots/themes.jpg"    width="24%" alt="Built-in color themes and dark-mode control" />
+</p>
+
+<p align="center"><sub>Home · Profiles &amp; subscriptions · Protocol picker · Themes &amp; dark mode</sub></p>
+
 ## Features
 
 **Connection**
